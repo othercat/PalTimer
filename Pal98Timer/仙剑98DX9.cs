@@ -462,21 +462,13 @@ namespace Pal98Timer
 
         public override string GetPointEnd()
         {
-            return TS2HMMSSMS(WillClear);
+            return "预计通关 " + GetWillClearStr();
         }
 
         public override string GetPointSpan()
         {
-            if (PointSpanName != "")
-            {
-                return PointSpanName + " " + GetPointSpanStr();
-            }
-            return "";
-        }
-
-        private string GetPointSpanStr()
-        {
-            return TS2HMMSSMS(PointSpan);
+            if (PointSpanName == "") return "--";
+            return PointSpanName + " " + GetPointSpanStr();
         }
 
         public override string GetAAction()
@@ -506,6 +498,339 @@ namespace Pal98Timer
                 cryerror = "";
                 return tmp;
             }
+        }
+
+        public delegate void OnExSuccess();
+        public delegate void ExEnd(bool IsOK, string ErrStr);
+
+        private bool IsListenSave = false;
+        private string[] tnbase = new string[60] {
+            "0","1","2","3","4","5","6","7","8","9",
+            "A","B","C","D","E","F","G","H","I","J",
+            "K","L","M","N","P","Q","R","S","T",
+            "U","V","W","X","Y","Z","a","b","c","d",
+            "e","f","g","h","i","j","k","m","n",
+            "o","p","q","r","s","t","u","v","w","x",
+            "y","z"
+        };
+
+        private void SuspendSaveListen()
+        {
+            IsListenSave = false;
+        }
+
+        private string GetPalFolder()
+        {
+            string palpath = PalProcess.MainModule.FileName;
+            string[] spli = palpath.Split('\\');
+            spli[spli.Length - 1] = "";
+            palpath = "";
+            foreach (string s in spli)
+            {
+                palpath += s + "\\";
+            }
+            if (palpath != "")
+            {
+                palpath = palpath.Substring(0, palpath.Length - 1);
+            }
+            return palpath + "\\";
+        }
+
+        private void UI_SaveGameEx(FormEx f,OnExSuccess cb, string fn = "SRPG.bin")
+        {
+            SetUIPause(true);
+            InfoShow isw = null;
+            isw = new InfoShow(f, delegate ()
+            {
+                SuspendSaveListen();
+                SetUIPause(false);
+                isw.Dispose();
+            });
+            isw.lblInfo.Text = "计时器已暂停，请在游戏中存档";
+            bool haserr = false;
+            try
+            {
+                SaveGameEx(f, delegate (bool isok, string errstr)
+                 {
+                     if (isok)
+                     {
+                         if (cb != null)
+                         {
+                             cb();
+                         }
+                     }
+                     else
+                     {
+                         if (errstr != "")
+                         {
+                             f.Error(errstr);
+                         }
+                         else
+                         {
+                             f.Alert("操作中断");
+                         }
+                     }
+                     SetUIPause(false);
+                     isw.Dispose();
+                 }, fn);
+            }
+            catch (Exception ex)
+            {
+                haserr = true;
+                f.Error(ex.Message);
+            }
+            if (haserr)
+            {
+                if (isw != null)
+                {
+                    isw.Dispose();
+                }
+                SetUIPause(false);
+            }
+            else
+            {
+                isw.ShowDialog(f);
+            }
+        }
+
+        private void SaveGameEx(FormEx f,ExEnd cb, string fn = "SRPG.bin")
+        {
+            if (!GetPalHandle()) throw new Exception("游戏没有在运行，无法保存");
+            IsListenSave = true;
+            FormEx.Run(delegate ()
+            {
+                Dictionary<int, DateTime> RPGs = new Dictionary<int, DateTime>();
+                string palfolder = GetPalFolder();
+                for (int i = 1; i <= 5; ++i)
+                {
+                    string p = palfolder + i + ".RPG";
+                    if (File.Exists(p))
+                    {
+                        FileInfo fi = new FileInfo(p);
+                        RPGs.Add(i, fi.LastWriteTime);
+                    }
+                }
+                Thread.Sleep(300);
+                string ChangedFile = "";
+                while (IsListenSave && ChangedFile == "")
+                {
+                    for (int i = 0; i <= 5; ++i)
+                    {
+                        string p = palfolder + i + ".RPG";
+                        if (File.Exists(p))
+                        {
+                            if (RPGs.ContainsKey(i))
+                            {
+                                FileInfo fi = new FileInfo(p);
+                                if (fi.LastWriteTime > RPGs[i])
+                                {
+                                    ChangedFile = p;
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                ChangedFile = p;
+                                break;
+                            }
+                        }
+                    }
+                    Thread.Sleep(300);
+                }
+
+                if (!IsListenSave)
+                {
+                    if (cb != null)
+                    {
+                        f.UI(delegate ()
+                        {
+                            cb(false, "");
+                        });
+                    }
+                    return;
+                }
+
+                SRPGobj so = new SRPGobj();
+                so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
+                so.TimerStr = GetRStr();
+
+                string FilePath = fn;
+                try
+                {
+                    if (File.Exists(FilePath))
+                    {
+                        File.Delete(FilePath);
+                    }
+                    using (FileStream fs = new FileStream(FilePath, FileMode.OpenOrCreate))
+                    {
+                        BinaryFormatter bf = new BinaryFormatter();
+                        bf.Serialize(fs, so);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (cb != null)
+                    {
+                        f.UI(delegate ()
+                        {
+                            cb(false, ex.Message);
+                        });
+                    }
+                }
+                if (cb != null)
+                {
+                    f.UI(delegate ()
+                    {
+                        cb(true, "");
+                    });
+                }
+            });
+        }
+
+        private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")
+        {
+            SRPGobj so = null;
+            string FilePath = fn;
+            try
+            {
+                if (!File.Exists(FilePath)) throw new Exception("计时器目录下找不到" + fn);
+                using (FileStream fs = new FileStream(FilePath, FileMode.OpenOrCreate))
+                {
+                    fs.Seek(0, SeekOrigin.Begin);
+                    BinaryFormatter bf = new BinaryFormatter();
+                    so = bf.Deserialize(fs) as SRPGobj;
+                }
+            }
+            catch
+            {
+                throw;
+            }
+
+            if (so != null)
+            {
+                string tmppath = rn;
+                try
+                {
+                    if (File.Exists(tmppath))
+                    {
+                        File.Delete(tmppath);
+                    }
+                    using (FileStream fileStream = new FileStream(tmppath, FileMode.OpenOrCreate))
+                    {
+                        using (BinaryWriter Writer = new BinaryWriter(fileStream))
+                        {
+                            Writer.Write(so.RPG);
+                            Writer.Flush();
+                        }
+                    }
+                }
+                catch
+                {
+                    throw;
+                }
+
+                SetTimerFromString(so.TimerStr);
+
+                WillCopyRPG = tmppath;
+            }
+        }
+
+        public void SetTimerFromString(string json)
+        {
+            HObj ho = new HObj(json);
+            try
+            {
+                MaxFC = ho.GetValue<short>("BeeHouse");
+                MaxFM = ho.GetValue<short>("BeeSheet");
+                MaxHCG = ho.GetValue<short>("FireWorm");
+                MaxLQJ = ho.GetValue<short>("DragonSword");
+                MaxXLL = ho.GetValue<short>("BloodLink");
+                MaxYXY = ho.GetValue<short>("NightCloth");
+                MaxTLF = ho.GetValue<short>("EarthPaper");
+                MaxQTJ = ho.GetValue<short>("CuArmor");
+                MT.SetTS(ConvertTimeSpan(ho.GetValue<string>("Current")));
+                ST.SetTS(ConvertTimeSpan(ho.GetValue<string>("Idle")));
+                HObj cps = ho.GetValue<HObj>("CheckPoints");
+                for (int i = 0; i < cps.Count; ++i)
+                {
+                    HObj cc = cps.GetValue<HObj>(i);
+                    CheckPoints[i].SetCurrentTSForLoad(ConvertTimeSpan(cc.GetValue<string>("time")));
+                }
+                Jump(ho.GetValue<int>("Step"));
+                string nmbs= ho.GetValue<string>("NamedBattles");
+                NamedBattleRes = new List<string>();
+                string[] nmbspli = nmbs.Split('|');
+                foreach (string nmb in nmbspli)
+                {
+                    NamedBattleRes.Add(nmb);
+                }
+                WillAppendNamedBattle = nmbs;
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private string GetTimeName()
+        {
+            if (form.CloudID() < 0) throw new Exception("云功能没有初始化");
+            string res = form.CloudID().ToString().PadLeft(3, '0');
+            DateTime now = DateTime.Now;
+            res += tnbase[now.Month] + tnbase[now.Day] + tnbase[now.Hour] + tnbase[now.Minute] + tnbase[now.Second];
+            return res;
+        }
+
+        public void LoadCloudSRPG(FormEx f,string code, Download dw)
+        {
+            FormEx.Run(delegate () {
+                try
+                {
+                    string key = code + ".bin";
+                    string localname = System.Environment.CurrentDirectory + "\\" + key;
+                    form.ODownload(key, localname);
+                    f.UI(delegate ()
+                    {
+                        try
+                        {
+                            LoadGame(key);
+                            if (File.Exists(localname))
+                            {
+                                File.Delete(localname);
+                            }
+                            dw.txtCode.Enabled = true;
+                            dw.btnOK.Enabled = true;
+                            dw.Dispose();
+
+                            SetUIPause(true);
+                            InfoShow isw = null;
+                            isw = new InfoShow(f, delegate ()
+                            {
+                                isw.Dispose();
+                            });
+                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中"进度一"后关闭此窗口";
+                            isw.btnOK.Text = "我已读档";
+                            isw.ShowDialog(f);
+                            SetUIPause(false);
+                        }
+                        catch (Exception ee)
+                        {
+                            dw.txtCode.Enabled = true;
+                            dw.btnOK.Enabled = true;
+                            f.Error(ee.Message);
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    f.UI(delegate ()
+                    {
+                        dw.txtCode.Enabled = true;
+                        dw.btnOK.Enabled = true;
+                        f.Error(ex.Message);
+                    });
+                }
+            });
         }
 
         private ToolStripMenuItem btnCloudSave;
