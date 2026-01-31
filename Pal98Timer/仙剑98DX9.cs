@@ -553,7 +553,7 @@ namespace Pal98Timer
                 {
                     isw.Dispose();
                 });
-                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中"进度一"后关闭此窗口";
+                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中'进度一'后关闭此窗口";
                 isw.btnOK.Text = "我已读档";
                 isw.ShowDialog(form);
                 SetUIPause(false);
