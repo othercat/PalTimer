@@ -68,6 +68,12 @@ namespace Pal98Timer
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
 
+        private float MoveSpeed = 0;
+        private DateTime LastFlushTime = DateTime.Now;
+        private BattleItemWatch biw = new BattleItemWatch();
+        private string CurrentNamedBattle = "";
+        private string WillAppendNamedBattle = "";
+
         public 仙剑98DX9(GForm form) : base(form)
         {
             CoreName = "PAL98DX9";
@@ -207,6 +213,175 @@ namespace Pal98Timer
                     return false;
                 }
             });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("进京城", new TimeSpan(1, 9, 32)))
+            {
+                Check = delegate ()
+                {
+                    //if (PositionCheck(new int[3] { 101, 256, 224 }))
+                    if (PositionAroundCheck(101, 272, 216, 2))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("过彩依", new TimeSpan(1, 19, 47)))
+            {
+                Check = delegate ()
+                {
+                    /*if (!Data.GetValue<bool>("lazhu"))
+                    {
+                        if (GameObj.GetItemCount(0x51) > 0)
+                        {
+                            Data["lazhu"] = true;
+                        }
+                    }
+                    else
+                    {
+                        if (GameObj.GetItemCount(0x51) <= 0)
+                        {
+                            Data["lazhu"] = false;
+                            return true;
+                        }
+                    }
+                    return false;*/
+                    if (!Data.GetValue<bool>("caiyi"))
+                    {
+                        if (GameObj.BossID == 71)
+                        {
+                            Data["caiyi"] = true;
+                        }
+                    }
+                    else
+                    {
+                        if (GameObj.BossID != 71 || (GameObj.BossID == 71 && GameObj.BattleTotalBlood <= 0))
+                        {
+                            Data["caiyi"] = false;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("进锁妖塔", new TimeSpan(1, 25, 33)))
+            {
+                Check = delegate ()
+                {
+                    //if (PositionCheck(new int[3] { 147, 1024, 448 }))
+                    /*if (PositionAroundCheck(147, 1024, 448, 2))
+                    {
+                        return true;
+                    }*/
+                    if (PositionAroundCheck(164, 1024, 992, 4) || GameObj.Area == 165 || PositionAroundCheck(147, 1024, 448, 2))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("剑柱", new TimeSpan(1, 37, 27)))
+            {
+                Check = delegate ()
+                {
+                    //if (PositionCheck(new int[3] { 147, 1024, 448 }))
+                    if (PositionAroundCheck(146, 304, 1048, 3))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("拆塔", new TimeSpan(1, 44, 22)))
+            {
+                Check = delegate ()
+                {
+                    if (GameObj.BossID == 144 && GameObj.BattleTotalBlood <= 0)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("过凤凰", new TimeSpan(1, 54, 11)))
+            {
+                Check = delegate ()
+                {
+                    if (GameObj.BossID == 67 && GameObj.BattleTotalBlood <= 0)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("进十年前", new TimeSpan(2, 3, 17)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionAroundCheck(247, 1408, 1584, 5))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("水灵珠", new TimeSpan(2, 14, 1)))
+            {
+                Check = delegate ()
+                {
+                    if (GameObj.GetItemCount(0x109) > 0)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("祈雨", new TimeSpan(2, 27, 8)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionCheck(new int[3] { 228, 992, 928 }))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("通关", new TimeSpan(2, 37, 32)))
+            {
+                Check = delegate ()
+                {
+                    if (GameObj.BossID == 149 && GameObj.BattleTotalBlood <= 0)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+        }
+
+        private bool PositionCheck(params int[][] PositionList)
+        {
+            foreach (int[] p in PositionList)
+            {
+                if (GameObj.Area == p[0] && GameObj.X == p[1] && GameObj.Y == p[2])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool PositionAroundCheck(int Area, int X, int Y, int r = 1)
+        {
+            if (GameObj.Area == Area)
+            {
+                if (GameObj.X >= (X - 16 * r) && GameObj.X <= (X + 16 * r)
+                    && GameObj.Y >= (Y - 8 * r) && GameObj.Y <= (Y + 8 * r))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public override string GetGameVersion()
@@ -240,32 +415,338 @@ namespace Pal98Timer
             MaxTLF = 0;
             BattleLong = new TimeSpan(0);
             ST.Reset();
+            WillAppendNamedBattle = "";
             NamedBattleRes = new List<string>();
         }
 
-        protected override void Checking()
+        public override bool NeedBlockCtrlEnter()
+        {
+            return false;
+        }
+
+        public override string GetMoreInfo()
+        {
+            if (IsShowSpeed)
+            {
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + MaxHCG + " 血" + MaxXLL + " 夜" + MaxYXY + " 剑" + MaxLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+            }
+            else
+            {
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + MaxHCG + " 血" + MaxXLL + " 夜" + MaxYXY + " 剑" + MaxLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+            }
+        }
+
+        public override string GetSmallWatch()
+        {
+            return BattleLong.TotalSeconds.ToString("F2") + "s";
+        }
+
+        public override string GetSecondWatch()
+        {
+            if (ST.CurrentTSOnly.Ticks == 0)
+            {
+                return "";
+            }
+            return ST.ToString();
+        }
+
+        public override TimeSpan GetMainWatch()
+        {
+            return MT.CurrentTS;
+        }
+
+        public override bool IsMainWatchStar()
+        {
+            return IsInUnCheat;
+        }
+
+        public override string GetPointEnd()
+        {
+            return TS2HMMSSMS(WillClear);
+        }
+
+        public override string GetPointSpan()
+        {
+            if (PointSpanName != "")
+            {
+                return PointSpanName + " " + GetPointSpanStr();
+            }
+            return "";
+        }
+
+        private string GetPointSpanStr()
+        {
+            return TS2HMMSSMS(PointSpan);
+        }
+
+        public override string GetAAction()
+        {
+            if (WillAppendNamedBattle == "")
+            {
+                return "";
+            }
+            else
+            {
+                NamedBattleRes.Add(WillAppendNamedBattle);
+                string res = WillAppendNamedBattle;
+                WillAppendNamedBattle = "";
+                return res;
+            }
+        }
+
+        public override string GetCriticalError()
+        {
+            if (cryerror == "")
+            {
+                return "";
+            }
+            else
+            {
+                string tmp = cryerror;
+                cryerror = "";
+                return tmp;
+            }
+        }
+
+        private ToolStripMenuItem btnCloudSave;
+        private ToolStripMenuItem btnCloudLoad;
+        private ToolStripMenuItem btnSwitch;
+        private ToolStripMenuItem btnGameSpeedShow;
+
+        public override void InitUI()
+        {
+            var btnExportCurrent = form.NewMenuItem();
+            btnExportCurrent.Text = "导出本次成绩";
+            btnExportCurrent.Click += delegate(object sender, EventArgs e) {
+                ExportCurrent(GetRStr());
+            };
+
+            var btnSetCurrentToBest = form.NewMenuItem();
+            btnSetCurrentToBest.Text = "设置本次成绩为最佳";
+            btnSetCurrentToBest.Click += delegate (object sender, EventArgs e) {
+                SaveBest(GetRStr());
+            };
+
+            var btnJLSave = form.NewMenuItem();
+            btnJLSave.Text = "接力-存档";
+            btnJLSave.Click += delegate (object sender, EventArgs e) {
+                UI_SaveGameEx(form,delegate() {
+                    form.Success("存档已导出到计时器目录下SRPG.bin");
+                });
+            };
+
+            var btnJLLoad = form.NewMenuItem();
+            btnJLLoad.Text = "接力-接盘";
+            btnJLLoad.Click += delegate (object sender, EventArgs e) {
+                try
+                {
+                    LoadGame();
+                }
+                catch (Exception ex)
+                {
+                    form.Error(ex.Message);
+                    return;
+                }
+                SetUIPause(true);
+                InfoShow isw = null;
+                isw = new InfoShow(form, delegate ()
+                {
+                    isw.Dispose();
+                });
+                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中"进度一"后关闭此窗口";
+                isw.btnOK.Text = "我已读档";
+                isw.ShowDialog(form);
+                SetUIPause(false);
+            };
+
+            btnSwitch= form.NewMenuItem();
+            btnSwitch.Text = "切换至简版";
+            btnSwitch.Click += delegate (object sender, EventArgs e) {
+                if (form.Confirm("更换内核将会重置计时器，确认么？"))
+                {
+                    LoadCore(new 简版(form));
+                }
+            };
+            
+            btnGameSpeedShow = form.NewMenuItem();
+            btnGameSpeedShow.Text = "显示游戏速度";
+            btnGameSpeedShow.Checked = false;
+            btnGameSpeedShow.Click += delegate (object sender, EventArgs e) {
+                btnGameSpeedShow.Checked = !btnGameSpeedShow.Checked;
+            };
+            btnGameSpeedShow.CheckedChanged += delegate (object sender, EventArgs e) {
+                IsShowSpeed = btnGameSpeedShow.Checked;
+            };
+
+            btnCloudSave = form.NewCloudMenuItem();
+            btnCloudSave.Text = "云存档";
+            btnCloudSave.Enabled = false;
+            btnCloudSave.Click += delegate (object sender, EventArgs e) {
+                string tn = GetTimeName();
+                string fn = tn + ".bin";
+                UI_SaveGameEx(form,delegate ()
+                {
+                    btnCloudSave.Enabled = false;
+                    Upload uw = new Upload(btnCloudSave);
+                    uw.btnOK.Enabled = false;
+                    uw.txtStatus.Text = "正在上传...";
+
+                    FormEx.Run(delegate ()
+                    {
+                        try
+                        {
+                            form.OUpload(System.Environment.CurrentDirectory + "\\" + fn);
+                            if (File.Exists(System.Environment.CurrentDirectory + "\\" + fn))
+                            {
+                                File.Delete(System.Environment.CurrentDirectory + "\\" + fn);
+                            }
+                            form.UI(delegate ()
+                            {
+                                btnCloudSave.Enabled = true;
+                                uw.txtStatus.Text = tn;
+                                uw.btnOK.Enabled = true;
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            form.UI(delegate ()
+                            {
+                                btnCloudSave.Enabled = true;
+                                uw.btnOK.Enabled = true;
+                                uw.Dispose();
+                                form.Error(ex.Message);
+                            });
+                        }
+                    });
+                    uw.ShowDialog(form);
+
+                }, fn);
+            };
+
+            btnCloudLoad = form.NewCloudMenuItem();
+            btnCloudLoad.Text = "云读档";
+            btnCloudLoad.Enabled = false;
+            btnCloudLoad.Click += delegate (object sender, EventArgs e) {
+                Download dw = new Download(delegate(string c,Download d) {
+                    LoadCloudSRPG(form, c, d);
+                });
+                dw.ShowDialog(form);
+            };
+        }
+
+        protected override void OnTick()
         {
             if (GetPalHandle())
             {
-                if (cryerror != "")
+                CopyRPGIfHas();
+
+                JudgePause();
+                try
                 {
-                    Error(cryerror);
-                    cryerror = "";
+                    FlushGameObject();
+                }
+                catch (Exception ex)
+                {
+                }
+
+
+                try
+                {
+                    if (GameObj.Enemies.Count > 0)
+                    {
+                        if (!IsInBattle)
+                        {
+                            BattleBegin();
+                        }
+                        IsInBattle = true;
+                        IsDoMoreEndBattle = true;
+                        Battling();
+                    }
+                    else
+                    {
+                        if (!IsDoMoreEndBattle)
+                        {
+                            BattleEndMore();
+                            IsDoMoreEndBattle = true;
+                        }
+                        if (IsInBattle)
+                        {
+                            BattleEnd();
+                            IsDoMoreEndBattle = false;
+                        }
+                        IsInBattle = false;
+                    }
+                }
+                catch { }
+
+                if (HasStartGame())
+                {
+                    ST.Stop();
+                    if (!_IsFirstStarted)
+                    {
+                        _IsFirstStarted = true;
+                    }
+                    if (!HasUnCheated)
+                    {
+                        if (!IsInUnCheat)
+                        {
+                            CheckCheatBegin();
+                            CheckCheatEnd();
+                        }
+                        else
+                        {
+                            CheckCheatEnd();
+                        }
+                    }
+
+                    if (IsInUnCheat)
+                    {
+                        MT.Stop();
+                    }
+                    else
+                    {
+                        MT.Start();
+                        Checking();
+                    }
+                }
+                else
+                {
+                    MT.Stop();
                 }
             }
             else
             {
-                if (cryerror != "")
+                _HasGameStart = false;
+                MT.Stop();
+
+                if (_IsFirstStarted)
                 {
-                    Error(cryerror);
-                    cryerror = "";
+                    ST.Start();
                 }
-                return;
             }
 
-            if (PID == -1) return;
+            PreData();
+        }
 
-            base.Checking();
+        private void PreData()
+        {
+            SI.ins.MT = MT.ToString();
+            SI.ins.ST = ST.ToString();
+            SI.ins.MoreInfo = this.GetMoreInfo();
+            SI.ins.GameVersion = this.GetGameVersion();
+            SI.ins.Version = GForm.CurrentVersion;
+            SI.ins.BattleLong= BattleLong.TotalSeconds.ToString("F2") + "s";
+            SI.ins.FC = MaxFC.ToString();
+            SI.ins.FM = MaxFM.ToString();
+            SI.ins.HCG = MaxHCG.ToString();
+            SI.ins.XLL = MaxXLL.ToString();
+            SI.ins.YXY = MaxYXY.ToString();
+            SI.ins.LQJ = MaxLQJ.ToString();
+            SI.ins.CloudID = form.CloudID().ToString();
+            SI.ins.CurrentStep = CurrentStep;
+            SI.ins.cps = CheckPoints;
+            SI.ins.Luck = MConfig.ins.Luck();
+            SI.ins.ColorEgg = MConfig.ins.ColorEgg;
         }
 
         private bool GetPalHandle()
@@ -394,6 +875,287 @@ namespace Pal98Timer
                 palpath = palpath.Substring(0, palpath.Length - 1);
             }
             return palpath;
+        }
+
+        private void CopyRPGIfHas()
+        {
+            if (WillCopyRPG == "") return;
+
+            try
+            {
+                if (File.Exists(WillCopyRPG))
+                {
+                    string palpath = PalProcess.MainModule.FileName;
+                    string[] spli = palpath.Split('\\');
+                    spli[spli.Length - 1] = "1.RPG";
+                    palpath = "";
+                    foreach (string s in spli)
+                    {
+                        palpath += s + "\\";
+                    }
+                    if (palpath != "")
+                    {
+                        palpath = palpath.Substring(0, palpath.Length - 1);
+                    }
+                    if (File.Exists(palpath))
+                    {
+                        if (File.Exists(palpath + ".bak"))
+                        {
+                            File.Delete(palpath + ".bak");
+                        }
+                        File.Move(palpath, palpath + ".bak");
+                    }
+                    File.Move(WillCopyRPG, palpath);
+                }
+            }
+            catch { }
+
+            WillCopyRPG = "";
+        }
+
+        private void JudgePause()
+        {
+            if (IsUIPause)
+            {
+                IsPause = true;
+                return;
+            }
+            IntPtr hWnd = User32.GetForegroundWindow();    //获取活动窗口句柄  
+            int calcID = 0;    //进程ID  
+            int calcTD = 0;    //线程ID  
+            calcTD = User32.GetWindowThreadProcessId(hWnd, out calcID);
+            if (calcID == PID)
+            {
+                IsPause = false;
+            }
+            else
+            {
+                IsPause = true;
+            }
+        }
+
+        private void FlushGameObject()
+        {
+            short lastx = GameObj.X;
+            short lasty = GameObj.Y;
+            short lastarea = GameObj.Area;
+
+            GameObj.Flush(PalHandle, PID, 0, 0);
+            FlushPlugins(PalHandle, PID, 0, 0);
+
+            try
+            {
+                float speed = 0;
+                if (GameObj.Area == lastarea)
+                {
+                    DateTime now = DateTime.Now;
+                    if (now.Second % 5 == 0)
+                    {
+                        MoveSpeed = 0;
+                    }
+                    TimeSpan ts = now - LastFlushTime;
+                    LastFlushTime = now;
+                    short xslot = (short)(Math.Abs(GameObj.X - lastx) / 16);
+                    short yslot = (short)(Math.Abs(GameObj.Y - lasty) / 8);
+                    short scha = xslot;
+                    if (yslot > scha)
+                    {
+                        scha = yslot;
+                    }
+                    float muti = (float)(1000 / ts.TotalMilliseconds);
+                    speed = muti * scha;
+                }
+                else
+                {
+                    speed = 0;
+                }
+                if (speed > MoveSpeed)
+                {
+                    MoveSpeed = speed;
+                }
+            }
+            catch
+            { }
+        }
+
+        private void BattleBegin()
+        {
+            BattleLong = new TimeSpan(0);
+            InBattleTime = DateTime.Now;
+            biw = new BattleItemWatch();
+            if (CurrentStep <= 5)
+            {
+                //战斗前记录下个数
+                biw.Insert(0x73, GameObj.GetItemCount(0x73));//蜂
+                biw.Insert(0x83, GameObj.GetItemCount(0x83));//蜜
+                biw.Insert(0x8F, GameObj.GetItemCount(0x8F));//火
+            }
+            biw.Insert(0xB8, GameObj.GetItemCount(0xB8));//龙泉剑
+            biw.Insert(0xA2, GameObj.GetItemCount(0xA2));//血玲珑
+            biw.Insert(0xD4, GameObj.GetItemCount(0xD4));//夜行衣
+
+            biw.Insert(0x47, GameObj.GetItemCount(0x47));//土灵符
+            biw.Insert(0xD5, GameObj.GetItemCount(0xD5));//青铜甲
+            CurrentNamedBattle = GameObj.GetNamedBattle();
+        }
+
+        private void Battling()
+        {
+            BattleLong = DateTime.Now - InBattleTime;
+            /*if (CurrentStep <= 5)
+            {
+                //战斗中每隔100毫秒算下差
+                biw.SetCount(GameObj);
+            }*/
+            biw.SetCount(GameObj);
+        }
+
+        private void BattleEnd()
+        {
+            OutBattleTime = DateTime.Now;
+            BattleLong = OutBattleTime - InBattleTime;
+            /*if (CurrentStep <= 5)
+            {
+                //战斗结束，强制再算差
+                biw.SetCount(GameObj);
+            }*/
+            biw.SetCount(GameObj);
+
+            if (CurrentNamedBattle != "")
+            {
+                WillAppendNamedBattle = CurrentNamedBattle + "：" + BattleLong.TotalSeconds.ToString("F2") + "s";
+                CurrentNamedBattle = "";
+            }
+        }
+
+        private void BattleEndMore()
+        {
+            //战斗结束，强制再算差
+            biw.SetCount(GameObj);
+            if (CurrentStep <= 5)
+            {
+                //将算出来的差加入显示
+                MaxFC += biw.GettedCount(0x73);
+                MaxFM += biw.GettedCount(0x83);
+                MaxHCG += biw.GettedCount(0x8F);
+            }
+            MaxLQJ += biw.GettedCount(0xB8);
+            MaxXLL += biw.GettedCount(0xA2);
+            MaxYXY += biw.GettedCount(0xD4);
+
+            MaxTLF += biw.GettedCount(0x47);
+            MaxQTJ += biw.GettedCount(0xD5);
+        }
+
+        private bool HasStartGame()
+        {
+            if (!_HasGameStart)
+            {
+                if (GameObj.Area != 0)
+                {
+                    _HasGameStart = true;
+                    if (IsPause)
+                    {
+                        return false;
+                    }
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (IsPause)
+                {
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        protected override void FillMoreTimerData(HObj exdata)
+        {
+            exdata["Idle"] = ST.ToFullString();
+            exdata["Lite"] = LT.ToFullString();
+            exdata["BeeHouse"] = MaxFC;
+            exdata["BeeSheet"] = MaxFM;
+            exdata["FireWorm"] = MaxHCG;
+            exdata["DragonSword"] = MaxLQJ;
+            exdata["BloodLink"] = MaxXLL;
+            exdata["NightCloth"] = MaxYXY;
+            exdata["EarthPaper"] = MaxTLF;
+            exdata["CuArmor"] = MaxQTJ;
+            exdata["GMD5"] = GMD5;
+            exdata["DX9Version"] = DX9Version;
+
+            string namedbattles = "";
+            foreach (string nmb in NamedBattleRes)
+            {
+                namedbattles += nmb + "|";
+            }
+            if (namedbattles != "")
+            {
+                namedbattles = namedbattles.Substring(0, namedbattles.Length - 1);
+            }
+            exdata["NamedBattles"] = namedbattles;
+        }
+
+        private void CheckCheatBegin()
+        {
+            if (PositionCheck(new int[3] { 177, 1088, 608 }, new int[3] { 177, 1120, 608 }, new int[3] { 177, 1120, 592 }))
+            {
+                IsInUnCheat = true;
+            }
+        }
+
+        private void CheckCheatEnd()
+        {
+            if (GameObj.GetItemCount(0x123) > 0)
+            {
+                IsInUnCheat = false;
+                HasUnCheated = true;
+            }
+        }
+
+        public override void OnFunctionKey(int FunNo)
+        {
+            switch (FunNo)
+            {
+                case 8:
+                    HandPause();
+                    break;
+                case 6:
+                    if (form.Confirm("更换内核将会重置计时器，确认么？"))
+                    {
+                        LoadCore(new 简版(form));
+                    }
+                    break;
+            }
+        }
+
+        public override void OnCloudOK()
+        {
+            btnCloudSave.Enabled = true;
+            btnCloudLoad.Enabled = true;
+        }
+
+        public override void OnCloudFail()
+        {
+            btnCloudSave.Enabled = false;
+            btnCloudLoad.Enabled = false;
+        }
+
+        public override void OnCloudPending()
+        {
+            btnCloudSave.Enabled = false;
+            btnCloudLoad.Enabled = false;
+        }
+
+        public override string ForCloudLiteData()
+        {
+            return MT.CurrentTS.Ticks.ToString() + "," + ST.CurrentTS.Ticks.ToString() + "," + BattleLong.Ticks.ToString();
         }
     }
 }
