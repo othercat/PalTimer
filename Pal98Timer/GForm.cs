@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.34.1";
+        public const string CurrentVersion = "3.35.0";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -130,7 +130,7 @@ namespace Pal98Timer
             }
             catch (Exception ex)
             {
-                LoadCore(new 仙剑98柔情(this));
+                LoadCore(new 仙剑98DX9(this));
             }
             
             rr.SetVersion(CurrentVersion);

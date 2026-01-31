@@ -814,7 +814,7 @@ namespace Pal98Timer
                             {
                                 isw.Dispose();
                             });
-                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中"进度一"后关闭此窗口";
+                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
                             isw.btnOK.Text = "我已读档";
                             isw.ShowDialog(f);
                             SetUIPause(false);
@@ -1096,7 +1096,7 @@ namespace Pal98Timer
                 {
                     if (!HasAlertMutiPal)
                     {
-                        cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
+                        //cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
                         HasAlertMutiPal = true;
                     }
                     return false;
@@ -1158,7 +1158,9 @@ namespace Pal98Timer
                     }
                     
                     // 检查是否包含DX9标识
-                    bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
+                    bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) ||
+                        (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("新补丁")) ||
+                        (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("(v")) ||
                                        (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
                     
                     // 检查是否是基础游戏标题（PAL.DLL还未修改标题，或VB4初始窗口）
@@ -1177,6 +1179,30 @@ namespace Pal98Timer
                             if (versionEndIndex != -1)
                             {
                                 DX9Version = windowTitle.Substring(versionStartIndex + 2, versionEndIndex - versionStartIndex - 2);
+                            }
+                        }
+                        else
+                        {
+                            int versionStartIndex_old1 = windowTitle.IndexOf("(新补丁");
+                            if (versionStartIndex_old1 != -1)
+                            {
+                                int versionEndIndex = windowTitle.IndexOf(" 测试版)", versionStartIndex_old1);
+                                if (versionEndIndex != -1)
+                                {
+                                    DX9Version = windowTitle.Substring(versionStartIndex_old1 + 4, versionEndIndex - versionStartIndex_old1 - 3);
+                                }
+                            }
+                            else 
+                            {
+                                int versionStartIndex_old2 = windowTitle.IndexOf("(");
+                                if (versionStartIndex_old2 != -1)
+                                {
+                                    int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex_old2);
+                                    if (versionEndIndex != -1)
+                                    {
+                                        DX9Version = windowTitle.Substring(versionStartIndex_old2, versionEndIndex - versionStartIndex_old2 - 3);
+                                    }
+                                }
                             }
                         }
                         
@@ -1208,14 +1234,14 @@ namespace Pal98Timer
                         else
                         {
                             // 超过宽限期仍未出现DX9标题，显示错误
-                            cryerror = "请使用仙剑98 DX9移植版！检测到基础游戏但未找到DX9标识";
+                            //cryerror = "请使用仙剑98 新补丁DX9移植版！检测到基础游戏但未找到DX9标识";
                             return false;
                         }
                     }
                     else
                     {
                         // 既不是DX9标题也不是基础游戏标题
-                        cryerror = "请使用仙剑98 DX9移植版！";
+                        //cryerror = "请使用仙剑98 新补丁DX9移植版！";
                         return false;
                     }
                 }
