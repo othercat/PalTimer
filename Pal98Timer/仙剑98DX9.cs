@@ -388,7 +388,7 @@ namespace Pal98Timer
         {
             if (PID != -1)
             {
-                return "新补丁 " + DX9Version;
+                return "仙剑98 新补丁 " + DX9Version;
             }
             else
             {
@@ -1109,7 +1109,8 @@ namespace Pal98Timer
                     string windowTitle = sb.ToString();
                     
                     // 功能1: 窗口标题识别
-                    if (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版"))
+                    if ((windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
+                        (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9")))
                     {
                         // 提取版本号
                         int versionStartIndex = windowTitle.IndexOf("(v");
