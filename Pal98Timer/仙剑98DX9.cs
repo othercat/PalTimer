@@ -74,6 +74,10 @@ namespace Pal98Timer
         private string CurrentNamedBattle = "";
         private string WillAppendNamedBattle = "";
 
+        private DateTime? InitialDetectionTime = null;  // 首次检测到游戏的时间
+        private bool HasConfirmedDX9 = false;  // 是否已确认DX9标题
+        private const int DX9TitleGracePeriodSeconds = 10;  // DX9标题出现的宽限期（秒）
+
         public 仙剑98DX9(GForm form) : base(form)
         {
             CoreName = "PAL98DX9";
@@ -417,6 +421,8 @@ namespace Pal98Timer
             ST.Reset();
             WillAppendNamedBattle = "";
             NamedBattleRes = new List<string>();
+            InitialDetectionTime = null;
+            HasConfirmedDX9 = false;
         }
 
         public override bool NeedBlockCtrlEnter()
@@ -1108,11 +1114,18 @@ namespace Pal98Timer
                     User32.GetWindowText(tempHandle, sb, sb.Capacity);
                     string windowTitle = sb.ToString();
                     
-                    // 功能1: 窗口标题识别
-                    if ((windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
-                        (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9")))
+                    // 检查是否包含DX9标识
+                    bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
+                                       (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
+                    
+                    // 检查是否是基础游戏标题（PAL.DLL还未修改标题）
+                    bool isBaseGameTitle = windowTitle.Contains("仙剑奇侠传") || 
+                                          windowTitle.StartsWith("PAL98") || 
+                                          windowTitle.StartsWith("Pal98");
+                    
+                    if (hasDX9Title)
                     {
-                        // 提取版本号
+                        // 找到DX9标题，提取版本号并连接
                         int versionStartIndex = windowTitle.IndexOf("(v");
                         if (versionStartIndex != -1)
                         {
@@ -1128,10 +1141,36 @@ namespace Pal98Timer
                         PID = PalProcess.Id;
                         PalHandle = new IntPtr(Kernel32.OpenProcess(0x1F0FFF, false, PID));
                         CalcPalMD5();
+                        HasConfirmedDX9 = true;
+                        InitialDetectionTime = null;  // 重置初始检测时间
                         return true;
+                    }
+                    else if (isBaseGameTitle)
+                    {
+                        // 检测到基础游戏标题，给PAL.DLL时间加载和修改标题
+                        if (InitialDetectionTime == null)
+                        {
+                            InitialDetectionTime = DateTime.Now;
+                        }
+                        
+                        TimeSpan elapsedTime = DateTime.Now - InitialDetectionTime.Value;
+                        
+                        if (elapsedTime.TotalSeconds < DX9TitleGracePeriodSeconds)
+                        {
+                            // 在宽限期内，暂时接受，并继续检测
+                            // 但不设置PID，这样下次还会重新检查标题
+                            return false;  // 返回false但不设置错误，继续等待
+                        }
+                        else
+                        {
+                            // 超过宽限期仍未出现DX9标题，显示错误
+                            cryerror = "请使用仙剑98 DX9移植版！检测到基础游戏但未找到DX9标识";
+                            return false;
+                        }
                     }
                     else
                     {
+                        // 既不是DX9标题也不是基础游戏标题
                         cryerror = "请使用仙剑98 DX9移植版！";
                         return false;
                     }
@@ -1140,6 +1179,33 @@ namespace Pal98Timer
                 {
                     if (PID == res[0].Id)
                     {
+                        // 已连接到游戏，但如果还没确认DX9，继续检查标题
+                        if (!HasConfirmedDX9)
+                        {
+                            IntPtr tempHandle = res[0].MainWindowHandle;
+                            StringBuilder sb = new StringBuilder(256);
+                            User32.GetWindowText(tempHandle, sb, sb.Capacity);
+                            string windowTitle = sb.ToString();
+                            
+                            bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
+                                               (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
+                            
+                            if (hasDX9Title)
+                            {
+                                // 提取版本号
+                                int versionStartIndex = windowTitle.IndexOf("(v");
+                                if (versionStartIndex != -1)
+                                {
+                                    int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex);
+                                    if (versionEndIndex != -1)
+                                    {
+                                        DX9Version = windowTitle.Substring(versionStartIndex + 2, versionEndIndex - versionStartIndex - 2);
+                                    }
+                                }
+                                HasConfirmedDX9 = true;
+                            }
+                        }
+                        
                         if (GMD5 == "none")
                         {
                             CalcPalMD5();
@@ -1154,6 +1220,8 @@ namespace Pal98Timer
                         PID = -1;
                         GMD5 = "none";
                         DX9Version = "未知";
+                        InitialDetectionTime = null;
+                        HasConfirmedDX9 = false;
                         return false;
                     }
                 }
@@ -1166,6 +1234,8 @@ namespace Pal98Timer
                 PID = -1;
                 GMD5 = "none";
                 DX9Version = "未知";
+                InitialDetectionTime = null;
+                HasConfirmedDX9 = false;
                 return false;
             }
         }
