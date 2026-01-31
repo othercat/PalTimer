@@ -1110,18 +1110,62 @@ namespace Pal98Timer
                 if (PID == -1)
                 {
                     IntPtr tempHandle = res[0].MainWindowHandle;
+                    
+                    // 处理窗口句柄可能为空的情况（窗口转换期间）
+                    if (tempHandle == IntPtr.Zero)
+                    {
+                        // 窗口正在转换，给予宽限期
+                        if (InitialDetectionTime == null)
+                        {
+                            InitialDetectionTime = DateTime.Now;
+                        }
+                        
+                        TimeSpan elapsedTime = DateTime.Now - InitialDetectionTime.Value;
+                        if (elapsedTime.TotalSeconds < DX9TitleGracePeriodSeconds)
+                        {
+                            return false;  // 继续等待，不显示错误
+                        }
+                        else
+                        {
+                            cryerror = "请使用仙剑98 DX9移植版！窗口句柄无效";
+                            return false;
+                        }
+                    }
+                    
                     StringBuilder sb = new StringBuilder(256);
                     User32.GetWindowText(tempHandle, sb, sb.Capacity);
                     string windowTitle = sb.ToString();
+                    
+                    // 处理窗口标题为空或仅包含空白字符的情况（窗口转换期间）
+                    if (string.IsNullOrWhiteSpace(windowTitle))
+                    {
+                        // 窗口标题为空，可能正在转换
+                        if (InitialDetectionTime == null)
+                        {
+                            InitialDetectionTime = DateTime.Now;
+                        }
+                        
+                        TimeSpan elapsedTime = DateTime.Now - InitialDetectionTime.Value;
+                        if (elapsedTime.TotalSeconds < DX9TitleGracePeriodSeconds)
+                        {
+                            return false;  // 继续等待，不显示错误
+                        }
+                        else
+                        {
+                            cryerror = "请使用仙剑98 DX9移植版！无法获取窗口标题";
+                            return false;
+                        }
+                    }
                     
                     // 检查是否包含DX9标识
                     bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) || 
                                        (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
                     
-                    // 检查是否是基础游戏标题（PAL.DLL还未修改标题）
+                    // 检查是否是基础游戏标题（PAL.DLL还未修改标题，或VB4初始窗口）
                     bool isBaseGameTitle = windowTitle.Contains("仙剑奇侠传") || 
                                           windowTitle.StartsWith("PAL98") || 
-                                          windowTitle.StartsWith("Pal98");
+                                          windowTitle.StartsWith("Pal98") ||
+                                          windowTitle.Equals("sdf", StringComparison.OrdinalIgnoreCase);  // VB4初始窗口
                     
                     if (hasDX9Title)
                     {
