@@ -1035,9 +1035,11 @@ namespace Pal98Timer
         }
         private void BuildRects()
         {
-            ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
-            ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.7F), 26);
-            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - 2 * rcGameVersion.X - rcGameVersion.Width, rcGameVersion.Height);
+            // Top section: Make all three columns stretch proportionally with window width
+            // Title takes 35% on the left, GameVersion takes 40%, Version fills the rest
+            ModifyRect(ref rcTitle, 5, 5, GEX.GDIMulti(Width, 0.35F), 26);
+            ModifyRect(ref rcGameVersion, rcTitle.X + rcTitle.Width, 31, GEX.GDIMulti(Width, 0.40F), 26);
+            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - rcGameVersion.X - rcGameVersion.Width - 5, rcGameVersion.Height);
             ModifyRect(ref rcBL, 5, Height - 26, GEX.GDIMulti(Width, 0.4F), 26);
             ModifyRect(ref rcBR, rcBL.X + rcBL.Width, rcBL.Y, Width - 2 * rcBL.X - rcBL.Width, rcBL.Height);
 
@@ -2428,11 +2430,11 @@ namespace Pal98Timer
                 }
                 if (isInCheck)
                 {
-                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 else
                 {
-                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
