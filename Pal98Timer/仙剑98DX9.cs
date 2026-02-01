@@ -399,7 +399,7 @@ namespace Pal98Timer
         {
             if (PID != -1)
             {
-                return "仙剑98原版 2025新补丁 " + DX9Version;
+                return "仙剑98原版 新补丁 " + DX9Version;
             }
             else
             {
