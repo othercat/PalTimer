@@ -1651,5 +1651,43 @@ namespace Pal98Timer
         {
             return MT.CurrentTS.Ticks.ToString() + "," + ST.CurrentTS.Ticks.ToString() + "," + BattleLong.Ticks.ToString();
         }
+
+        // Override LoadPlugins to also load PAL98 plugins for compatibility
+        public override void LoadPlugins()
+        {
+            // First load PAL98DX9-specific plugins
+            base.LoadPlugins();
+            
+            // Then also load PAL98 plugins for compatibility
+            // This allows PAL98 plugins (like bottom-left money/item display) to work with DX9
+            string pluginPath = TimerPluginBase.TimerPluginPackageInfo.GetPluginDir();
+            if (!System.IO.Directory.Exists(pluginPath)) return;
+            
+            System.IO.DirectoryInfo root = new System.IO.DirectoryInfo(pluginPath);
+            System.IO.FileInfo[] files = root.GetFiles();
+            foreach (var f in files)
+            {
+                string sn = f.FullName.Replace(pluginPath, "");
+                if (sn.StartsWith("PAL98.") && sn.EndsWith(".tpg"))
+                {
+                    string tpsfile = f.FullName;
+                    if (System.IO.File.Exists(tpsfile))
+                    {
+                        try
+                        {
+                            // Use reflection to call private _loadOnePlugin method
+                            var method = typeof(TimerCore).GetMethod("_loadOnePlugin", 
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (method != null)
+                            {
+                                method.Invoke(this, new object[] { tpsfile });
+                            }
+                        }
+                        catch
+                        { }
+                    }
+                }
+            }
+        }
     }
 }
