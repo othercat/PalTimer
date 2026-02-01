@@ -441,17 +441,17 @@ namespace Pal98Timer
         public override string GetMoreInfo()
         {
             // 在战斗中显示实时数据（功能2）
-            short displayHCG = MaxHCG + (IsInBattle ? CurrentBattleHCG : (short)0);
-            short displayXLL = MaxXLL + (IsInBattle ? CurrentBattleXLL : (short)0);
-            short displayLQJ = MaxLQJ + (IsInBattle ? CurrentBattleLQJ : (short)0);
+            int displayHCG = MaxHCG + (IsInBattle ? CurrentBattleHCG : (int)0);
+            int displayXLL = MaxXLL + (IsInBattle ? CurrentBattleXLL : (int)0);
+            int displayLQJ = MaxLQJ + (IsInBattle ? CurrentBattleLQJ : (int)0);
             
             if (IsShowSpeed)
             {
-                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount.ToString("D3");
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
             else
             {
-                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount.ToString("D3");
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
         }
 

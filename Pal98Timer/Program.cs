@@ -23,7 +23,7 @@ namespace Pal98Timer
             {
                 if (!createdNew)
                 {
-                    MessageBox.Show("仙剑98计时器已经在运行中！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("自动计时器已经在运行中！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
