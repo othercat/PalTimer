@@ -1125,23 +1125,15 @@ namespace Pal98Timer
                 }
                 
                 // Measure best time column (format: "00:23:42" or similar)
-                string bestText = "00:00:00"; // Default template
-                if (!string.IsNullOrEmpty(item.BestStr))
-                {
-                    bestText = item.BestStr;
-                }
+                string bestText = TS2HHMMSS(item.Best);
                 SizeF bestSize = CG.MeasureString(bestText, bb.CPBestFont);
                 if (bestSize.Width > maxBestWidth)
                 {
                     maxBestWidth = bestSize.Width;
                 }
                 
-                // Measure current time column (format: "00:23:42 43" with delta)
-                string curText = "00:00:00 00"; // Default template
-                if (!string.IsNullOrEmpty(item.CurrentStr))
-                {
-                    curText = item.CurrentStr;
-                }
+                // Measure current time column (format: "00:23:42.67" with milliseconds)
+                string curText = TS2HHMMSSFF(item.Cur);
                 SizeF curSize = CG.MeasureString(curText, bb.CPCurFont);
                 if (curSize.Width > maxCurWidth)
                 {
