@@ -1042,7 +1042,7 @@ namespace Pal98Timer
             ModifyRect(ref rcBR, rcBL.X + rcBL.Width, rcBL.Y, Width - 2 * rcBL.X - rcBL.Width, rcBL.Height);
 
             ModifyRect(ref rcMoreInfo, 5, Height - 100, Width - 10, 26);
-            ModifyRect(ref rcMainTimer, 20, Height - 150, Width - 65, 50);
+            ModifyRect(ref rcMainTimer, 0, Height - 150, Width - 45, 50);
             ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 25 - rcMainTimer.Width, rcMainTimer.Height);
             ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
 
