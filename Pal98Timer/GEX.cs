@@ -1089,10 +1089,9 @@ namespace Pal98Timer
                 ModifyRect(ref rcItemScroll, 0, 0, 0, 0);
             }
             
-            // Calculate adaptive width for name column based on actual text content
-            int nameWidth = CalculateOptimalNameWidth(rcItems.Width);
-            int bestWidth = GEX.GDIMulti(rcItems.Width, 0.12F);
-            int curWidth = rcItems.Width - nameWidth - bestWidth;
+            // Calculate adaptive widths for all three columns based on actual text content
+            int nameWidth, bestWidth, curWidth;
+            CalculateOptimalColumnWidths(rcItems.Width, out nameWidth, out bestWidth, out curWidth);
             
             ModifyRect(ref rcIName, rcItems.X, 0, nameWidth, bb.ItemHeight);
             ModifyRect(ref rcIBest, rcItems.X + nameWidth, 0, bestWidth, bb.ItemHalfHeight);
@@ -1100,43 +1099,86 @@ namespace Pal98Timer
             ModifyRect(ref rcICur, rcItems.X + nameWidth + bestWidth, 0, curWidth, bb.ItemHeight);
         }
         
-        private int CalculateOptimalNameWidth(int totalWidth)
+        private void CalculateOptimalColumnWidths(int totalWidth, out int nameWidth, out int bestWidth, out int curWidth)
         {
-            // If no graphics context or no items, use reasonable default (50% instead of 65%)
+            // If no graphics context or no items, use reasonable defaults
             if (CG == null || itemList.Count == 0)
             {
-                return GEX.GDIMulti(totalWidth, 0.50F);
+                nameWidth = GEX.GDIMulti(totalWidth, 0.50F);
+                bestWidth = GEX.GDIMulti(totalWidth, 0.12F);
+                curWidth = totalWidth - nameWidth - bestWidth;
+                return;
             }
             
-            // Measure the widest checkpoint name
-            float maxTextWidth = 0;
+            // Measure the widest text in each column
+            float maxNameWidth = 0;
+            float maxBestWidth = 0;
+            float maxCurWidth = 0;
+            
             foreach (GItem item in itemList)
             {
-                SizeF textSize = CG.MeasureString(item.Name, bb.CPNameFont);
-                if (textSize.Width > maxTextWidth)
+                // Measure name column
+                SizeF nameSize = CG.MeasureString(item.Name, bb.CPNameFont);
+                if (nameSize.Width > maxNameWidth)
                 {
-                    maxTextWidth = textSize.Width;
+                    maxNameWidth = nameSize.Width;
+                }
+                
+                // Measure best time column (format: "00:23:42" or similar)
+                string bestText = "00:00:00"; // Default template
+                if (!string.IsNullOrEmpty(item.BestStr))
+                {
+                    bestText = item.BestStr;
+                }
+                SizeF bestSize = CG.MeasureString(bestText, bb.CPBestFont);
+                if (bestSize.Width > maxBestWidth)
+                {
+                    maxBestWidth = bestSize.Width;
+                }
+                
+                // Measure current time column (format: "00:23:42 43" with delta)
+                string curText = "00:00:00 00"; // Default template
+                if (!string.IsNullOrEmpty(item.CurrentStr))
+                {
+                    curText = item.CurrentStr;
+                }
+                SizeF curSize = CG.MeasureString(curText, bb.CPCurFont);
+                if (curSize.Width > maxCurWidth)
+                {
+                    maxCurWidth = curSize.Width;
                 }
             }
             
-            // Add padding (20% extra for comfort)
-            int calculatedWidth = (int)(maxTextWidth * 1.2F);
+            // Add padding: 20% for names (relatively static), 30% for times (can change)
+            int calculatedName = (int)(maxNameWidth * 1.2F);
+            int calculatedBest = (int)(maxBestWidth * 1.3F);
+            int calculatedCur = (int)(maxCurWidth * 1.3F);
             
-            // Apply constraints: min 30%, max 55% of total width
-            int minWidth = GEX.GDIMulti(totalWidth, 0.30F);
-            int maxWidth = GEX.GDIMulti(totalWidth, 0.55F);
+            // Apply per-column constraints
+            // Name: min 25%, max 55%
+            int minName = GEX.GDIMulti(totalWidth, 0.25F);
+            int maxName = GEX.GDIMulti(totalWidth, 0.55F);
+            nameWidth = Math.Max(minName, Math.Min(maxName, calculatedName));
             
-            if (calculatedWidth < minWidth)
+            // Best: min 10%, max 25%
+            int minBest = GEX.GDIMulti(totalWidth, 0.10F);
+            int maxBest = GEX.GDIMulti(totalWidth, 0.25F);
+            bestWidth = Math.Max(minBest, Math.Min(maxBest, calculatedBest));
+            
+            // Current: min 20%, max 50%
+            int minCur = GEX.GDIMulti(totalWidth, 0.20F);
+            int maxCur = GEX.GDIMulti(totalWidth, 0.50F);
+            curWidth = Math.Max(minCur, Math.Min(maxCur, calculatedCur));
+            
+            // Check if total exceeds available width and scale proportionally if needed
+            int total = nameWidth + bestWidth + curWidth;
+            if (total > totalWidth)
             {
-                return minWidth;
-            }
-            else if (calculatedWidth > maxWidth)
-            {
-                return maxWidth;
-            }
-            else
-            {
-                return calculatedWidth;
+                // Scale all columns proportionally to fit
+                float scale = (float)totalWidth / (float)total;
+                nameWidth = (int)(nameWidth * scale);
+                bestWidth = (int)(bestWidth * scale);
+                curWidth = totalWidth - nameWidth - bestWidth; // Ensure exact fit
             }
         }
         public GBoardChanger CurrentEdit = null;
