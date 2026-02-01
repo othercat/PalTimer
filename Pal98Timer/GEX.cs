@@ -1036,8 +1036,8 @@ namespace Pal98Timer
         private void BuildRects()
         {
             ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
-            ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.7F), 26);
-            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - 2 * rcGameVersion.X - rcGameVersion.Width, rcGameVersion.Height);
+            ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.6F), 26);
+            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - rcGameVersion.X - rcGameVersion.Width - 5, rcGameVersion.Height);
             ModifyRect(ref rcBL, 5, Height - 26, GEX.GDIMulti(Width, 0.4F), 26);
             ModifyRect(ref rcBR, rcBL.X + rcBL.Width, rcBL.Y, Width - 2 * rcBL.X - rcBL.Width, rcBL.Height);
 
