@@ -1088,8 +1088,9 @@ namespace Pal98Timer
                 ModifyRect(ref rcItems, 0, 95, Width, Height - 200 - 95);
                 ModifyRect(ref rcItemScroll, 0, 0, 0, 0);
             }
-            // Make all three columns proportional for proper scaling
-            int nameWidth = GEX.GDIMulti(rcItems.Width, 0.65F);
+            
+            // Calculate adaptive width for name column based on actual text content
+            int nameWidth = CalculateOptimalNameWidth(rcItems.Width);
             int bestWidth = GEX.GDIMulti(rcItems.Width, 0.12F);
             int curWidth = rcItems.Width - nameWidth - bestWidth;
             
@@ -1097,6 +1098,46 @@ namespace Pal98Timer
             ModifyRect(ref rcIBest, rcItems.X + nameWidth, 0, bestWidth, bb.ItemHalfHeight);
             ModifyRect(ref rcICha, rcIBest.X, bb.ItemHalfHeight, rcIBest.Width, bb.ItemHeight - bb.ItemHalfHeight);
             ModifyRect(ref rcICur, rcItems.X + nameWidth + bestWidth, 0, curWidth, bb.ItemHeight);
+        }
+        
+        private int CalculateOptimalNameWidth(int totalWidth)
+        {
+            // If no graphics context or no items, use reasonable default (50% instead of 65%)
+            if (CG == null || itemList.Count == 0)
+            {
+                return GEX.GDIMulti(totalWidth, 0.50F);
+            }
+            
+            // Measure the widest checkpoint name
+            float maxTextWidth = 0;
+            foreach (GItem item in itemList)
+            {
+                SizeF textSize = CG.MeasureString(item.Name, bb.CPNameFont);
+                if (textSize.Width > maxTextWidth)
+                {
+                    maxTextWidth = textSize.Width;
+                }
+            }
+            
+            // Add padding (20% extra for comfort)
+            int calculatedWidth = (int)(maxTextWidth * 1.2F);
+            
+            // Apply constraints: min 30%, max 55% of total width
+            int minWidth = GEX.GDIMulti(totalWidth, 0.30F);
+            int maxWidth = GEX.GDIMulti(totalWidth, 0.55F);
+            
+            if (calculatedWidth < minWidth)
+            {
+                return minWidth;
+            }
+            else if (calculatedWidth > maxWidth)
+            {
+                return maxWidth;
+            }
+            else
+            {
+                return calculatedWidth;
+            }
         }
         public GBoardChanger CurrentEdit = null;
         public delegate void delOnEditCurrentChanged(GBoardChanger gbc);
