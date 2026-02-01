@@ -2394,11 +2394,11 @@ namespace Pal98Timer
                 }
                 if (isInCheck)
                 {
-                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 else
                 {
-                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
