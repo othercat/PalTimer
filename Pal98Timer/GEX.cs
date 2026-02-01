@@ -857,8 +857,8 @@ namespace Pal98Timer
                         g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcName, rcBest });
                     }
 
-                    GEX.DrawText(g, _name, bb.CPNameFont, bb.CPNameFill, bb.CPNameBorder, rcName, GLayout.sfCC);
-                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bb.CPBestFill, bb.CPBestBorder, rcBest, GLayout.sfFC);
+                    GEX.DrawText(g, _name, bb.CPNameFont, bb.CPNameFill, bb.CPNameBorder, rcName, GLayout.sfNC);
+                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bb.CPBestFill, bb.CPBestBorder, rcBest, GLayout.sfCC);
                     if (!isForceDrawAll)
                     {
                         ur?.Invoke(rcName);
@@ -888,21 +888,21 @@ namespace Pal98Timer
                             //快
                             fill = bb.CPGoodFill;
                             border = bb.CPGoodBorder;
-                            GEX.DrawText(g, _cha.Hours == 0 ? ("-" + TS2MSS(_cha)) : ("-" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                            GEX.DrawText(g, _cha.Hours == 0 ? ("-" + TS2MSS(_cha)) : ("-" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfCC);
                         }
                         else if (_cha.Ticks > 10000000)
                         {
                             //慢
                             fill = bb.CPBadFill;
                             border = bb.CPBadBorder;
-                            GEX.DrawText(g, _cha.Hours == 0 ? ("+" + TS2MSS(_cha)) : ("+" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                            GEX.DrawText(g, _cha.Hours == 0 ? ("+" + TS2MSS(_cha)) : ("+" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfCC);
                         }
                         else
                         {
                             //同
                             fill = bb.CPSameFill;
                             border = bb.CPSameBorder;
-                            GEX.DrawText(g, "0:00", bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                            GEX.DrawText(g, "0:00", bb.CPChaFont, fill, border, rcCha, GLayout.sfCC);
                         }
 
                         GEX.DrawText(g, TS2HHMMSSFF(_cur), bb.CPCurFont, fill, border, rcCur, GLayout.sfFC);
