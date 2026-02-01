@@ -52,6 +52,7 @@
             this.txtDes.Name = "txtDes";
             this.txtDes.Size = new System.Drawing.Size(100, 21);
             this.txtDes.TabIndex = 3;
+            this.txtDes.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             // 
             // numHour
             // 
