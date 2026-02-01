@@ -78,6 +78,13 @@ namespace Pal98Timer
         private bool HasConfirmedDX9 = false;  // 是否已确认DX9标题
         private const int DX9TitleGracePeriodSeconds = 10;  // DX9标题出现的宽限期（秒）
 
+        private int TotalMonsterCount = 0;  // 撞怪总数
+        
+        // 战斗中实时显示用的临时变量（功能2）
+        private short CurrentBattleHCG = 0;  // 当前战斗中获得的火虫草
+        private short CurrentBattleXLL = 0;  // 当前战斗中获得的血玲珑
+        private short CurrentBattleLQJ = 0;  // 当前战斗中获得的龙泉剑
+
         public 仙剑98DX9(GForm form) : base(form)
         {
             CoreName = "PAL98DX9";
@@ -423,6 +430,7 @@ namespace Pal98Timer
             NamedBattleRes = new List<string>();
             InitialDetectionTime = null;
             HasConfirmedDX9 = false;
+            TotalMonsterCount = 0;  // 重置撞怪计数器
         }
 
         public override bool NeedBlockCtrlEnter()
@@ -432,13 +440,18 @@ namespace Pal98Timer
 
         public override string GetMoreInfo()
         {
+            // 在战斗中显示实时数据（功能2）
+            short displayHCG = MaxHCG + (IsInBattle ? CurrentBattleHCG : (short)0);
+            short displayXLL = MaxXLL + (IsInBattle ? CurrentBattleXLL : (short)0);
+            short displayLQJ = MaxLQJ + (IsInBattle ? CurrentBattleLQJ : (short)0);
+            
             if (IsShowSpeed)
             {
-                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + MaxHCG + " 血" + MaxXLL + " 夜" + MaxYXY + " 剑" + MaxLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount.ToString("D3");
             }
             else
             {
-                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + MaxHCG + " 血" + MaxXLL + " 夜" + MaxYXY + " 剑" + MaxLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount.ToString("D3");
             }
         }
 
@@ -1449,11 +1462,23 @@ namespace Pal98Timer
             BattleLong = new TimeSpan(0);
             InBattleTime = DateTime.Now;
             biw = new BattleItemWatch();
+            TotalMonsterCount++;  // 撞怪计数器增加
+            
+            // 重置战斗中实时显示的临时变量（功能2）
+            CurrentBattleHCG = 0;
+            CurrentBattleXLL = 0;
+            CurrentBattleLQJ = 0;
+            
             if (CurrentStep <= 5)
             {
                 //战斗前记录下个数
                 biw.Insert(0x73, GameObj.GetItemCount(0x73));//蜂
                 biw.Insert(0x83, GameObj.GetItemCount(0x83));//蜜
+                biw.Insert(0x8F, GameObj.GetItemCount(0x8F));//火
+            }
+            else
+            {
+                // 如果不在前5关，也要记录火虫草的初始值以便实时统计
                 biw.Insert(0x8F, GameObj.GetItemCount(0x8F));//火
             }
             biw.Insert(0xB8, GameObj.GetItemCount(0xB8));//龙泉剑
@@ -1468,12 +1493,12 @@ namespace Pal98Timer
         private void Battling()
         {
             BattleLong = DateTime.Now - InBattleTime;
-            /*if (CurrentStep <= 5)
-            {
-                //战斗中每隔100毫秒算下差
-                biw.SetCount(GameObj);
-            }*/
             biw.SetCount(GameObj);
+            
+            // 实时更新火、血、剑的数量（功能2）
+            CurrentBattleHCG = biw.GettedCount(0x8F);  // 火虫草
+            CurrentBattleXLL = biw.GettedCount(0xA2);  // 血玲珑
+            CurrentBattleLQJ = biw.GettedCount(0xB8);  // 龙泉剑
         }
 
         private void BattleEnd()
@@ -1503,8 +1528,10 @@ namespace Pal98Timer
                 //将算出来的差加入显示
                 MaxFC += biw.GettedCount(0x73);
                 MaxFM += biw.GettedCount(0x83);
+                // MaxHCG 已在Battling中实时更新，这里累加最终值
                 MaxHCG += biw.GettedCount(0x8F);
             }
+            // MaxLQJ 和 MaxXLL 已在Battling中实时更新，这里累加最终值
             MaxLQJ += biw.GettedCount(0xB8);
             MaxXLL += biw.GettedCount(0xA2);
             MaxYXY += biw.GettedCount(0xD4);
@@ -1555,6 +1582,7 @@ namespace Pal98Timer
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
             exdata["DX9Version"] = DX9Version;
+            exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
 
             string namedbattles = "";
             foreach (string nmb in NamedBattleRes)
