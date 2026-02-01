@@ -1660,7 +1660,7 @@ namespace Pal98Timer
             
             // Then also load PAL98 plugins for compatibility
             // This allows PAL98 plugins (like bottom-left money/item display) to work with DX9
-            string pluginPath = TimerPluginBase.TimerPluginPackageInfo.GetPluginDir();
+            string pluginPath = TimerPluginPackageInfo.GetPluginDir();
             if (!System.IO.Directory.Exists(pluginPath)) return;
             
             System.IO.DirectoryInfo root = new System.IO.DirectoryInfo(pluginPath);
