@@ -1088,10 +1088,15 @@ namespace Pal98Timer
                 ModifyRect(ref rcItems, 0, 95, Width, Height - 200 - 95);
                 ModifyRect(ref rcItemScroll, 0, 0, 0, 0);
             }
-            ModifyRect(ref rcIName, rcItems.X, 0, rcItems.Width - 170, bb.ItemHeight);
-            ModifyRect(ref rcIBest, rcItems.X + rcItems.Width - 170, 0, 60, bb.ItemHalfHeight);
-            ModifyRect(ref rcICha, rcIBest.X, 0, rcIBest.Width, bb.ItemHeight - bb.ItemHalfHeight);
-            ModifyRect(ref rcICur, rcItems.X + rcItems.Width - 110, 0, 110, bb.ItemHeight);
+            // Make all three columns proportional for proper scaling
+            int nameWidth = GEX.GDIMulti(rcItems.Width, 0.65F);
+            int bestWidth = GEX.GDIMulti(rcItems.Width, 0.12F);
+            int curWidth = rcItems.Width - nameWidth - bestWidth;
+            
+            ModifyRect(ref rcIName, rcItems.X, 0, nameWidth, bb.ItemHeight);
+            ModifyRect(ref rcIBest, rcItems.X + nameWidth, 0, bestWidth, bb.ItemHalfHeight);
+            ModifyRect(ref rcICha, rcIBest.X, bb.ItemHalfHeight, rcIBest.Width, bb.ItemHeight - bb.ItemHalfHeight);
+            ModifyRect(ref rcICur, rcItems.X + nameWidth + bestWidth, 0, curWidth, bb.ItemHeight);
         }
         public GBoardChanger CurrentEdit = null;
         public delegate void delOnEditCurrentChanged(GBoardChanger gbc);
