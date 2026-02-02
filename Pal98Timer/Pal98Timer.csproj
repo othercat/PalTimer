@@ -179,6 +179,7 @@
       <DependentUpon>PluginMgrForm.cs</DependentUpon>
     </Compile>
     <Compile Include="仙剑5前传.cs" />
+    <Compile Include="仙剑98DX9不欢乐模式.cs" />
     <Compile Include="仙剑98官方Steam.cs" />
     <Compile Include="仙剑二官方Steam.cs" />
     <Compile Include="古剑2官方.cs" />
