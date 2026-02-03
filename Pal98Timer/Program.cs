@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 
 namespace Pal98Timer
 {
@@ -16,13 +17,27 @@ namespace Pal98Timer
         [STAThread]
         static void Main()
         {
-            ClearTmpBG();
-            UpdateBestFiles();
-            KeyChangerDel.Open();
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new GForm());
-            //Application.Run(new BestEditForm("CUSTOM"));
+            // 功能3：单实例检查
+            bool createdNew;
+            using (Mutex mutex = new Mutex(true, "Pal98Timer_SingleInstance_Mutex", out createdNew))
+            {
+                if (!createdNew)
+                {
+                    MessageBox.Show("自动计时器已经在运行中！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                ClearTmpBG();
+                UpdateBestFiles();
+                KeyChangerDel.Open();
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new GForm());
+                //Application.Run(new BestEditForm("CUSTOM"));
+                
+                // 保持mutex直到程序退出
+                GC.KeepAlive(mutex);
+            }
         }
         static void ClearTmpBG()
         {

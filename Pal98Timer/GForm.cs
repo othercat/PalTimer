@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.34.1";
+        public const string CurrentVersion = "3.35.3";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -130,7 +130,7 @@ namespace Pal98Timer
             }
             catch (Exception ex)
             {
-                LoadCore(new 仙剑98柔情(this));
+                LoadCore(new 仙剑98DX9(this));
             }
             
             rr.SetVersion(CurrentVersion);
@@ -534,9 +534,11 @@ namespace Pal98Timer
                         if (KeyChangerDel.IsEnable())
                         {
                             KeyChangerDel.Disable();
+                            KeyChangerDel.Close();  // 功能4：关闭KEYCHANGER.EXE进程
                         }
                         else
                         {
+                            KeyChangerDel.Open();  // 功能4：重新打开KEYCHANGER.EXE
                             KeyChangerDel.Enable();
                         }
                         ShowKCEnable();
