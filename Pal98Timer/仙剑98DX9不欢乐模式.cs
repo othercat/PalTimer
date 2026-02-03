@@ -104,7 +104,7 @@ namespace Pal98Timer
                     if (PositionAroundCheck(2, 1216, 160))
                     {
                         short value = 0;
-                        if (GameObj.Items.TryGetValue(260, out value))
+                        if (GameObj.Items.TryGetValue(274, out value))
                         {
                             if (value == 1)
                             {
