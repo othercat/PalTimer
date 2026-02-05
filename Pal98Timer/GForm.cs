@@ -404,8 +404,18 @@ namespace Pal98Timer
         public void ShowConfigs()
         {
             rr?.SetTitle(MConfig.ins.Title);
-            rr?.SetBL(MConfig.ins.Luck(true));
-            rr?.SetBR(MConfig.ins.ColorEgg);
+            
+            // Only set BL to Luck if there's no active BL plugin
+            if (!core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
+            {
+                rr?.SetBL(MConfig.ins.Luck(true));
+            }
+            
+            // Only set BR to ColorEgg if there's no active BR plugin
+            if (!core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
+            {
+                rr?.SetBR(MConfig.ins.ColorEgg);
+            }
             
             /*lblMTFront.ForeColor = MConfig.ins.MainColor;
             lblMTBack.ForeColor = MConfig.ins.MainColor;
