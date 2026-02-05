@@ -2263,7 +2263,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, close_rc, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, close_rc, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 var mode = g.SmoothingMode;
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
@@ -2283,7 +2284,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, config_rc, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, config_rc, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 if (configIcon != null)
                 {
@@ -2319,7 +2321,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcGameVersion, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcGameVersion, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, GameVersion, bb.GVersionFont, bb.GVersionFill, bb.GVersionBorder, rcGameVersion, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2335,7 +2338,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcVersion, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcVersion, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, Version, bb.VersionFont, bb.VersionFill, bb.VersionBorder, rcVersion, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2351,7 +2355,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcBL, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcBL, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, BL, bb.BLFont, bb.BLFill, bb.BLBorder, rcBL, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2367,7 +2372,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcBR, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcBR, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, BR, bb.BRFont, bb.BRFill, bb.BRBorder, rcBR, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2383,7 +2389,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMoreInfo, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcMoreInfo, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, MoreInfo, bb.MoreInfoFont, bb.MoreInfoFill, bb.MoreInfoBorder, rcMoreInfo, GLayout.sfCC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2399,7 +2406,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMainTimer, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcMainTimer, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 if (isInCheck)
                 {
@@ -2421,7 +2429,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMainTimerMS, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcMainTimerMS, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, MainTimer.Milliseconds.ToString().PadLeft(3, '0').Substring(0, 2), bb.MainTimerMSFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimerMS, GLayout.sfFN);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2437,7 +2446,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcSubTimer, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcSubTimer, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, SubTimer, bb.SubTimerFont, bb.SubTimerFill, bb.SubTimerBorder, rcSubTimer, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2453,7 +2463,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcOutTimer, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcOutTimer, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, OutTimer, bb.OutTimerFont, bb.OutTimerFill, bb.OutTimerBorder, rcOutTimer, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2469,7 +2480,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcWillClear, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcWillClear, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, WillClear, bb.WillClearFont, bb.WillClearFill, bb.WillClearBorder, rcWillClear, GLayout.sfNC);
                 GEX.DrawText(g, PointSpan, bb.WillClearFont, bb.WillClearFill, bb.WillClearBorder, rcWillClear, GLayout.sfFC);
@@ -2486,7 +2498,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, btn_rc, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, btn_rc, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 isForceDrawAll = true;
             }
@@ -2513,7 +2526,8 @@ namespace Pal98Timer
                 {
                     ret = true;
                     ModifyRect(ref rc, startX + p * (GBtn.Margin + GBtn.Width), btn_rc.Y, GBtn.Width, btn_rc.Height);
-                    GEX.ClearRect(g, rc, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rc, bg, Width, Height, TransparencyValue, opaqueContent);
                     cur.Draw(g, rc, bb);
                     if (!isForceDrawAll)
                     {
@@ -2535,7 +2549,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcDots, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcDots, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 if (LastDots != null)
                 {
@@ -2595,11 +2610,13 @@ namespace Pal98Timer
             {
                 if ((!isSizeChanged && !isBGChanged) || isBBChanged)
                 {
-                    GEX.ClearRect(g, rcItems, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcItems, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 if (!isSizeChanged && !isBGChanged && isItemScroll && rcItemScroll.Width > 0)
                 {
-                    GEX.ClearRect(g, rcItemScroll, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcItemScroll, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 isForceDrawAll = true;
             }
@@ -2637,7 +2654,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcIsC, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcIsC, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 if (isC)
                 {
