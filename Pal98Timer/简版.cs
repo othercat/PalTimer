@@ -135,7 +135,7 @@ namespace Pal98Timer
 
         private void BtnSwitch_Click(object sender, EventArgs e)
         {
-            LoadCore(new 仙剑98DX9(form));
+            LoadCore(new 仙剑98柔情DX9(form));
         }
 
         private bool IsBegin = false;

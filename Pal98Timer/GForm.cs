@@ -7,16 +7,29 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 using PalCloudLib;
+using System.Runtime.InteropServices;
 
 namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.35.3";
+        public const string CurrentVersion = "3.35.4";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
+        private int transparencyValue = 100; // 透明度 0-100, 100为不透明
+        private bool opaqueText = false; // 字体是否不透明，默认false（字体随窗体透明）
+        private bool opaqueGraphics = false; // 图形是否不透明，默认false（图形随窗体透明）
+
+        // WinAPI for per-pixel alpha transparency
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_LAYERED = 0x80000;
 
         public GRender rr;
         public GRender.GBtn btnPause;
@@ -130,17 +143,19 @@ namespace Pal98Timer
             }
             catch (Exception ex)
             {
-                LoadCore(new 仙剑98DX9(this));
+                LoadCore(new 仙剑98柔情DX9(this));
             }
             
             rr.SetVersion(CurrentVersion);
 
             ShowKCEnable();
+            LoadTransparency();
         }
 
         private void GForm_Shown(object sender, EventArgs e)
         {
             this.SetDesktopBounds(locx, locy, this.Width, this.Height);
+            UpdateTransparency();
         }
 
         private void InitCloud()
@@ -401,8 +416,18 @@ namespace Pal98Timer
         public void ShowConfigs()
         {
             rr?.SetTitle(MConfig.ins.Title);
-            rr?.SetBL(MConfig.ins.Luck(true));
-            rr?.SetBR(MConfig.ins.ColorEgg);
+            
+            // Only set BL to Luck if there's no active BL plugin
+            if (!core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
+            {
+                rr?.SetBL(MConfig.ins.Luck(true));
+            }
+            
+            // Only set BR to ColorEgg if there's no active BR plugin
+            if (!core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
+            {
+                rr?.SetBR(MConfig.ins.ColorEgg);
+            }
             
             /*lblMTFront.ForeColor = MConfig.ins.MainColor;
             lblMTBack.ForeColor = MConfig.ins.MainColor;
@@ -875,6 +900,167 @@ namespace Pal98Timer
         {
             btnShowPSInDots.Checked = !btnShowPSInDots.Checked;
             IsShowPSInDots = btnShowPSInDots.Checked;
+        }
+
+        private void LoadTransparency()
+        {
+            string transparencyFile = "transparency";
+            try
+            {
+                if (File.Exists(transparencyFile))
+                {
+                    string content = File.ReadAllText(transparencyFile);
+                    // 格式: "透明度值,字体是否不透明,图形是否不透明" 例如: "50,true,false"
+                    // 或旧格式: "50,true" 或 "50"
+                    string[] parts = content.Split(',');
+                    if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out int value))
+                    {
+                        transparencyValue = Math.Max(0, Math.Min(100, value));
+                    }
+                    if (parts.Length >= 2 && bool.TryParse(parts[1].Trim(), out bool opaqueTextValue))
+                    {
+                        opaqueText = opaqueTextValue;
+                    }
+                    if (parts.Length >= 3 && bool.TryParse(parts[2].Trim(), out bool opaqueGraphicsValue))
+                    {
+                        opaqueGraphics = opaqueGraphicsValue;
+                    }
+                }
+            }
+            catch { }
+            UpdateTransparencyText();
+        }
+
+        private void SaveTransparency()
+        {
+            string transparencyFile = "transparency";
+            try
+            {
+                // 保存格式: "透明度值,字体是否不透明,图形是否不透明"
+                string content = transparencyValue.ToString() + "," + 
+                                opaqueText.ToString().ToLower() + "," + 
+                                opaqueGraphics.ToString().ToLower();
+                File.WriteAllText(transparencyFile, content);
+            }
+            catch { }
+        }
+
+        private void UpdateTransparency()
+        {
+            // 如果没有开启任何"不透明"选项，使用标准透明度
+            if (!opaqueText && !opaqueGraphics)
+            {
+                // 标准模式：使用 Form.Opacity，整体透明（包括文字和图形）
+                // 移除分层窗口样式
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+                this.Opacity = transparencyValue / 100.0;
+            }
+            else
+            {
+                // 选择性透明模式：文字和/或图形保持不透明
+                // 启用分层窗口样式，这样可以使用per-pixel alpha
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                if ((exStyle & WS_EX_LAYERED) == 0)
+                {
+                    SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+                }
+                
+                // 设置窗体为完全不透明，透明度由per-pixel alpha控制
+                this.Opacity = 1.0;
+                
+                // 通知渲染器透明度设置已改变，需要调整绘制方式
+                if (rr != null)
+                {
+                    rr.TransparencyValue = transparencyValue;
+                    rr.OpaqueText = opaqueText;
+                    rr.OpaqueGraphics = opaqueGraphics;
+                    rr.IsForceRefreshAll = true;
+                }
+            }
+        }
+
+        private void UpdateTransparencyText()
+        {
+            btnTransparency.Text = "透明度 (" + transparencyValue + "%)";
+        }
+
+        private void btnTransparency_Click(object sender, EventArgs e)
+        {
+            // 创建一个自定义对话框，包含透明度输入和两个不透明选项
+            Form dialog = new Form();
+            dialog.Text = "设置透明度";
+            dialog.Width = 380;
+            dialog.Height = 230;
+            dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            dialog.MaximizeBox = false;
+            dialog.MinimizeBox = false;
+
+            Label lblValue = new Label();
+            lblValue.Text = "透明度 (0-100):";
+            lblValue.Location = new Point(20, 20);
+            lblValue.AutoSize = true;
+            dialog.Controls.Add(lblValue);
+
+            TextBox txtValue = new TextBox();
+            txtValue.Text = transparencyValue.ToString();
+            txtValue.Location = new Point(20, 45);
+            txtValue.Width = 200;
+            dialog.Controls.Add(txtValue);
+
+            Label lblHint = new Label();
+            lblHint.Text = "0 = 完全透明, 100 = 完全不透明";
+            lblHint.Location = new Point(20, 70);
+            lblHint.AutoSize = true;
+            lblHint.ForeColor = Color.Gray;
+            dialog.Controls.Add(lblHint);
+
+            CheckBox chkOpaqueText = new CheckBox();
+            chkOpaqueText.Text = "字体不透明（保持文字清晰）";
+            chkOpaqueText.Location = new Point(20, 100);
+            chkOpaqueText.Width = 320;
+            chkOpaqueText.Checked = opaqueText;
+            dialog.Controls.Add(chkOpaqueText);
+
+            CheckBox chkOpaqueGraphics = new CheckBox();
+            chkOpaqueGraphics.Text = "图形不透明（保持图形清晰）";
+            chkOpaqueGraphics.Location = new Point(20, 125);
+            chkOpaqueGraphics.Width = 320;
+            chkOpaqueGraphics.Checked = opaqueGraphics;
+            dialog.Controls.Add(chkOpaqueGraphics);
+
+            Button btnOK = new Button();
+            btnOK.Text = "确定";
+            btnOK.Location = new Point(180, 160);
+            btnOK.DialogResult = DialogResult.OK;
+            dialog.Controls.Add(btnOK);
+
+            Button btnCancel = new Button();
+            btnCancel.Text = "取消";
+            btnCancel.Location = new Point(270, 160);
+            btnCancel.DialogResult = DialogResult.Cancel;
+            dialog.Controls.Add(btnCancel);
+
+            dialog.AcceptButton = btnOK;
+            dialog.CancelButton = btnCancel;
+
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+            {
+                if (int.TryParse(txtValue.Text, out int value))
+                {
+                    transparencyValue = Math.Max(0, Math.Min(100, value));
+                    opaqueText = chkOpaqueText.Checked;
+                    opaqueGraphics = chkOpaqueGraphics.Checked;
+                    UpdateTransparency();
+                    UpdateTransparencyText();
+                    SaveTransparency();
+                }
+                else
+                {
+                    MessageBox.Show("请输入有效的数字 (0-100)", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
     }
 

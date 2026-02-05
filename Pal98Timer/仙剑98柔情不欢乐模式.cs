@@ -16,7 +16,7 @@ using System.Windows.Forms;
 namespace Pal98Timer
 {
 
-    public class 仙剑98DX9不欢乐模式 : TimerCore
+    public class 仙剑98柔情不欢乐模式 : TimerCore
     {
         public override bool IsShowC()
         {
@@ -85,7 +85,7 @@ namespace Pal98Timer
         private short CurrentBattleXLL = 0;  // 当前战斗中获得的血玲珑
         private short CurrentBattleLQJ = 0;  // 当前战斗中获得的龙泉剑
 
-        public 仙剑98DX9不欢乐模式(GForm form) : base(form)
+        public 仙剑98柔情不欢乐模式(GForm form) : base(form)
         {
             CoreName = "仙剑98DX9不欢乐模式";
         }
@@ -97,16 +97,16 @@ namespace Pal98Timer
             Data = new HObj();
             Data["caiyi"] = false;
             CheckPoints = new List<CheckPoint>();
-            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("接灵儿", new TimeSpan(0, 6, 5)))
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("拿道具", new TimeSpan(0, 6, 5)))
             {
                 Check = delegate ()
                 {
                     if (PositionAroundCheck(2, 1216, 160))
                     {
                         short value = 0;
-                        if (GameObj.Items.TryGetValue(274, out value))
+                        if (GameObj.Items.TryGetValue(90, out value))
                         {
-                            if (value == 1)
+                            if (value >= 1)
                             {
                                 return true;
                             }
@@ -116,10 +116,22 @@ namespace Pal98Timer
                     return false;
                 }
             });
-            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("学功夫", new TimeSpan(0, 11, 13)))
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("上下十里坡", new TimeSpan(0, 11, 13)))
             {
                 Check = delegate ()
                 {
+                    if (PositionAroundCheck(45, 1664, 1760))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("蛇洞", new TimeSpan(0, 18, 37)))
+            {
+                Check = delegate ()
+                {
+                    //if (PositionCheck(new int[3] { 6, 1072, 1080 }, new int[3] { 6, 1088, 1088 }))
                     if (PositionAroundCheck(62, 1152, 1264))
                     {
                         return true;
@@ -173,11 +185,33 @@ namespace Pal98Timer
                     return false;
                 }
             });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("扬州外", new TimeSpan(0, 43, 25)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionAroundCheck(93, 352, 1248, 0))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("扬州井下", new TimeSpan(0, 43, 25)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionAroundCheck(103, 416, 1264, 0))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
             CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("麻烦山", new TimeSpan(0, 43, 25)))
             {
                 Check = delegate ()
                 {
-                    if (PositionAroundCheck(102, 640, 768, 0))
+                    if (PositionAroundCheck(105, 1184, 1648, 0))
                     {
                         return true;
                     }
@@ -220,7 +254,43 @@ namespace Pal98Timer
                     return false;
                 }
             });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("锁妖塔", new TimeSpan(1, 7, 26)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionCheck(new int[3] { 213, 112, 1496 }))
+                    //if (GameObj.Area == 19)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
             CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("麒麟洞", new TimeSpan(1, 7, 26)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionCheck(new int[3] { 292, 80, 1560 }))
+                    //if (GameObj.Area == 19)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("无底深渊", new TimeSpan(1, 7, 26)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionCheck(new int[3] { 280, 1248, 592 }))
+                    //if (GameObj.Area == 19)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("地宫", new TimeSpan(1, 7, 26)))
             {
                 Check = delegate ()
                 {
