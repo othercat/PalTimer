@@ -2437,6 +2437,18 @@ namespace Pal98Timer
             }
             bool ret = false;
             Rectangle rc = new Rectangle();
+            
+            // 计算可见按钮数量以居中显示
+            int visibleBtnCount = 0;
+            for (int i = 0; i < btnList.Count; ++i)
+            {
+                if (btnList[i].IsVisible) visibleBtnCount++;
+            }
+            
+            // 计算居中起始位置
+            int totalBtnWidth = visibleBtnCount * GBtn.Width + (visibleBtnCount - 1) * GBtn.Margin;
+            int startX = btn_rc.X + (btn_rc.Width - totalBtnWidth) / 2;
+            
             int p = 0;
             for (int i = 0; i < btnList.Count; ++i)
             {
@@ -2445,7 +2457,7 @@ namespace Pal98Timer
                 if (isForceDrawAll || cur.IsDirty)
                 {
                     ret = true;
-                    ModifyRect(ref rc, btn_rc.X + p * (GBtn.Margin + GBtn.Width), btn_rc.Y, GBtn.Width, btn_rc.Height);
+                    ModifyRect(ref rc, startX + p * (GBtn.Margin + GBtn.Width), btn_rc.Y, GBtn.Width, btn_rc.Height);
                     GEX.ClearRect(g, rc, bg, Width, Height);
                     cur.Draw(g, rc, bb);
                     if (!isForceDrawAll)
