@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 using PalCloudLib;
+using System.Runtime.InteropServices;
 
 namespace Pal98Timer
 {
@@ -18,6 +19,19 @@ namespace Pal98Timer
         private bool IsAutoLuck = false;
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
         private int transparencyValue = 100; // 透明度 0-100, 100为不透明
+        private bool opaqueText = false; // 字体是否不透明，默认false（字体随窗体透明）
+
+        // WinAPI declarations for layered window transparency
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")]
+        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_LAYERED = 0x80000;
+        private const int LWA_ALPHA = 0x2;
 
         public GRender rr;
         public GRender.GBtn btnPause;
@@ -898,9 +912,15 @@ namespace Pal98Timer
                 if (File.Exists(transparencyFile))
                 {
                     string content = File.ReadAllText(transparencyFile);
-                    if (int.TryParse(content, out int value))
+                    // 格式: "透明度值,字体是否不透明" 例如: "50,true" 或只有透明度值 "50"
+                    string[] parts = content.Split(',');
+                    if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out int value))
                     {
                         transparencyValue = Math.Max(0, Math.Min(100, value));
+                    }
+                    if (parts.Length >= 2 && bool.TryParse(parts[1].Trim(), out bool opaqueValue))
+                    {
+                        opaqueText = opaqueValue;
                     }
                 }
             }
@@ -913,16 +933,39 @@ namespace Pal98Timer
             string transparencyFile = "transparency";
             try
             {
-                File.WriteAllText(transparencyFile, transparencyValue.ToString());
+                // 保存格式: "透明度值,字体是否不透明"
+                string content = transparencyValue.ToString() + "," + opaqueText.ToString().ToLower();
+                File.WriteAllText(transparencyFile, content);
             }
             catch { }
         }
 
         private void UpdateTransparency()
         {
-            // 将0-100的透明度值转换为Form的Opacity (0.0-1.0)
-            // 0表示完全透明，100表示完全不透明
-            this.Opacity = transparencyValue / 100.0;
+            if (opaqueText && transparencyValue < 100)
+            {
+                // 使用分层窗口实现背景透明但文字不透明
+                // 首先设置窗体为完全不透明
+                this.Opacity = 1.0;
+                
+                // 设置窗体为分层窗口
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+                
+                // 设置分层窗口的透明度（这会让窗体背景透明，但文字保持不透明）
+                byte alpha = (byte)(transparencyValue * 255 / 100);
+                SetLayeredWindowAttributes(this.Handle, 0, alpha, LWA_ALPHA);
+            }
+            else
+            {
+                // 常规透明模式：整个窗体包括文字都透明
+                // 先移除分层窗口样式
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+                
+                // 使用Form.Opacity属性
+                this.Opacity = transparencyValue / 100.0;
+            }
         }
 
         private void UpdateTransparencyText()
@@ -932,17 +975,63 @@ namespace Pal98Timer
 
         private void btnTransparency_Click(object sender, EventArgs e)
         {
-            // 创建一个简单的输入对话框
-            string input = Microsoft.VisualBasic.Interaction.InputBox(
-                "请输入透明度 (0-100):\n0 = 完全透明\n100 = 完全不透明",
-                "设置透明度",
-                transparencyValue.ToString());
-            
-            if (!string.IsNullOrEmpty(input))
+            // 创建一个自定义对话框，包含透明度输入和字体不透明选项
+            Form dialog = new Form();
+            dialog.Text = "设置透明度";
+            dialog.Width = 350;
+            dialog.Height = 200;
+            dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            dialog.MaximizeBox = false;
+            dialog.MinimizeBox = false;
+
+            Label lblValue = new Label();
+            lblValue.Text = "透明度 (0-100):";
+            lblValue.Location = new Point(20, 20);
+            lblValue.AutoSize = true;
+            dialog.Controls.Add(lblValue);
+
+            TextBox txtValue = new TextBox();
+            txtValue.Text = transparencyValue.ToString();
+            txtValue.Location = new Point(20, 45);
+            txtValue.Width = 200;
+            dialog.Controls.Add(txtValue);
+
+            Label lblHint = new Label();
+            lblHint.Text = "0 = 完全透明, 100 = 完全不透明";
+            lblHint.Location = new Point(20, 70);
+            lblHint.AutoSize = true;
+            lblHint.ForeColor = Color.Gray;
+            dialog.Controls.Add(lblHint);
+
+            CheckBox chkOpaqueText = new CheckBox();
+            chkOpaqueText.Text = "字体不透明（保持文字清晰）";
+            chkOpaqueText.Location = new Point(20, 100);
+            chkOpaqueText.AutoSize = true;
+            chkOpaqueText.Checked = opaqueText;
+            dialog.Controls.Add(chkOpaqueText);
+
+            Button btnOK = new Button();
+            btnOK.Text = "确定";
+            btnOK.Location = new Point(150, 130);
+            btnOK.DialogResult = DialogResult.OK;
+            dialog.Controls.Add(btnOK);
+
+            Button btnCancel = new Button();
+            btnCancel.Text = "取消";
+            btnCancel.Location = new Point(240, 130);
+            btnCancel.DialogResult = DialogResult.Cancel;
+            dialog.Controls.Add(btnCancel);
+
+            dialog.AcceptButton = btnOK;
+            dialog.CancelButton = btnCancel;
+
+            if (dialog.ShowDialog(this) == DialogResult.OK)
             {
-                if (int.TryParse(input, out int value))
+                if (int.TryParse(txtValue.Text, out int value))
                 {
                     transparencyValue = Math.Max(0, Math.Min(100, value));
+                    opaqueText = chkOpaqueText.Checked;
                     UpdateTransparency();
                     UpdateTransparencyText();
                     SaveTransparency();
