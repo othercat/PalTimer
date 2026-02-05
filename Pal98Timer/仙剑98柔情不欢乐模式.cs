@@ -16,7 +16,7 @@ using System.Windows.Forms;
 namespace Pal98Timer
 {
 
-    public class 仙剑98DX9不欢乐模式 : TimerCore
+    public class 仙剑98柔情不欢乐模式 : TimerCore
     {
         public override bool IsShowC()
         {
@@ -85,7 +85,7 @@ namespace Pal98Timer
         private short CurrentBattleXLL = 0;  // 当前战斗中获得的血玲珑
         private short CurrentBattleLQJ = 0;  // 当前战斗中获得的龙泉剑
 
-        public 仙剑98DX9不欢乐模式(GForm form) : base(form)
+        public 仙剑98柔情不欢乐模式(GForm form) : base(form)
         {
             CoreName = "仙剑98DX9不欢乐模式";
         }

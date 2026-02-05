@@ -180,7 +180,7 @@
       <DependentUpon>PluginMgrForm.cs</DependentUpon>
     </Compile>
     <Compile Include="仙剑5前传.cs" />
-    <Compile Include="仙剑98DX9不欢乐模式.cs" />
+    <Compile Include="仙剑98柔情不欢乐模式.cs" />
     <Compile Include="仙剑98官方Steam.cs" />
     <Compile Include="仙剑二官方Steam.cs" />
     <Compile Include="古剑2官方.cs" />
@@ -217,7 +217,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="仙剑三.cs" />
-    <Compile Include="仙剑98DX9.cs" />
+    <Compile Include="仙剑98柔情DX9.cs" />
     <Compile Include="仙剑98柔情.cs" />
     <Compile Include="PalPackVersion.cs" />
     <Compile Include="Program.cs" />
