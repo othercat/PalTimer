@@ -22,6 +22,15 @@ namespace Pal98Timer
         private bool opaqueText = false; // 字体是否不透明，默认false（字体随窗体透明）
         private bool opaqueGraphics = false; // 图形是否不透明，默认false（图形随窗体透明）
 
+        // WinAPI for per-pixel alpha transparency
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_LAYERED = 0x80000;
+
         public GRender rr;
         public GRender.GBtn btnPause;
         private GRender.GBtn btnReset;
@@ -942,13 +951,22 @@ namespace Pal98Timer
             if (!opaqueText && !opaqueGraphics)
             {
                 // 标准模式：使用 Form.Opacity，整体透明（包括文字和图形）
+                // 移除分层窗口样式
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
                 this.Opacity = transparencyValue / 100.0;
             }
             else
             {
                 // 选择性透明模式：文字和/或图形保持不透明
-                // 这种模式下，我们保持窗体 Opacity = 1.0
-                // 透明度通过绘制时的 alpha 通道控制
+                // 启用分层窗口样式，这样可以使用per-pixel alpha
+                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
+                if ((exStyle & WS_EX_LAYERED) == 0)
+                {
+                    SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+                }
+                
+                // 设置窗体为完全不透明，透明度由per-pixel alpha控制
                 this.Opacity = 1.0;
                 
                 // 通知渲染器透明度设置已改变，需要调整绘制方式

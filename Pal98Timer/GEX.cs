@@ -51,11 +51,13 @@ namespace Pal98Timer
                 Color clearColor;
                 if (opaqueContent && transparencyValue < 100)
                 {
+                    // 选择性透明模式：使用配置的透明度值
                     int alpha = transparencyValue * 255 / 100;
                     clearColor = Color.FromArgb(alpha, 0, 0, 0);
                 }
                 else
                 {
+                    // 标准模式：完全透明
                     clearColor = Color.FromArgb(0, 0, 0, 0);
                 }
                 
@@ -2149,7 +2151,8 @@ namespace Pal98Timer
                     // 根据透明度设置清除背景
                     if ((OpaqueText || OpaqueGraphics) && TransparencyValue < 100)
                     {
-                        // 选择性透明模式：使用配置的透明度值
+                        // 选择性透明模式：使用semi-transparent color
+                        // 在分层窗口模式下，per-pixel alpha会被正确处理
                         int alpha = TransparencyValue * 255 / 100;
                         CG.Clear(Color.FromArgb(alpha, 0, 0, 0));
                     }
