@@ -20,18 +20,7 @@ namespace Pal98Timer
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
         private int transparencyValue = 100; // 透明度 0-100, 100为不透明
         private bool opaqueText = false; // 字体是否不透明，默认false（字体随窗体透明）
-
-        // WinAPI declarations for layered window transparency
-        [DllImport("user32.dll")]
-        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-        [DllImport("user32.dll")]
-        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-        [DllImport("user32.dll")]
-        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
-
-        private const int GWL_EXSTYLE = -20;
-        private const int WS_EX_LAYERED = 0x80000;
-        private const int LWA_ALPHA = 0x2;
+        private bool opaqueGraphics = false; // 图形是否不透明，默认false（图形随窗体透明）
 
         public GRender rr;
         public GRender.GBtn btnPause;
@@ -912,15 +901,20 @@ namespace Pal98Timer
                 if (File.Exists(transparencyFile))
                 {
                     string content = File.ReadAllText(transparencyFile);
-                    // 格式: "透明度值,字体是否不透明" 例如: "50,true" 或只有透明度值 "50"
+                    // 格式: "透明度值,字体是否不透明,图形是否不透明" 例如: "50,true,false"
+                    // 或旧格式: "50,true" 或 "50"
                     string[] parts = content.Split(',');
                     if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out int value))
                     {
                         transparencyValue = Math.Max(0, Math.Min(100, value));
                     }
-                    if (parts.Length >= 2 && bool.TryParse(parts[1].Trim(), out bool opaqueValue))
+                    if (parts.Length >= 2 && bool.TryParse(parts[1].Trim(), out bool opaqueTextValue))
                     {
-                        opaqueText = opaqueValue;
+                        opaqueText = opaqueTextValue;
+                    }
+                    if (parts.Length >= 3 && bool.TryParse(parts[2].Trim(), out bool opaqueGraphicsValue))
+                    {
+                        opaqueGraphics = opaqueGraphicsValue;
                     }
                 }
             }
@@ -933,8 +927,10 @@ namespace Pal98Timer
             string transparencyFile = "transparency";
             try
             {
-                // 保存格式: "透明度值,字体是否不透明"
-                string content = transparencyValue.ToString() + "," + opaqueText.ToString().ToLower();
+                // 保存格式: "透明度值,字体是否不透明,图形是否不透明"
+                string content = transparencyValue.ToString() + "," + 
+                                opaqueText.ToString().ToLower() + "," + 
+                                opaqueGraphics.ToString().ToLower();
                 File.WriteAllText(transparencyFile, content);
             }
             catch { }
@@ -942,29 +938,27 @@ namespace Pal98Timer
 
         private void UpdateTransparency()
         {
-            if (opaqueText && transparencyValue < 100)
+            // 如果没有开启任何"不透明"选项，使用标准透明度
+            if (!opaqueText && !opaqueGraphics)
             {
-                // 使用分层窗口实现背景透明但文字不透明
-                // 首先设置窗体为完全不透明
-                this.Opacity = 1.0;
-                
-                // 设置窗体为分层窗口
-                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
-                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-                
-                // 设置分层窗口的透明度（这会让窗体背景透明，但文字保持不透明）
-                byte alpha = (byte)(transparencyValue * 255 / 100);
-                SetLayeredWindowAttributes(this.Handle, 0, alpha, LWA_ALPHA);
+                // 标准模式：使用 Form.Opacity，整体透明（包括文字和图形）
+                this.Opacity = transparencyValue / 100.0;
             }
             else
             {
-                // 常规透明模式：整个窗体包括文字都透明
-                // 先移除分层窗口样式
-                int exStyle = GetWindowLong(this.Handle, GWL_EXSTYLE);
-                SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
+                // 选择性透明模式：文字和/或图形保持不透明
+                // 这种模式下，我们保持窗体 Opacity = 1.0
+                // 透明度通过绘制时的 alpha 通道控制
+                this.Opacity = 1.0;
                 
-                // 使用Form.Opacity属性
-                this.Opacity = transparencyValue / 100.0;
+                // 通知渲染器透明度设置已改变，需要调整绘制方式
+                if (rr != null)
+                {
+                    rr.TransparencyValue = transparencyValue;
+                    rr.OpaqueText = opaqueText;
+                    rr.OpaqueGraphics = opaqueGraphics;
+                    rr.IsForceRefreshAll = true;
+                }
             }
         }
 
@@ -975,11 +969,11 @@ namespace Pal98Timer
 
         private void btnTransparency_Click(object sender, EventArgs e)
         {
-            // 创建一个自定义对话框，包含透明度输入和字体不透明选项
+            // 创建一个自定义对话框，包含透明度输入和两个不透明选项
             Form dialog = new Form();
             dialog.Text = "设置透明度";
-            dialog.Width = 350;
-            dialog.Height = 200;
+            dialog.Width = 380;
+            dialog.Height = 230;
             dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
             dialog.StartPosition = FormStartPosition.CenterParent;
             dialog.MaximizeBox = false;
@@ -1007,19 +1001,26 @@ namespace Pal98Timer
             CheckBox chkOpaqueText = new CheckBox();
             chkOpaqueText.Text = "字体不透明（保持文字清晰）";
             chkOpaqueText.Location = new Point(20, 100);
-            chkOpaqueText.AutoSize = true;
+            chkOpaqueText.Width = 320;
             chkOpaqueText.Checked = opaqueText;
             dialog.Controls.Add(chkOpaqueText);
 
+            CheckBox chkOpaqueGraphics = new CheckBox();
+            chkOpaqueGraphics.Text = "图形不透明（保持图形清晰）";
+            chkOpaqueGraphics.Location = new Point(20, 125);
+            chkOpaqueGraphics.Width = 320;
+            chkOpaqueGraphics.Checked = opaqueGraphics;
+            dialog.Controls.Add(chkOpaqueGraphics);
+
             Button btnOK = new Button();
             btnOK.Text = "确定";
-            btnOK.Location = new Point(150, 130);
+            btnOK.Location = new Point(180, 160);
             btnOK.DialogResult = DialogResult.OK;
             dialog.Controls.Add(btnOK);
 
             Button btnCancel = new Button();
             btnCancel.Text = "取消";
-            btnCancel.Location = new Point(240, 130);
+            btnCancel.Location = new Point(270, 160);
             btnCancel.DialogResult = DialogResult.Cancel;
             dialog.Controls.Add(btnCancel);
 
@@ -1032,6 +1033,7 @@ namespace Pal98Timer
                 {
                     transparencyValue = Math.Max(0, Math.Min(100, value));
                     opaqueText = chkOpaqueText.Checked;
+                    opaqueGraphics = chkOpaqueGraphics.Checked;
                     UpdateTransparency();
                     UpdateTransparencyText();
                     SaveTransparency();

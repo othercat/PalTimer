@@ -39,6 +39,44 @@ namespace Pal98Timer
                 GraphicsUnit.Pixel);
             }
         }
+        
+        public static void ClearRect(Graphics g, Rectangle rect, Image bg, int bgW, int bgH, int transparencyValue, bool opaqueContent)
+        {
+            if (bg == null || bgW <= 0 || bgH <= 0)
+            {
+                var tmp = g.CompositingMode;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                
+                // 根据透明度设置选择清除颜色
+                Color clearColor;
+                if (opaqueContent && transparencyValue < 100)
+                {
+                    int alpha = transparencyValue * 255 / 100;
+                    clearColor = Color.FromArgb(alpha, 0, 0, 0);
+                }
+                else
+                {
+                    clearColor = Color.FromArgb(0, 0, 0, 0);
+                }
+                
+                SolidBrush b = new SolidBrush(clearColor);
+                g.FillRectangle(b, rect);
+                g.CompositingMode = tmp;
+            }
+            else
+            {
+                float iw = (float)bg.Width / bgW;
+                float ih = (float)bg.Height / bgH;
+                g.DrawImage(bg, rect,
+                new Rectangle(
+                    GDIMulti(rect.X, iw),
+                    GDIMulti(rect.Y, ih),
+                    GDIMulti(rect.Width, iw),
+                    GDIMulti(rect.Height, ih)
+                    ),
+                GraphicsUnit.Pixel);
+            }
+        }
         public static void DrawText(Graphics g, string text, Font font, Brush fillBrush, Pen strokePen, Rectangle rect, StringFormat sf)
         {
             if (text == null) text = "";
@@ -101,6 +139,11 @@ namespace Pal98Timer
     {
         public bool IsForceRefreshAll = false;
         public bool IsForceRefreshAllMode = false;
+
+        // 透明度控制
+        public int TransparencyValue = 100; // 0-100, 100为不透明
+        public bool OpaqueText = false; // 文字是否保持不透明
+        public bool OpaqueGraphics = false; // 图形是否保持不透明
 
         private string Title;
         private bool isTitleChanged = false;
@@ -2103,7 +2146,18 @@ namespace Pal98Timer
                 }
                 else
                 {
-                    CG.Clear(Color.Transparent);
+                    // 根据透明度设置清除背景
+                    if ((OpaqueText || OpaqueGraphics) && TransparencyValue < 100)
+                    {
+                        // 选择性透明模式：使用配置的透明度值
+                        int alpha = TransparencyValue * 255 / 100;
+                        CG.Clear(Color.FromArgb(alpha, 0, 0, 0));
+                    }
+                    else
+                    {
+                        // 标准模式：完全透明背景
+                        CG.Clear(Color.Transparent);
+                    }
                 }
 
                 close_rc.X = Width - 33;
@@ -2248,7 +2302,8 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcTitle, bg, Width, Height);
+                    bool opaqueContent = OpaqueText || OpaqueGraphics;
+                    GEX.ClearRect(g, rcTitle, bg, Width, Height, TransparencyValue, opaqueContent);
                 }
                 GEX.DrawText(g, Title, bb.TitleFont, bb.TitleFill, bb.TitleBorder, rcTitle, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
