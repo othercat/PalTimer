@@ -547,14 +547,15 @@ namespace Pal98Timer
                         if (KeyChangerDel.IsEnable())
                         {
                             KeyChangerDel.Disable();
-                            KeyChangerDel.Close();  // 功能4：关闭KEYCHANGER.EXE进程
+                            ShowKCEnable();
+                            KeyChangerDel.Close();
                         }
                         else
                         {
-                            KeyChangerDel.Open();  // 功能4：重新打开KEYCHANGER.EXE
+                            KeyChangerDel.Open();
                             KeyChangerDel.Enable();
+                            ShowKCEnable();
                         }
-                        ShowKCEnable();
                         core.OnFunctionKey(11);
                     }
                     handle = core.NeedBlockFunctionKey(11);
