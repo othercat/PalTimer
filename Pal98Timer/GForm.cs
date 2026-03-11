@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.36.0";
+        public const string CurrentVersion = "3.36.1";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -896,6 +896,13 @@ namespace Pal98Timer
         {
             btnShowPSInDots.Checked = !btnShowPSInDots.Checked;
             IsShowPSInDots = btnShowPSInDots.Checked;
+        }
+
+        public bool IsBattlePauseNoTimer = false;
+        private void btnBattlePauseNoTimer_Click(object sender, EventArgs e)
+        {
+            btnBattlePauseNoTimer.Checked = !btnBattlePauseNoTimer.Checked;
+            IsBattlePauseNoTimer = btnBattlePauseNoTimer.Checked;
         }
 
         private void LoadTransparency()

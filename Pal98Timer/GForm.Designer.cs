@@ -37,6 +37,7 @@
             this.btnShowPSInDots = new System.Windows.Forms.ToolStripMenuItem();
             this.btnEditBest = new System.Windows.Forms.ToolStripMenuItem();
             this.btnTransparency = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnBattlePauseNoTimer = new System.Windows.Forms.ToolStripMenuItem();
             this.mnMain = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.btnChangeStyle = new System.Windows.Forms.ToolStripMenuItem();
             this.btnPluginManage = new System.Windows.Forms.ToolStripMenuItem();
@@ -58,7 +59,8 @@
             this.btnAutoLuck,
             this.btnShowPSInDots,
             this.btnEditBest,
-            this.btnTransparency});
+            this.btnTransparency,
+            this.btnBattlePauseNoTimer});
             this.mnData.Name = "mnData";
             this.mnData.Size = new System.Drawing.Size(185, 114);
             // 
@@ -98,6 +100,14 @@
             this.btnTransparency.Size = new System.Drawing.Size(184, 22);
             this.btnTransparency.Text = "透明度 (100%)";
             this.btnTransparency.Click += new System.EventHandler(this.btnTransparency_Click);
+            // 
+            // btnBattlePauseNoTimer
+            // 
+            this.btnBattlePauseNoTimer.CheckOnClick = true;
+            this.btnBattlePauseNoTimer.Name = "btnBattlePauseNoTimer";
+            this.btnBattlePauseNoTimer.Size = new System.Drawing.Size(184, 22);
+            this.btnBattlePauseNoTimer.Text = "战斗暂停不计时";
+            this.btnBattlePauseNoTimer.Click += new System.EventHandler(this.btnBattlePauseNoTimer_Click);
             // 
             // mnMain
             // 
@@ -163,5 +173,6 @@
         private System.Windows.Forms.ToolStripMenuItem btnEditBest;
         private System.Windows.Forms.ToolStripMenuItem btnShowPSInDots;
         private System.Windows.Forms.ToolStripMenuItem btnTransparency;
+        private System.Windows.Forms.ToolStripMenuItem btnBattlePauseNoTimer;
     }
 }

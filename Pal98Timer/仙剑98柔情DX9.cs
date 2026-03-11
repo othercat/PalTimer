@@ -1512,24 +1512,31 @@ namespace Pal98Timer
 
         private void Battling()
         {
-            // BattleLong 暂停同步（功能5）
-            if (IsPause)
+            if (form.IsBattlePauseNoTimer)
             {
-                if (!WasBattlePaused)
+                // BattleLong 暂停同步（功能5）
+                if (IsPause)
                 {
-                    BattlePauseStart = DateTime.Now;
-                    WasBattlePaused = true;
+                    if (!WasBattlePaused)
+                    {
+                        BattlePauseStart = DateTime.Now;
+                        WasBattlePaused = true;
+                    }
+                    // 暂停期间不更新 BattleLong
                 }
-                // 暂停期间不更新 BattleLong
+                else
+                {
+                    if (WasBattlePaused)
+                    {
+                        BattlePauseOffset += DateTime.Now - BattlePauseStart;
+                        WasBattlePaused = false;
+                    }
+                    BattleLong = DateTime.Now - InBattleTime - BattlePauseOffset;
+                }
             }
             else
             {
-                if (WasBattlePaused)
-                {
-                    BattlePauseOffset += DateTime.Now - BattlePauseStart;
-                    WasBattlePaused = false;
-                }
-                BattleLong = DateTime.Now - InBattleTime - BattlePauseOffset;
+                BattleLong = DateTime.Now - InBattleTime;
             }
             biw.SetCount(GameObj);
             
