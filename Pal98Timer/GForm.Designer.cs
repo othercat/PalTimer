@@ -103,7 +103,6 @@
             // 
             // btnBattlePauseNoTimer
             // 
-            this.btnBattlePauseNoTimer.CheckOnClick = true;
             this.btnBattlePauseNoTimer.Name = "btnBattlePauseNoTimer";
             this.btnBattlePauseNoTimer.Size = new System.Drawing.Size(184, 22);
             this.btnBattlePauseNoTimer.Text = "战斗暂停不计时";
