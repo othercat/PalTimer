@@ -2346,7 +2346,7 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, rcMainTimer, bg, Width, Height);
                 }
-                isCChanged = true;
+                isCChanged = true; // rcMainTimer overlaps rcIsC, so ensure IsC is redrawn after clearing
                 if (isInCheck)
                 {
                     GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
