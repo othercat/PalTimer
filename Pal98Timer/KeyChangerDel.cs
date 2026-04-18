@@ -98,6 +98,10 @@ namespace Pal98Timer
         {
             return call(TSTAT) == 1;
         }
+        public static bool IsWindowOpen()
+        {
+            return FindWindow(null, "改键器") != 0;
+        }
         public static void Edit()
         {
             call(TEDIT);

@@ -1046,7 +1046,7 @@ namespace Pal98Timer
             {
                 // Compact layout for 简版
                 ModifyRect(ref rcMoreInfo, 5, Height - 75, Width - 10, 20);
-                ModifyRect(ref rcMainTimer, 0, Height - 120, Width - 70, 40);
+                ModifyRect(ref rcMainTimer, 20, Height - 120, Width - 70, 40);
                 ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 10 - rcMainTimer.Width, rcMainTimer.Height);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
                 
@@ -1058,7 +1058,7 @@ namespace Pal98Timer
             {
                 // Standard layout for normal windows
                 ModifyRect(ref rcMoreInfo, 5, Height - 100, Width - 10, 26);
-                ModifyRect(ref rcMainTimer, 0, Height - 150, Width - 85, 50);
+                ModifyRect(ref rcMainTimer, 20, Height - 150, Width - 85, 50);
                 ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 25 - rcMainTimer.Width, rcMainTimer.Height);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
 
@@ -2133,7 +2133,6 @@ namespace Pal98Timer
             DrawBL(CG, ur);
             DrawBR(CG, ur);
             DrawMoreInfo(CG, ur);
-            DrawIsC(CG, ur);
             DrawSubTimer(CG, ur);
             DrawOutTimer(CG, ur);
             DrawWillClear(CG, ur);
@@ -2141,6 +2140,7 @@ namespace Pal98Timer
             bool itemc = DrawCheckPoints(CG, ur);
             DrawMainTimer(CG, ur);
             DrawMainTimerMS(CG, ur);
+            DrawIsC(CG, ur);
             if (isSizeChanged || isBGChanged || isBBChanged)
             {
                 ur?.Invoke(null);
@@ -2346,6 +2346,7 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, rcMainTimer, bg, Width, Height);
                 }
+                isCChanged = true; // rcMainTimer overlaps rcIsC, so ensure IsC is redrawn after clearing
                 if (isInCheck)
                 {
                     GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);

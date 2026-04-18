@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.35.5";
+        public const string CurrentVersion = "3.36.1";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -547,14 +547,22 @@ namespace Pal98Timer
                         if (KeyChangerDel.IsEnable())
                         {
                             KeyChangerDel.Disable();
-                            KeyChangerDel.Close();  // 功能4：关闭KEYCHANGER.EXE进程
+                            ShowKCEnable();
+                            KeyChangerDel.Close();
                         }
                         else
                         {
-                            KeyChangerDel.Open();  // 功能4：重新打开KEYCHANGER.EXE
-                            KeyChangerDel.Enable();
+                            Run(delegate() {
+                                KeyChangerDel.Open();
+                                // Wait for the KeyChanger window to be ready (up to 3 seconds)
+                                for (int i = 0; i < 30 && !KeyChangerDel.IsWindowOpen(); i++)
+                                {
+                                    System.Threading.Thread.Sleep(100);
+                                }
+                                KeyChangerDel.Enable();
+                                UI(delegate() { ShowKCEnable(); });
+                            });
                         }
-                        ShowKCEnable();
                         core.OnFunctionKey(11);
                     }
                     handle = core.NeedBlockFunctionKey(11);
@@ -888,6 +896,13 @@ namespace Pal98Timer
         {
             btnShowPSInDots.Checked = !btnShowPSInDots.Checked;
             IsShowPSInDots = btnShowPSInDots.Checked;
+        }
+
+        public bool IsBattlePauseNoTimer = false;
+        private void btnBattlePauseNoTimer_Click(object sender, EventArgs e)
+        {
+            btnBattlePauseNoTimer.Checked = !btnBattlePauseNoTimer.Checked;
+            IsBattlePauseNoTimer = btnBattlePauseNoTimer.Checked;
         }
 
         private void LoadTransparency()

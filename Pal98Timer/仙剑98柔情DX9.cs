@@ -84,6 +84,12 @@ namespace Pal98Timer
         private short CurrentBattleHCG = 0;  // 当前战斗中获得的火虫草
         private short CurrentBattleXLL = 0;  // 当前战斗中获得的血玲珑
         private short CurrentBattleLQJ = 0;  // 当前战斗中获得的龙泉剑
+        private short CurrentBattleYXY = 0;  // 当前战斗中获得的夜行衣
+
+        // 战斗暂停补偿变量（功能5）
+        private TimeSpan BattlePauseOffset = TimeSpan.Zero;
+        private DateTime BattlePauseStart = DateTime.MinValue;
+        private bool WasBattlePaused = false;
 
         public 仙剑98柔情DX9(GForm form) : base(form)
         {
@@ -452,14 +458,15 @@ namespace Pal98Timer
             int displayHCG = MaxHCG + (IsInBattle ? CurrentBattleHCG : (int)0);
             int displayXLL = MaxXLL + (IsInBattle ? CurrentBattleXLL : (int)0);
             int displayLQJ = MaxLQJ + (IsInBattle ? CurrentBattleLQJ : (int)0);
+            int displayYXY = MaxYXY + (IsInBattle ? CurrentBattleYXY : (int)0);
             
             if (IsShowSpeed)
             {
-                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
             else
             {
-                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + MaxYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
         }
 
@@ -1476,6 +1483,11 @@ namespace Pal98Timer
             CurrentBattleHCG = 0;
             CurrentBattleXLL = 0;
             CurrentBattleLQJ = 0;
+            CurrentBattleYXY = 0;
+            
+            // 重置暂停补偿变量（功能5）
+            BattlePauseOffset = TimeSpan.Zero;
+            WasBattlePaused = false;
             
             if (CurrentStep <= 5)
             {
@@ -1500,13 +1512,39 @@ namespace Pal98Timer
 
         private void Battling()
         {
-            BattleLong = DateTime.Now - InBattleTime;
+            if (form.IsBattlePauseNoTimer)
+            {
+                // BattleLong 暂停同步（功能5）
+                if (IsPause)
+                {
+                    if (!WasBattlePaused)
+                    {
+                        BattlePauseStart = DateTime.Now;
+                        WasBattlePaused = true;
+                    }
+                    // 暂停期间不更新 BattleLong
+                }
+                else
+                {
+                    if (WasBattlePaused)
+                    {
+                        BattlePauseOffset += DateTime.Now - BattlePauseStart;
+                        WasBattlePaused = false;
+                    }
+                    BattleLong = DateTime.Now - InBattleTime - BattlePauseOffset;
+                }
+            }
+            else
+            {
+                BattleLong = DateTime.Now - InBattleTime;
+            }
             biw.SetCount(GameObj);
             
-            // 实时更新火、血、剑的数量（功能2）
+            // 实时更新火、血、剑、夜行衣的数量（功能2）
             CurrentBattleHCG = biw.GettedCount(0x8F);  // 火虫草
             CurrentBattleXLL = biw.GettedCount(0xA2);  // 血玲珑
             CurrentBattleLQJ = biw.GettedCount(0xB8);  // 龙泉剑
+            CurrentBattleYXY = biw.GettedCount(0xD4);  // 夜行衣
         }
 
         private void BattleEnd()
@@ -1525,6 +1563,12 @@ namespace Pal98Timer
                 WillAppendNamedBattle = CurrentNamedBattle + "：" + BattleLong.TotalSeconds.ToString("F2") + "s";
                 CurrentNamedBattle = "";
             }
+            
+            // 重置战斗实时临时变量（功能2/6）
+            CurrentBattleHCG = 0;
+            CurrentBattleXLL = 0;
+            CurrentBattleLQJ = 0;
+            CurrentBattleYXY = 0;
         }
 
         private void BattleEndMore()
@@ -1536,10 +1580,8 @@ namespace Pal98Timer
                 //将算出来的差加入显示
                 MaxFC += biw.GettedCount(0x73);
                 MaxFM += biw.GettedCount(0x83);
-                // MaxHCG 已在Battling中实时更新，这里累加最终值
-                MaxHCG += biw.GettedCount(0x8F);
             }
-            // MaxLQJ 和 MaxXLL 已在Battling中实时更新，这里累加最终值
+            MaxHCG += biw.GettedCount(0x8F);
             MaxLQJ += biw.GettedCount(0xB8);
             MaxXLL += biw.GettedCount(0xA2);
             MaxYXY += biw.GettedCount(0xD4);
