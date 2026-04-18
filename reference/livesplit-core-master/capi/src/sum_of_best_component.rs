@@ -1,0 +1,55 @@
+//! The Sum of Best Segments Component shows the fastest possible time to
+//! complete a run of this category, based on information collected from all the
+//! previous attempts. This often matches up with the sum of the best segment
+//! times of all the segments, but that may not always be the case, as skipped
+//! segments may introduce combined segments that may be faster than the actual
+//! sum of their best segment times. The name is therefore a bit misleading, but
+//! sticks around for historical reasons.
+
+use super::{Json, output_vec};
+use crate::{component::OwnedComponent, key_value_component_state::OwnedKeyValueComponentState};
+use livesplit_core::{Lang, Timer, component::sum_of_best::Component as SumOfBestComponent};
+
+/// type
+pub type OwnedSumOfBestComponent = Box<SumOfBestComponent>;
+
+/// Creates a new Sum of Best Segments Component.
+#[unsafe(no_mangle)]
+pub extern "C" fn SumOfBestComponent_new() -> OwnedSumOfBestComponent {
+    Box::new(SumOfBestComponent::new())
+}
+
+/// drop
+#[unsafe(no_mangle)]
+pub extern "C" fn SumOfBestComponent_drop(this: OwnedSumOfBestComponent) {
+    drop(this);
+}
+
+/// Converts the component into a generic component suitable for using with a
+/// layout.
+#[unsafe(no_mangle)]
+pub extern "C" fn SumOfBestComponent_into_generic(this: OwnedSumOfBestComponent) -> OwnedComponent {
+    Box::new((*this).into())
+}
+
+/// Encodes the component's state information as JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn SumOfBestComponent_state_as_json(
+    this: &SumOfBestComponent,
+    timer: &Timer,
+    lang: Lang,
+) -> Json {
+    output_vec(|o| {
+        this.state(timer, lang).write_json(o).unwrap();
+    })
+}
+
+/// Calculates the component's state based on the timer provided.
+#[unsafe(no_mangle)]
+pub extern "C" fn SumOfBestComponent_state(
+    this: &SumOfBestComponent,
+    timer: &Timer,
+    lang: Lang,
+) -> OwnedKeyValueComponentState {
+    Box::new(this.state(timer, lang))
+}

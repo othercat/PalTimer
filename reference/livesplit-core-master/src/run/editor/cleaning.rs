@@ -1,0 +1,293 @@
+//! The cleaning module provides the Sum of Best Cleaner which allows you to
+//! interactively remove potential issues in the Segment History that lead to an
+//! inaccurate Sum of Best. If you skip a split, whenever you get to the next
+//! split, the combined segment time might be faster than the sum of the
+//! individual best segments. The Sum of Best Cleaner will point out all
+//! occurrences of this and allows you to delete them individually if any of
+//! them seem wrong.
+
+use time::UtcOffset;
+
+use crate::{
+    Attempt, Lang, Run, Segment, TimeSpan, TimingMethod,
+    analysis::sum_of_segments::{Prediction, best, track_branch},
+    localization::{PlaceholderText, Text, localize_date, localize_time_of_day},
+    platform::{prelude::*, to_local},
+    timing::formatter::{SegmentTime, TimeFormatter},
+};
+use core::{fmt, mem::replace};
+
+/// A Sum of Best Cleaner allows you to interactively remove potential issues in
+/// the Segment History that lead to an inaccurate Sum of Best. If you skip a
+/// split, whenever you get to the next split, the combined segment time might
+/// be faster than the sum of the individual best segments. The Sum of Best
+/// Cleaner will point out all occurrences of this and allows you to delete them
+/// individually if any of them seem wrong.
+pub struct SumOfBestCleaner<'r> {
+    run: &'r mut Run,
+    predictions: Vec<Option<Prediction>>,
+    state: State,
+    lang: Lang,
+}
+
+enum State {
+    Poisoned,
+    Done,
+    WithTimingMethod(TimingMethod),
+    IteratingRun(IteratingRunState),
+    IteratingHistory(IteratingHistoryState),
+}
+
+struct IteratingRunState {
+    method: TimingMethod,
+    segment_index: usize,
+}
+
+struct IteratingHistoryState {
+    parent: IteratingRunState,
+    current_time: Option<TimeSpan>,
+    skip_count: usize,
+}
+
+/// Describes a potential clean up that could be applied. You can use the
+/// Display implementation to print out the details of this potential clean up.
+/// A potential clean up can then be turned into an actual clean up in order to
+/// apply it to the Run.
+pub struct PotentialCleanUp<'r> {
+    lang: Lang,
+    starting_segment: Option<&'r Segment>,
+    ending_segment: &'r Segment,
+    time_between: TimeSpan,
+    combined_sum_of_best: Option<TimeSpan>,
+    attempt: Option<&'r Attempt>,
+    method: TimingMethod,
+    clean_up: CleanUp,
+}
+
+/// Describes an actual clean up that is about to be applied.
+pub struct CleanUp {
+    ending_index: usize,
+    run_index: i32,
+}
+
+impl fmt::Display for PotentialCleanUp<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let lang = self.lang;
+        let short = SegmentTime::new();
+
+        let method = match self.method {
+            TimingMethod::RealTime => Text::RealTime.resolve(lang),
+            TimingMethod::GameTime => Text::GameTime.resolve(lang),
+        };
+
+        let start = self
+            .starting_segment
+            .map(Segment::name)
+            .unwrap_or(Text::SumOfBestCleanerStartOfRun.resolve(lang));
+
+        let time_between = short.format(self.time_between, lang);
+        let end = self.ending_segment.name();
+
+        write!(
+            f,
+            "{}",
+            PlaceholderText::SumOfBestCleanerSegmentTimeBetween
+                .resolve(lang, &[&method, &time_between, &start, &end])
+        )?;
+
+        if let Some(combined) = self.combined_sum_of_best {
+            let combined = short.format(combined, lang);
+            write!(
+                f,
+                "{}",
+                PlaceholderText::SumOfBestCleanerFasterThanCombined.resolve(lang, &[&combined])
+            )?;
+        }
+
+        if let Some(a) = self.attempt
+            && let Some(started) = a.started()
+        {
+            let local = to_local(started.time);
+            // We want to show the time zone in case it can't be resolved and
+            // defaults to UTC.
+            let time_zone = if local.offset() == UtcOffset::UTC {
+                " UTC"
+            } else {
+                ""
+            };
+            let (year, month, day) = local.to_calendar_date();
+            let (hour, minute, _) = local.to_hms();
+            let date = localize_date(lang, year, month as u8, day);
+            let time = localize_time_of_day(lang, hour, minute, time_zone);
+            write!(
+                f,
+                "{}",
+                PlaceholderText::SumOfBestCleanerRunOn.resolve(lang, &[&date, &time])
+            )?;
+        }
+
+        f.write_str(Text::SumOfBestCleanerShouldRemove.resolve(lang))
+    }
+}
+
+impl From<PotentialCleanUp<'_>> for CleanUp {
+    fn from(potential: PotentialCleanUp) -> Self {
+        potential.clean_up
+    }
+}
+
+impl<'r> SumOfBestCleaner<'r> {
+    /// Creates a new Sum of Best Cleaner for the provided Run object.
+    pub fn new(run: &'r mut Run, lang: Lang) -> Self {
+        let predictions = Vec::with_capacity(run.len() + 1);
+        Self {
+            run,
+            predictions,
+            state: State::WithTimingMethod(TimingMethod::RealTime),
+            lang,
+        }
+    }
+
+    /// Applies a clean up to the Run.
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn apply(&mut self, clean_up: CleanUp) {
+        self.run
+            .segment_mut(clean_up.ending_index)
+            .segment_history_mut()
+            .remove(clean_up.run_index);
+
+        self.run.mark_as_modified();
+    }
+
+    /// Returns the next potential clean up. If there are no more potential
+    /// clean ups, [`None`] is returned.
+    pub fn next_potential_clean_up(&mut self) -> Option<PotentialCleanUp<'_>> {
+        loop {
+            match replace(&mut self.state, State::Poisoned) {
+                State::Poisoned => unreachable!(),
+                State::Done => return None,
+                State::WithTimingMethod(method) => {
+                    next_timing_method(self.run, &mut self.predictions, method);
+                    self.state = State::IteratingRun(IteratingRunState {
+                        method,
+                        segment_index: 0,
+                    });
+                }
+                State::IteratingRun(state) => {
+                    self.state = if state.segment_index < self.run.len() {
+                        let current_prediction = self.predictions[state.segment_index];
+                        State::IteratingHistory(IteratingHistoryState {
+                            parent: state,
+                            current_time: current_prediction.map(|p| p.time),
+                            skip_count: 0,
+                        })
+                    } else if state.method == TimingMethod::RealTime {
+                        State::WithTimingMethod(TimingMethod::GameTime)
+                    } else {
+                        State::Done
+                    };
+                }
+                State::IteratingHistory(state) => {
+                    let iter = self
+                        .run
+                        .segment(state.parent.segment_index)
+                        .segment_history()
+                        .iter()
+                        .enumerate()
+                        .skip(state.skip_count);
+
+                    for (skip_count, &(run_index, time)) in iter {
+                        if time[state.parent.method].is_none() {
+                            let (prediction_index, prediction_time) = track_branch(
+                                self.run.segments(),
+                                state.current_time,
+                                state.parent.segment_index + 1,
+                                run_index,
+                                state.parent.method,
+                            );
+                            if prediction_index > 0
+                                && let Some(question) = check_prediction(
+                                    self.run,
+                                    &self.predictions,
+                                    prediction_time[state.parent.method],
+                                    state.parent.segment_index as isize - 1,
+                                    prediction_index - 1,
+                                    run_index,
+                                    state.parent.method,
+                                    self.lang,
+                                )
+                            {
+                                self.state = State::IteratingHistory(IteratingHistoryState {
+                                    skip_count: skip_count + 1,
+                                    ..state
+                                });
+                                return Some(question);
+                            }
+                        }
+                    }
+                    self.state = State::IteratingRun(IteratingRunState {
+                        method: state.parent.method,
+                        segment_index: state.parent.segment_index + 1,
+                    });
+                }
+            };
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_prediction<'a>(
+    run: &'a Run,
+    predictions: &[Option<Prediction>],
+    predicted_time: Option<TimeSpan>,
+    starting_index: isize,
+    ending_index: usize,
+    run_index: i32,
+    method: TimingMethod,
+    lang: Lang,
+) -> Option<PotentialCleanUp<'a>> {
+    if let Some(predicted_time) = predicted_time
+        && predictions[ending_index + 1].is_none_or(|p| predicted_time < p.time)
+        && let Some(segment_history_element) =
+            run.segment(ending_index).segment_history().get(run_index)
+    {
+        Some(PotentialCleanUp {
+            lang,
+            starting_segment: if starting_index >= 0 {
+                Some(run.segment(starting_index as usize))
+            } else {
+                None
+            },
+            ending_segment: run.segment(ending_index),
+            time_between: segment_history_element[method]
+                .expect("Cleanup path is shorter but doesn't have a time"),
+            combined_sum_of_best: predictions[ending_index + 1].map(|p| {
+                p.time
+                    - predictions[(starting_index + 1) as usize]
+                        .expect("Start time must not be empty")
+                        .time
+            }),
+            // The attempt may not exist, as we have all sorts of weird
+            // malformed files.
+            attempt: run
+                .attempt_history()
+                .iter()
+                .find(|attempt| attempt.index() == run_index),
+            method,
+            clean_up: CleanUp {
+                ending_index,
+                run_index,
+            },
+        })
+    } else {
+        None
+    }
+}
+
+fn next_timing_method(run: &Run, predictions: &mut Vec<Option<Prediction>>, method: TimingMethod) {
+    let segments = run.segments();
+
+    predictions.clear();
+    predictions.resize(segments.len() + 1, None);
+    best::calculate(segments, predictions, true, false, method);
+}
