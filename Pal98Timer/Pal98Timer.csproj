@@ -236,6 +236,7 @@
       <DependentUpon>Upload.cs</DependentUpon>
     </Compile>
     <Compile Include="User32.cs" />
+    <Compile Include="VoicePrompt.cs" />
     <Compile Include="wapi\Enums.cs" />
     <Compile Include="wapi\Structs.cs" />
     <Compile Include="wapi\Win32API.cs" />

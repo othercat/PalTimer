@@ -547,22 +547,12 @@ namespace Pal98Timer
                         if (KeyChangerDel.IsEnable())
                         {
                             KeyChangerDel.Disable();
-                            ShowKCEnable();
-                            KeyChangerDel.Close();
                         }
                         else
                         {
-                            Run(delegate() {
-                                KeyChangerDel.Open();
-                                // Wait for the KeyChanger window to be ready (up to 3 seconds)
-                                for (int i = 0; i < 30 && !KeyChangerDel.IsWindowOpen(); i++)
-                                {
-                                    System.Threading.Thread.Sleep(100);
-                                }
-                                KeyChangerDel.Enable();
-                                UI(delegate() { ShowKCEnable(); });
-                            });
+                            KeyChangerDel.Enable();
                         }
+                        ShowKCEnable();
                         core.OnFunctionKey(11);
                     }
                     handle = core.NeedBlockFunctionKey(11);

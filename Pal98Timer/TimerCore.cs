@@ -95,6 +95,7 @@ namespace Pal98Timer
         {
             this.form = form;
             CMD5 = GetFileMD5(this.GetType().Assembly.Location);
+            VoicePrompt.ReloadConfig();
         }
         /// <summary>
         /// 计算文件的MD5
@@ -512,11 +513,22 @@ namespace Pal98Timer
 
             if (CurrentStep < CheckPoints.Count)
             {
-                CheckPoints[CurrentStep].Current = MT.CurrentTSOnly;
-                if (CheckPoints[CurrentStep].Check())
+                CheckPoint currentCheckPoint = CheckPoints[CurrentStep];
+                currentCheckPoint.Current = MT.CurrentTSOnly;
+                if (currentCheckPoint.Check())
                 {
-                    CheckPoints[CurrentStep].Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
-                    CheckPoints[CurrentStep].IsEnd = true;
+                    currentCheckPoint.Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
+                    currentCheckPoint.IsEnd = true;
+                    VoicePrompt.PlayCheckpointSound(currentCheckPoint.GetNickName());
+                    long cha = currentCheckPoint.GetCHA();
+                    if (cha < 0)
+                    {
+                        VoicePrompt.PlayFasterSound();
+                    }
+                    else if (cha > 0)
+                    {
+                        VoicePrompt.PlaySlowerSound();
+                    }
                     //CurrentStep++;
                     int nextstep = CurrentStep + 1;
                     if (nextstep >= CheckPoints.Count)
