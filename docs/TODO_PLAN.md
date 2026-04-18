@@ -7,7 +7,7 @@
 - [ ] 支持 Delta 显示（对比最佳/平均的时间差）
 - [ ] 支持多种比较方式（Personal Best, Average, Median, Best Segments 等）
 - [ ] 支持 Subsplits（子节点分组）
-- [ ] 节点语音提示功能（支持 checkpoint 到达、快了/慢了提示、自定义 mp3/wav 与配置文件）
+- [ ] 节点语音提示功能增强（图形化配置、试听、每节点独立开关与优先级）
 - [ ] 支持通过 WebSocket/HTTP 暴露实时计时数据给 OBS 等工具
 - [ ] 支持回放（Run History）统计和图表
 - [ ] 支持自定义主题/皮肤导入

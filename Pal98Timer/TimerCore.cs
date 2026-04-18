@@ -520,12 +520,12 @@ namespace Pal98Timer
                     currentCheckPoint.Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
                     currentCheckPoint.IsEnd = true;
                     VoicePrompt.PlayCheckpointSound(currentCheckPoint.GetNickName());
-                    long cha = currentCheckPoint.GetCHA();
-                    if (cha < 0)
+                    long deltaSeconds = currentCheckPoint.GetCHA();
+                    if (deltaSeconds < 0)
                     {
                         VoicePrompt.PlayFasterSound();
                     }
-                    else if (cha > 0)
+                    else if (deltaSeconds > 0)
                     {
                         VoicePrompt.PlaySlowerSound();
                     }

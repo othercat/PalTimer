@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -26,7 +27,27 @@ namespace Pal98Timer
         {
             get
             {
-                return Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+                try
+                {
+                    string p = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+                    if (!string.IsNullOrEmpty(p))
+                    {
+                        return p;
+                    }
+                }
+                catch
+                { }
+                try
+                {
+                    string p = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                    if (!string.IsNullOrEmpty(p))
+                    {
+                        return p;
+                    }
+                }
+                catch
+                { }
+                return Environment.CurrentDirectory;
             }
         }
 
@@ -59,65 +80,76 @@ namespace Pal98Timer
                 string cfgPath = Path.Combine(AppDir, "voice_config.txt");
                 if (File.Exists(cfgPath))
                 {
-                    Encoding charset = TimerCore.GetFileEncodeType(cfgPath);
-                    using (FileStream fs = new FileStream(cfgPath, FileMode.Open, FileAccess.Read))
+                    try
                     {
-                        using (StreamReader sr = new StreamReader(fs, charset))
+                        Encoding charset = TimerCore.GetFileEncodeType(cfgPath);
+                        if (charset == null)
                         {
-                            while (!sr.EndOfStream)
+                            charset = Encoding.UTF8;
+                        }
+                        using (FileStream fs = new FileStream(cfgPath, FileMode.Open, FileAccess.Read))
+                        {
+                            using (StreamReader sr = new StreamReader(fs, charset))
                             {
-                                string line = sr.ReadLine();
-                                if (line == null)
+                                while (!sr.EndOfStream)
                                 {
-                                    continue;
-                                }
-                                line = line.Trim();
-                                if (line == "" || line.StartsWith("#") || line.StartsWith(";") || line.StartsWith("//"))
-                                {
-                                    continue;
-                                }
-                                int idx = line.IndexOf('=');
-                                if (idx <= 0)
-                                {
-                                    continue;
-                                }
-                                string key = line.Substring(0, idx).Trim();
-                                string val = line.Substring(idx + 1).Trim();
-                                if (key == "" || val == "")
-                                {
-                                    continue;
-                                }
-                                string lowKey = key.ToLowerInvariant();
-                                if (lowKey == "enable" || lowKey == "enabled" || lowKey == "voice_enable")
-                                {
-                                    _isEnable = ParseBool(val, true);
-                                }
-                                else if (lowKey == "faster" || lowKey == "faster_sound")
-                                {
-                                    _fasterPath = val;
-                                }
-                                else if (lowKey == "slower" || lowKey == "slower_sound")
-                                {
-                                    _slowerPath = val;
-                                }
-                                else if (lowKey.StartsWith("checkpoint."))
-                                {
-                                    string checkpointName = key.Substring("checkpoint.".Length).Trim();
-                                    if (checkpointName != "")
+                                    string line = sr.ReadLine();
+                                    if (line == null)
                                     {
-                                        _checkpointSounds[checkpointName] = val;
+                                        continue;
                                     }
-                                }
-                                else if (lowKey.StartsWith("cp."))
-                                {
-                                    string checkpointName = key.Substring("cp.".Length).Trim();
-                                    if (checkpointName != "")
+                                    line = line.Trim();
+                                    if (line == "" || line.StartsWith("#") || line.StartsWith(";") || line.StartsWith("//"))
                                     {
-                                        _checkpointSounds[checkpointName] = val;
+                                        continue;
+                                    }
+                                    int idx = line.IndexOf('=');
+                                    if (idx <= 0)
+                                    {
+                                        continue;
+                                    }
+                                    string key = line.Substring(0, idx).Trim();
+                                    string val = line.Substring(idx + 1).Trim();
+                                    if (key == "" || val == "")
+                                    {
+                                        continue;
+                                    }
+                                    string lowKey = key.ToLowerInvariant();
+                                    if (lowKey == "enable" || lowKey == "enabled" || lowKey == "voice_enable")
+                                    {
+                                        _isEnable = ParseBool(val, true);
+                                    }
+                                    else if (lowKey == "faster" || lowKey == "faster_sound")
+                                    {
+                                        _fasterPath = val;
+                                    }
+                                    else if (lowKey == "slower" || lowKey == "slower_sound")
+                                    {
+                                        _slowerPath = val;
+                                    }
+                                    else if (lowKey.StartsWith("checkpoint."))
+                                    {
+                                        string checkpointName = key.Substring("checkpoint.".Length).Trim();
+                                        if (checkpointName != "")
+                                        {
+                                            _checkpointSounds[checkpointName] = val;
+                                        }
+                                    }
+                                    else if (lowKey.StartsWith("cp."))
+                                    {
+                                        string checkpointName = key.Substring("cp.".Length).Trim();
+                                        if (checkpointName != "")
+                                        {
+                                            _checkpointSounds[checkpointName] = val;
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("VoicePrompt config load failed: " + ex.Message);
                     }
                 }
                 _isLoaded = true;
@@ -158,21 +190,39 @@ namespace Pal98Timer
             {
                 return;
             }
+            string normalizedPath;
+            try
+            {
+                normalizedPath = Path.GetFullPath(fullPath);
+            }
+            catch
+            {
+                return;
+            }
+            if (!IsAllowedAudioFile(normalizedPath))
+            {
+                return;
+            }
+            if (normalizedPath.IndexOf('\r') >= 0 || normalizedPath.IndexOf('\n') >= 0 || normalizedPath.IndexOf('"') >= 0)
+            {
+                return;
+            }
 
             lock (_playLock)
             {
                 try
                 {
                     mciSendString("close " + _playerAlias, null, 0, IntPtr.Zero);
-                    string escaped = fullPath.Replace("\"", "\"\"");
-                    int openRes = mciSendString("open \"" + escaped + "\" alias " + _playerAlias, null, 0, IntPtr.Zero);
+                    int openRes = mciSendString("open \"" + normalizedPath + "\" alias " + _playerAlias, null, 0, IntPtr.Zero);
                     if (openRes == 0)
                     {
                         mciSendString("play " + _playerAlias + " from 0", null, 0, IntPtr.Zero);
                     }
                 }
-                catch
-                { }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("VoicePrompt.PlaySound error: " + ex.Message);
+                }
             }
         }
 
@@ -277,6 +327,19 @@ namespace Pal98Timer
                 res = res.Replace(c, '_');
             }
             return res;
+        }
+
+        private static bool IsAllowedAudioFile(string path)
+        {
+            string ext = Path.GetExtension(path);
+            foreach (string item in _soundExts)
+            {
+                if (string.Equals(ext, item, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }
