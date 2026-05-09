@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" Pal98Timer\\\\Pal98Timer.csproj /p:Configuration=Debug /p:Platform=x86 /t:Build /verbosity:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" Pal98Timer/Pal98Timer.csproj /p:Configuration=Debug /p:Platform=x86 /t:Build /verbosity:minimal)",
+      "Bash(cd \"C:\\\\\\\\SourceCodes\\\\\\\\GithubRepos\\\\\\\\PalTimer\")",
+      "Bash(\"C:\\\\\\\\Program Files\\\\\\\\Microsoft Visual Studio\\\\\\\\18\\\\\\\\Community\\\\\\\\MSBuild\\\\\\\\Current\\\\\\\\Bin\\\\\\\\MSBuild.exe\" \"Pal98Timer\\\\\\\\Pal98Timer.csproj\" -p:Configuration=Debug -p:Platform=x86 -t:Build -verbosity:minimal)",
+      "Bash(\"C:\\\\\\\\Program Files\\\\\\\\Microsoft Visual Studio\\\\\\\\18\\\\\\\\Community\\\\\\\\MSBuild\\\\\\\\Current\\\\\\\\Bin\\\\\\\\MSBuild.exe\" \"Pal98Timer.sln\" -p:Configuration=Debug -p:Platform=x86 -t:Build -verbosity:minimal)",
+      "Bash(\"C:\\\\\\\\Program Files\\\\\\\\Microsoft Visual Studio\\\\\\\\18\\\\\\\\Community\\\\\\\\MSBuild\\\\\\\\Current\\\\\\\\Bin\\\\\\\\MSBuild.exe\" \"Pal98Timer.sln\" -p:Configuration=Release -p:Platform=x64 -t:Build -verbosity:minimal)",
+      "Bash(r)",
+      "Bash(powershell -Command ' *)",
+      "Bash(git checkout *)",
+      "Bash(/c/Users/other/anaconda3/envs/paltools/python.exe *)",
+      "Read(//c/Users/other/anaconda3/envs/**)",
+      "Read(//c/Users/other/**)",
+      "Bash(/c/Users/other/miniconda3/envs/paltools/python.exe *)",
+      "Bash(C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe *)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Microsoft SDKs\\\\Windows\\\\v10.0A\\\\bin\\\\NETFX 4.8 Tools\\\\mt.exe\" -inputresource:\"C:\\\\SourceCodes\\\\GithubRepos\\\\PalTimer\\\\Pal98Timer\\\\bin\\\\x64\\\\Release\\\\Pal98Timer.exe\" -out:\"C:\\\\SourceCodes\\\\GithubRepos\\\\PalTimer\\\\Pal98Timer\\\\bin\\\\x64\\\\Release\\\\manifest_check.xml\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft SDKs/Windows/v7.1A/Bin/x64/mt.exe\" -inputresource:\"C:\\\\SourceCodes\\\\GithubRepos\\\\PalTimer\\\\Pal98Timer\\\\bin\\\\x64\\\\Release\\\\Pal98Timer.exe\" -out:\"/tmp/manifest_check.xml\")",
+      "Read(//tmp/**)"
+    ]
+  }
+}

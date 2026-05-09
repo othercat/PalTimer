@@ -835,6 +835,23 @@ namespace Pal98Timer
                     }
                 }
             }
+
+            /// <summary>
+            /// 节点状态（用于显示不同颜色）
+            /// </summary>
+            private CheckPointStatus _status = CheckPointStatus.NotStarted;
+            public CheckPointStatus Status
+            {
+                get { return _status; }
+                set
+                {
+                    if (_status != value)
+                    {
+                        _status = value;
+                        isDirty = true;
+                    }
+                }
+            }
             public bool Draw(Graphics g, bool isForceDrawAll, GBoard bb, Rectangle rcName, Rectangle rcBest, Rectangle rcCha, Rectangle rcCur, Image bg, int bgWidth, int bgHeight, delUpdateRect ur = null)
             {
                 bool ret = false;
@@ -844,11 +861,19 @@ namespace Pal98Timer
                 ret = (IsDirty || IsTimeDirty);
 
                 bool needFillBG = (_logicidx % 2 == 0);
+                bool isSkipped = (_status == CheckPointStatus.AutoSkipped || _status == CheckPointStatus.ManualSkipped);
+
                 if (isDirty)
                 {
                     GEX.ClearRect(g, rcName, bg, bgWidth, bgHeight);
                     GEX.ClearRect(g, rcBest, bg, bgWidth, bgHeight);
-                    if (IsActive)
+
+                    // 根据状态选择背景色
+                    if (isSkipped)
+                    {
+                        g.FillRectangles(bb.CPItemSkippedBG, new Rectangle[] { rcName, rcBest });
+                    }
+                    else if (IsActive)
                     {
                         g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcName, rcBest });
                     }
@@ -857,8 +882,14 @@ namespace Pal98Timer
                         g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcName, rcBest });
                     }
 
-                    GEX.DrawText(g, _name, bb.CPNameFont, bb.CPNameFill, bb.CPNameBorder, rcName, GLayout.sfCC);
-                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bb.CPBestFill, bb.CPBestBorder, rcBest, GLayout.sfFC);
+                    // 根据状态选择文字颜色
+                    Brush nameFill = isSkipped ? bb.CPSkippedFill : bb.CPNameFill;
+                    Pen nameBorder = isSkipped ? bb.CPSkippedBorder : bb.CPNameBorder;
+                    Brush bestFill = isSkipped ? bb.CPSkippedFill : bb.CPBestFill;
+                    Pen bestBorder = isSkipped ? bb.CPSkippedBorder : bb.CPBestBorder;
+
+                    GEX.DrawText(g, _name, bb.CPNameFont, nameFill, nameBorder, rcName, GLayout.sfCC);
+                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bestFill, bestBorder, rcBest, GLayout.sfFC);
                     if (!isForceDrawAll)
                     {
                         ur?.Invoke(rcName);
@@ -870,7 +901,13 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, rcCha, bg, bgWidth, bgHeight);
                     GEX.ClearRect(g, rcCur, bg, bgWidth, bgHeight);
-                    if (IsActive)
+
+                    // 根据状态选择背景色
+                    if (isSkipped)
+                    {
+                        g.FillRectangles(bb.CPItemSkippedBG, new Rectangle[] { rcCha, rcCur });
+                    }
+                    else if (IsActive)
                     {
                         g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcCha, rcCur });
                     }
@@ -879,29 +916,51 @@ namespace Pal98Timer
                         g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcCha, rcCur });
                     }
 
-                    if (_ispassed || _isact)
+                    if (_ispassed || _isact || isSkipped)
                     {
-                        Brush fill = bb.CPSameFill;
-                        Pen border = bb.CPSameBorder;
-                        if (_cha.Ticks < 0)
+                        Brush fill;
+                        Pen border;
+
+                        if (isSkipped)
+                        {
+                            // 跳过节点使用灰色
+                            fill = bb.CPSkippedFill;
+                            border = bb.CPSkippedBorder;
+                        }
+                        else if (_cha.Ticks < 0)
                         {
                             //快
                             fill = bb.CPGoodFill;
                             border = bb.CPGoodBorder;
-                            GEX.DrawText(g, _cha.Hours == 0 ? ("-" + TS2MSS(_cha)) : ("-" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
                         }
                         else if (_cha.Ticks > 10000000)
                         {
                             //慢
                             fill = bb.CPBadFill;
                             border = bb.CPBadBorder;
-                            GEX.DrawText(g, _cha.Hours == 0 ? ("+" + TS2MSS(_cha)) : ("+" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
                         }
                         else
                         {
                             //同
                             fill = bb.CPSameFill;
                             border = bb.CPSameBorder;
+                        }
+
+                        // 显示时间差
+                        if (isSkipped)
+                        {
+                            GEX.DrawText(g, "跳过", bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                        }
+                        else if (_cha.Ticks < 0)
+                        {
+                            GEX.DrawText(g, _cha.Hours == 0 ? ("-" + TS2MSS(_cha)) : ("-" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                        }
+                        else if (_cha.Ticks > 10000000)
+                        {
+                            GEX.DrawText(g, _cha.Hours == 0 ? ("+" + TS2MSS(_cha)) : ("+" + TS2HMMSS(_cha)), bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
+                        }
+                        else
+                        {
                             GEX.DrawText(g, "0:00", bb.CPChaFont, fill, border, rcCha, GLayout.sfFC);
                         }
 
@@ -1006,6 +1065,19 @@ namespace Pal98Timer
         private int ItemScroll = 0;
         private bool isItemScroll = false;
 
+        /// <summary>
+        /// 更新节点状态（用于非顺序推进时显示跳过状态）
+        /// </summary>
+        /// <param name="index">节点索引</param>
+        /// <param name="status">节点状态</param>
+        public void UpdateItemStatus(int index, CheckPointStatus status)
+        {
+            if (index >= 0 && index < itemList.Count)
+            {
+                itemList[index].Status = status;
+            }
+        }
+
         private Rectangle rcTitle = new Rectangle();
         private Rectangle rcGameVersion = new Rectangle();
         private Rectangle rcVersion = new Rectangle();
@@ -1033,6 +1105,21 @@ namespace Pal98Timer
             rect.Width = w;
             rect.Height = h;
         }
+
+        /// <summary>
+        /// 测量文字在指定字体下的宽度
+        /// </summary>
+        private SizeF MeasureTextSize(string text, Font font)
+        {
+            if (string.IsNullOrEmpty(text) || font == null)
+                return SizeF.Empty;
+
+            using (Bitmap tmpBmp = new Bitmap(1, 1))
+            using (Graphics tmpG = Graphics.FromImage(tmpBmp))
+            {
+                return tmpG.MeasureString(text, font);
+            }
+        }
         private void BuildRects()
         {
             ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
@@ -1046,10 +1133,9 @@ namespace Pal98Timer
             {
                 // Compact layout for 简版
                 ModifyRect(ref rcMoreInfo, 5, Height - 75, Width - 10, 20);
-                ModifyRect(ref rcMainTimer, 20, Height - 120, Width - 70, 40);
-                ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 10 - rcMainTimer.Width, rcMainTimer.Height);
+                BuildCenteredMainTimer(Height - 120, 40);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
-                
+
                 ModifyRect(ref rcSubTimer, 10, Height - 140, GEX.GDIMulti(Width, 0.35F), 20);
                 ModifyRect(ref rcOutTimer, rcSubTimer.X + rcSubTimer.Width, rcSubTimer.Y, Width - 2 * rcSubTimer.X - rcSubTimer.Width, rcSubTimer.Height);
                 ModifyRect(ref rcWillClear, 10, Height - 160, Width - 20, 20);
@@ -1058,8 +1144,7 @@ namespace Pal98Timer
             {
                 // Standard layout for normal windows
                 ModifyRect(ref rcMoreInfo, 5, Height - 100, Width - 10, 26);
-                ModifyRect(ref rcMainTimer, 20, Height - 150, Width - 85, 50);
-                ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 25 - rcMainTimer.Width, rcMainTimer.Height);
+                BuildCenteredMainTimer(Height - 150, 50);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
 
                 ModifyRect(ref rcSubTimer, 10, Height - 170, GEX.GDIMulti(Width, 0.35F), 26);
@@ -1076,6 +1161,39 @@ namespace Pal98Timer
             ModifyRect(ref rcICur, rcItems.X + rcItems.Width - 110, 0, 110, GItem.Height);*/
             BuildRects_Item(rcItemScroll.Width > 0);
         }
+
+        /// <summary>
+        /// 动态计算主计时的布局，使其在窗口中居中
+        /// </summary>
+        /// <param name="y">主计时的 Y 坐标</param>
+        /// <param name="height">主计时的高度</param>
+        private void BuildCenteredMainTimer(int y, int height)
+        {
+            // 测量主时间文字 "00:00:00" 的宽度
+            SizeF mainTimerSize = MeasureTextSize("00:00:00", bb.MainTimerFont);
+            // 测量厘秒文字 "00" 的宽度
+            SizeF msSize = MeasureTextSize("00", bb.MainTimerMSFont);
+            // 测量反作弊 "*" 的宽度
+            SizeF asteriskSize = MeasureTextSize("*", bb.MainTimerFont);
+
+            // 计算整体宽度（主时间 + 间隔 + 厘秒）
+            // 间隔使用主时间宽度的 10% 作为缓冲
+            int gap = (int)(mainTimerSize.Width * 0.1f);
+            int totalWidth = (int)mainTimerSize.Width + gap + (int)msSize.Width;
+
+            // 计算起始位置，使整体居中
+            int startX = (Width - totalWidth) / 2;
+
+            // 设置主计时矩形（包含 "*" 的空间）
+            int mainTimerWidth = (int)mainTimerSize.Width + (int)asteriskSize.Width + 10; // 额外 10 像素缓冲
+            ModifyRect(ref rcMainTimer, startX, y, mainTimerWidth, height);
+
+            // 设置厘秒矩形
+            int msStartX = startX + mainTimerWidth + gap;
+            int msWidth = (int)msSize.Width + 10; // 额外 10 像素缓冲
+            ModifyRect(ref rcMainTimerMS, msStartX, y, msWidth, height);
+        }
+
         private void BuildRects_Item(bool showScroll)
         {
             if (showScroll)
@@ -2349,11 +2467,11 @@ namespace Pal98Timer
                 isCChanged = true; // rcMainTimer overlaps rcIsC, so ensure IsC is redrawn after clearing
                 if (isInCheck)
                 {
-                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 else
                 {
-                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
+                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
@@ -2369,7 +2487,7 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, rcMainTimerMS, bg, Width, Height);
                 }
-                GEX.DrawText(g, MainTimer.Milliseconds.ToString().PadLeft(3, '0').Substring(0, 2), bb.MainTimerMSFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimerMS, GLayout.sfFN);
+                GEX.DrawText(g, MainTimer.Milliseconds.ToString().PadLeft(3, '0').Substring(0, 2), bb.MainTimerMSFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimerMS, GLayout.sfCC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
                     ur?.Invoke(rcMainTimerMS);
@@ -2690,6 +2808,19 @@ namespace Pal98Timer
         public Pen CPSameBorder;
         public SolidBrush CPItemBG;
         public SolidBrush CPItemActBG;
+
+        /// <summary>
+        /// 跳过节点的背景色
+        /// </summary>
+        public SolidBrush CPItemSkippedBG;
+        /// <summary>
+        /// 跳过节点的文字填充色
+        /// </summary>
+        public SolidBrush CPSkippedFill;
+        /// <summary>
+        /// 跳过节点的文字边框色
+        /// </summary>
+        public Pen CPSkippedBorder;
         public SolidBrush IsCFill;
         public Pen IsCBorder;
         public SolidBrush IsCTextFill;
@@ -3051,6 +3182,11 @@ namespace Pal98Timer
             CPSameBorder = new Pen(Color.Black, 3F);
             CPItemActBG = new SolidBrush(Color.FromArgb(90, 255, 255, 0));
             CPItemBG = new SolidBrush(Color.FromArgb(50, 255, 255, 255));
+
+            // 跳过节点的颜色（灰色调）
+            CPItemSkippedBG = new SolidBrush(Color.FromArgb(50, 128, 128, 128));
+            CPSkippedFill = new SolidBrush(Color.Gray);
+            CPSkippedBorder = new Pen(Color.DarkGray, 2F);
         }
 
         public void Dispose()
@@ -3061,6 +3197,9 @@ namespace Pal98Timer
             IsCTextFill?.Dispose();
             CPItemActBG?.Dispose();
             CPItemBG?.Dispose();
+            CPItemSkippedBG?.Dispose();
+            CPSkippedFill?.Dispose();
+            CPSkippedBorder?.Dispose();
             DotTextBorder?.Dispose();
             DotTextFill?.Dispose();
             CPSameBorder?.Dispose();

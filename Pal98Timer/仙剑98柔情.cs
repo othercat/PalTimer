@@ -65,12 +65,18 @@ namespace Pal98Timer
         private List<string> NamedBattleRes = new List<string>();
 
         private bool IsShowSpeed = false;
-        
+        private bool HasAlertMutiPal = false;
+
+        private bool _GameWasRunning = false;  // 游戏是否曾经运行过（用于区分首次检测和游戏关闭后重新检测）
+        private DateTime _GameClosedTime = DateTime.MinValue;  // 游戏关闭的时间
+        private const int GameClosedSilentPeriodSeconds = 5;  // 游戏关闭后静默等待时间（秒）
+
         // 战斗中实时显示用的临时变量
         private short CurrentBattleHCG = 0;  // 当前战斗中获得的火虫草
         private short CurrentBattleXLL = 0;  // 当前战斗中获得的血玲珑
         private short CurrentBattleLQJ = 0;  // 当前战斗中获得的龙泉剑
         private short CurrentBattleYXY = 0;  // 当前战斗中获得的夜行衣
+        private short CurrentBattleTLF = 0;  // 当前战斗中获得的土灵符
 
         // 战斗暂停补偿变量（功能5）
         private TimeSpan BattlePauseOffset = TimeSpan.Zero;
@@ -80,6 +86,7 @@ namespace Pal98Timer
         public 仙剑98柔情(GForm form) : base(form)
         {
             CoreName = "PAL98";
+            EnableNonSequentialCheck = true;  // 启用非顺序节点推进（跳图路线支持）
         }
 
         protected override void InitCheckPoints()
@@ -450,14 +457,15 @@ namespace Pal98Timer
             int displayXLL = MaxXLL + (IsInBattle ? CurrentBattleXLL : (int)0);
             int displayLQJ = MaxLQJ + (IsInBattle ? CurrentBattleLQJ : (int)0);
             int displayYXY = MaxYXY + (IsInBattle ? CurrentBattleYXY : (int)0);
-            
+            int displayTLF = MaxTLF + (IsInBattle ? CurrentBattleTLF : (int)0);
+
             if (IsShowSpeed)
             {
-                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
             }
             else
             {
-                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((MaxTLF > 0) ? (" 土" + MaxTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
             }
         }
 
@@ -519,6 +527,8 @@ namespace Pal98Timer
             ST.Reset();
             WillAppendNamedBattle = "";
             NamedBattleRes = new List<string>();
+            _GameWasRunning = false;  // 重置游戏运行状态
+            _GameClosedTime = DateTime.MinValue;  // 重置游戏关闭时间
         }
         
         private ToolStripMenuItem btnCloudSave;
@@ -764,51 +774,99 @@ namespace Pal98Timer
             SI.ins.Luck = MConfig.ins.Luck();
             SI.ins.ColorEgg = MConfig.ins.ColorEgg;
         }
-        private bool HasAlertMutiPal = false;
+
         private bool GetPalHandle()
         {
             Process[] res = Process.GetProcessesByName("Pal");
-            
-            // 过滤已退出的进程，避免重启时误报
-            if (res.Length > 1)
+
+            // 过滤已退出的进程
+            var aliveProcesses = res.Where(p => {
+                try { return !p.HasExited; }
+                catch { return false; }
+            }).ToArray();
+
+            // 游戏关闭后的静默等待期
+            if (_GameWasRunning && aliveProcesses.Length == 0)
             {
-                var aliveProcesses = res.Where(p => {
-                    try { return !p.HasExited; }
-                    catch { return false; }
-                }).ToArray();
-                
-                if (aliveProcesses.Length > 1)
+                if (_GameClosedTime == DateTime.MinValue)
                 {
-                    if (!HasAlertMutiPal)
-                    {
-                        cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
-                        HasAlertMutiPal = true;
-                    }
-                    return false;
+                    _GameClosedTime = DateTime.Now;
                 }
-                res = aliveProcesses;
+                TimeSpan closedDuration = DateTime.Now - _GameClosedTime;
+                if (closedDuration.TotalSeconds < GameClosedSilentPeriodSeconds)
+                {
+                    return false;  // 静默等待，不显示错误
+                }
+                // 静默期过后，重置状态
+                _GameWasRunning = false;
+                _GameClosedTime = DateTime.MinValue;
+            }
+
+            if (aliveProcesses.Length > 1)
+            {
+                if (!HasAlertMutiPal)
+                {
+                    cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
+                    HasAlertMutiPal = true;
+                }
+                return false;
             }
 
             HasAlertMutiPal = false;
+            res = aliveProcesses;
+
             if (res.Length > 0)
             {
+                // 刷新进程信息以获取最新状态
+                try { res[0].Refresh(); }
+                catch { }
+
                 if (PID == -1)
                 {
-                    //PalHandle = res[0].Handle;
+                    IntPtr tempHandle = res[0].MainWindowHandle;
+
+                    // 如果窗口句柄为空，可能是游戏正在关闭
+                    if (tempHandle == IntPtr.Zero)
+                    {
+                        if (_GameWasRunning)
+                        {
+                            if (_GameClosedTime == DateTime.MinValue)
+                            {
+                                _GameClosedTime = DateTime.Now;
+                            }
+                            return false;
+                        }
+                        return false;
+                    }
+
                     PalProcess = res[0];
-                    //GameWindowHandle = User32.FindWindow(null, "仙剑奇侠传 WIN-95 版 [补丁版本：3.0.2014.628]");
-                    GameWindowHandle = res[0].MainWindowHandle;
+                    GameWindowHandle = tempHandle;
                     PID = PalProcess.Id;
                     PalHandle = new IntPtr(Kernel32.OpenProcess(0x1F0FFF, false, PID));
-
                     CalcPalMD5();
-
+                    _GameWasRunning = true;
+                    _GameClosedTime = DateTime.MinValue;
                     return true;
                 }
                 else
                 {
                     if (PID == res[0].Id)
                     {
+                        // 检查进程是否真的还在运行
+                        try
+                        {
+                            if (res[0].HasExited)
+                            {
+                                if (_GameWasRunning)
+                                {
+                                    _GameClosedTime = DateTime.Now;
+                                }
+                                ClearGameState();
+                                return false;
+                            }
+                        }
+                        catch { }
+
                         if (GMD5 == "none")
                         {
                             CalcPalMD5();
@@ -817,24 +875,38 @@ namespace Pal98Timer
                     }
                     else
                     {
-                        PalHandle = IntPtr.Zero;
-                        GameWindowHandle = IntPtr.Zero;
-                        PalProcess = null;
-                        PID = -1;
-                        GMD5 = "none";
+                        // PID 不匹配
+                        if (_GameWasRunning)
+                        {
+                            _GameClosedTime = DateTime.Now;
+                        }
+                        ClearGameState();
                         return false;
                     }
                 }
             }
             else
             {
-                PalHandle = IntPtr.Zero;
-                GameWindowHandle = IntPtr.Zero;
-                PalProcess = null;
-                PID = -1;
-                GMD5 = "none";
+                // 没有找到进程
+                if (_GameWasRunning)
+                {
+                    _GameClosedTime = DateTime.Now;
+                }
+                ClearGameState();
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 清理游戏状态，但保留 _GameWasRunning 标志
+        /// </summary>
+        private void ClearGameState()
+        {
+            PalHandle = IntPtr.Zero;
+            GameWindowHandle = IntPtr.Zero;
+            PalProcess = null;
+            PID = -1;
+            GMD5 = "none";
         }
 
         private void CalcPalMD5()
@@ -984,6 +1056,7 @@ namespace Pal98Timer
             CurrentBattleXLL = 0;
             CurrentBattleLQJ = 0;
             CurrentBattleYXY = 0;
+            CurrentBattleTLF = 0;
             
             // 重置暂停补偿变量（功能5）
             BattlePauseOffset = TimeSpan.Zero;
@@ -1039,11 +1112,12 @@ namespace Pal98Timer
             }
             biw.SetCount(GameObj);
             
-            // 实时更新火、血、剑、夜行衣的数量
+            // 实时更新火、血、剑、夜行衣、土灵符的数量
             CurrentBattleHCG = biw.GettedCount(0x8F);  // 火虫草
             CurrentBattleXLL = biw.GettedCount(0xA2);  // 血玲珑
             CurrentBattleLQJ = biw.GettedCount(0xB8);  // 龙泉剑
             CurrentBattleYXY = biw.GettedCount(0xD4);  // 夜行衣
+            CurrentBattleTLF = biw.GettedCount(0x47);  // 土灵符
         }
         private void BattleEnd()
         {
@@ -1067,6 +1141,7 @@ namespace Pal98Timer
             CurrentBattleXLL = 0;
             CurrentBattleLQJ = 0;
             CurrentBattleYXY = 0;
+            CurrentBattleTLF = 0;
         }
         private void BattleEndMore()
         {

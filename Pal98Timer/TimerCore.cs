@@ -200,16 +200,30 @@ namespace Pal98Timer
                 {
                     CheckPoints[i].IsBegin = true;
                     CheckPoints[i].IsEnd = true;
+                    // 手动跳过的节点标记为 ManualSkipped
+                    if (CheckPoints[i].Status == CheckPointStatus.NotStarted ||
+                        CheckPoints[i].Status == CheckPointStatus.InProgress)
+                    {
+                        CheckPoints[i].Status = CheckPointStatus.ManualSkipped;
+                    }
+                    // 更新 UI 状态
+                    form?.rr?.UpdateItemStatus(i, CheckPoints[i].Status);
                 }
                 else if (i == index)
                 {
                     CheckPoints[i].IsBegin = true;
                     CheckPoints[i].IsEnd = false;
+                    CheckPoints[i].Status = CheckPointStatus.InProgress;
+                    // 更新 UI 状态
+                    form?.rr?.UpdateItemStatus(i, CheckPointStatus.InProgress);
                 }
                 else
                 {
                     CheckPoints[i].IsBegin = false;
                     CheckPoints[i].IsEnd = false;
+                    CheckPoints[i].Status = CheckPointStatus.NotStarted;
+                    // 更新 UI 状态
+                    form?.rr?.UpdateItemStatus(i, CheckPointStatus.NotStarted);
                 }
             }
             CurrentStep = index;
@@ -507,18 +521,102 @@ namespace Pal98Timer
             if (CurrentStep < 0 && CheckPoints.Count > 0)
             {
                 CheckPoints[0].IsBegin = true;
+                CheckPoints[0].Status = CheckPointStatus.InProgress;
                 CurrentStep = 0;
             }
 
             if (CurrentStep < CheckPoints.Count)
             {
                 CheckPoints[CurrentStep].Current = MT.CurrentTSOnly;
-                if (CheckPoints[CurrentStep].Check())
+
+                if (EnableNonSequentialCheck)
                 {
-                    CheckPoints[CurrentStep].Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
-                    CheckPoints[CurrentStep].IsEnd = true;
-                    //CurrentStep++;
-                    int nextstep = CurrentStep + 1;
+                    // 非顺序推进模式：支持跳图路线
+                    CheckNonSequentialChecking();
+                }
+                else
+                {
+                    // 传统顺序推进模式
+                    if (CheckPoints[CurrentStep].Check())
+                    {
+                        CheckPoints[CurrentStep].Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
+                        CheckPoints[CurrentStep].IsEnd = true;
+                        CheckPoints[CurrentStep].Status = CheckPointStatus.Completed;
+                        int nextstep = CurrentStep + 1;
+                        if (nextstep >= CheckPoints.Count)
+                        {
+                            OnCheckPointEnd();
+                        }
+                        else
+                        {
+                            CheckPoints[nextstep].IsBegin = true;
+                            CheckPoints[nextstep].Status = CheckPointStatus.InProgress;
+                        }
+                        CurrentStep = nextstep;
+                    }
+                }
+            }
+            else
+            {
+                OnCheckPointEnd();
+            }
+        }
+
+        /// <summary>
+        /// 非顺序节点推进逻辑
+        /// </summary>
+        private void CheckNonSequentialChecking()
+        {
+            // 回检：被跳过的节点如果条件再次满足，恢复为正常完成状态
+            for (int i = 0; i < CurrentStep; i++)
+            {
+                if (CheckPoints[i].Status == CheckPointStatus.AutoSkipped)
+                {
+                    if (CheckPoints[i].Check())
+                    {
+                        CheckPoints[i].Status = CheckPointStatus.Completed;
+                        CheckPoints[i].Current = MT.CurrentTSOnly;
+                        form?.rr?.UpdateItemStatus(i, CheckPointStatus.Completed);
+                    }
+                }
+            }
+
+            // 优先检查当前节点
+            if (CheckPoints[CurrentStep].Check())
+            {
+                CompleteCurrentStep();
+                return;
+            }
+
+            // 当前节点不满足时，向后查找第一个满足的节点
+            for (int i = CurrentStep + 1; i < CheckPoints.Count; i++)
+            {
+                if (CheckPoints[i].Check())
+                {
+                    // 找到满足的后续节点，标记中间节点为跳过
+                    for (int j = CurrentStep; j < i; j++)
+                    {
+                        if (CheckPoints[j].Status == CheckPointStatus.InProgress ||
+                            CheckPoints[j].Status == CheckPointStatus.NotStarted)
+                        {
+                            CheckPoints[j].Status = CheckPointStatus.AutoSkipped;
+                            CheckPoints[j].IsEnd = true;
+                            // 跳过的节点使用当前时间作为完成时间
+                            CheckPoints[j].Current = MT.CurrentTSOnly;
+                            // 更新 UI 状态
+                            form?.rr?.UpdateItemStatus(j, CheckPointStatus.AutoSkipped);
+                        }
+                    }
+
+                    // 完成命中的后续节点
+                    CheckPoints[i].Current = MT.CurrentTSOnly;
+                    CheckPoints[i].IsEnd = true;
+                    CheckPoints[i].Status = CheckPointStatus.Completed;
+                    // 更新 UI 状态
+                    form?.rr?.UpdateItemStatus(i, CheckPointStatus.Completed);
+
+                    // 推进到下一个节点
+                    int nextstep = i + 1;
                     if (nextstep >= CheckPoints.Count)
                     {
                         OnCheckPointEnd();
@@ -526,15 +624,37 @@ namespace Pal98Timer
                     else
                     {
                         CheckPoints[nextstep].IsBegin = true;
+                        CheckPoints[nextstep].Status = CheckPointStatus.InProgress;
                     }
                     CurrentStep = nextstep;
-                    //PostCloudRank();
+                    return;
                 }
             }
-            else
+
+            // 特殊处理：检查终点条件（如拜月血量为0）
+            // 这里不做特殊处理，由各内核的 Check 方法自行处理
+        }
+
+        /// <summary>
+        /// 完成当前节点
+        /// </summary>
+        private void CompleteCurrentStep()
+        {
+            CheckPoints[CurrentStep].Current = new TimeSpan(MT.CurrentTSOnly.Ticks);
+            CheckPoints[CurrentStep].IsEnd = true;
+            CheckPoints[CurrentStep].Status = CheckPointStatus.Completed;
+
+            int nextstep = CurrentStep + 1;
+            if (nextstep >= CheckPoints.Count)
             {
                 OnCheckPointEnd();
             }
+            else
+            {
+                CheckPoints[nextstep].IsBegin = true;
+                CheckPoints[nextstep].Status = CheckPointStatus.InProgress;
+            }
+            CurrentStep = nextstep;
         }
         private bool _hasCallPointEnd = false;
         protected virtual void OnCheckPointEnd()
@@ -660,6 +780,11 @@ namespace Pal98Timer
         /// 检测间隔（毫秒）
         /// </summary>
         protected int CheckInterval = 70;
+
+        /// <summary>
+        /// 是否启用非顺序节点推进（跳图路线支持）
+        /// </summary>
+        protected bool EnableNonSequentialCheck = false;
         /// <summary>
         /// 是否继续检测线程？unload的时候设置为false就行
         /// </summary>
@@ -1250,6 +1375,34 @@ namespace Pal98Timer
 
 
     public delegate bool Checker();
+
+    /// <summary>
+    /// 节点完成状态
+    /// </summary>
+    public enum CheckPointStatus
+    {
+        /// <summary>
+        /// 未开始
+        /// </summary>
+        NotStarted,
+        /// <summary>
+        /// 进行中
+        /// </summary>
+        InProgress,
+        /// <summary>
+        /// 正常完成
+        /// </summary>
+        Completed,
+        /// <summary>
+        /// 自动跳过（非顺序推进时跳过）
+        /// </summary>
+        AutoSkipped,
+        /// <summary>
+        /// 手动跳过
+        /// </summary>
+        ManualSkipped
+    }
+
     /// <summary>
     /// 时间节点
     /// </summary>
@@ -1279,6 +1432,12 @@ namespace Pal98Timer
         public bool IsBegin = false;
         public bool IsEnd = false;
         public int Index = -1;
+
+        /// <summary>
+        /// 节点完成状态
+        /// </summary>
+        public CheckPointStatus Status = CheckPointStatus.NotStarted;
+
         public CheckPoint(int index, CheckPointNewer n)
         {
             this.Index = index;
@@ -1286,6 +1445,7 @@ namespace Pal98Timer
             Name = n.Name;
             NickName = n.NickName;
             Best = n.BestTS;
+            Status = CheckPointStatus.NotStarted;
         }
         public string GetNickName()
         {
