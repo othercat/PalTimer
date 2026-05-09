@@ -1,7 +1,0 @@
-**.rs.bk
-.DS_Store
-capi/bindings
-Cargo.lock
-docs
-target
-.vs*
