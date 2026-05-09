@@ -494,6 +494,12 @@ namespace Pal98Timer
                             AAction += "|[" + CheckPoints[_CurrentStep - 2].Name + "~" + CheckPoints[_CurrentStep - 1].Name + "] " + GetPointSpanStr();
                         }
                     }
+
+                    // 节点完成时播放提示音效
+                    if (IsAdd && PointSpan.Ticks > 0)
+                    {
+                        TryPlayPointSound();
+                    }
                 }
                 else
                 {
@@ -737,6 +743,45 @@ namespace Pal98Timer
         public string GetPointSpanStr()
         {
             return Math.Floor(PointSpan.TotalMinutes) + ":" + PointSpan.Seconds.ToString().PadLeft(2, '0') + "." + Math.Floor(0.1D * PointSpan.Milliseconds).ToString().PadLeft(2, '0');
+        }
+
+        /// <summary>
+        /// 尝试播放节点完成提示音效
+        /// </summary>
+        private void TryPlayPointSound()
+        {
+            try
+            {
+                if (_CurrentStep <= 0 || _CurrentStep > CheckPoints.Count) return;
+
+                // 分段快慢：当前区间耗时 vs 最佳线相邻节点区间耗时
+                bool segmentFaster;
+                if (_CurrentStep == 1)
+                {
+                    // 第一个节点：当前时间 vs 最佳时间
+                    TimeSpan bestSeg = CheckPoints[0].Best;
+                    TimeSpan curSeg = CheckPoints[0].Current;
+                    segmentFaster = bestSeg.Ticks > 0 && curSeg < bestSeg;
+                }
+                else
+                {
+                    // 后续节点：区间差
+                    TimeSpan bestSeg = CheckPoints[_CurrentStep - 1].Best - CheckPoints[_CurrentStep - 2].Best;
+                    TimeSpan curSeg = CheckPoints[_CurrentStep - 1].Current - CheckPoints[_CurrentStep - 2].Current;
+                    segmentFaster = bestSeg.Ticks > 0 && curSeg < bestSeg;
+                }
+
+                // 总时间快慢：当前节点完成时间 vs 该节点最佳时间
+                TimeSpan bestTotal = CheckPoints[_CurrentStep - 1].Best;
+                TimeSpan curTotal = CheckPoints[_CurrentStep - 1].Current;
+                bool totalFaster = bestTotal.Ticks > 0 && curTotal < bestTotal;
+
+                SoundConfig.ins.PlayBySpeed(segmentFaster, totalFaster);
+            }
+            catch
+            {
+                // 静默忽略音效播放错误
+            }
         }
         /// <summary>
         /// 主时间右上方小时间

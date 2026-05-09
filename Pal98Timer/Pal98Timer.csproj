@@ -220,6 +220,8 @@
     <Compile Include="仙剑98柔情DX9.cs" />
     <Compile Include="仙剑98柔情.cs" />
     <Compile Include="PalPackVersion.cs" />
+    <Compile Include="SoundConfig.cs" />
+    <Compile Include="SoundConfigForm.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TimerCore.cs" />

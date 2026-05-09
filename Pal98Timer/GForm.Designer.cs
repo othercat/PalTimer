@@ -38,6 +38,7 @@
             this.btnEditBest = new System.Windows.Forms.ToolStripMenuItem();
             this.btnTransparency = new System.Windows.Forms.ToolStripMenuItem();
             this.btnBattlePauseNoTimer = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnSoundConfig = new System.Windows.Forms.ToolStripMenuItem();
             this.mnMain = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.btnChangeStyle = new System.Windows.Forms.ToolStripMenuItem();
             this.btnPluginManage = new System.Windows.Forms.ToolStripMenuItem();
@@ -60,7 +61,8 @@
             this.btnShowPSInDots,
             this.btnEditBest,
             this.btnTransparency,
-            this.btnBattlePauseNoTimer});
+            this.btnBattlePauseNoTimer,
+            this.btnSoundConfig});
             this.mnData.Name = "mnData";
             this.mnData.Size = new System.Drawing.Size(185, 114);
             // 
@@ -107,7 +109,14 @@
             this.btnBattlePauseNoTimer.Size = new System.Drawing.Size(184, 22);
             this.btnBattlePauseNoTimer.Text = "战斗暂停不计时";
             this.btnBattlePauseNoTimer.Click += new System.EventHandler(this.btnBattlePauseNoTimer_Click);
-            // 
+            //
+            // btnSoundConfig
+            //
+            this.btnSoundConfig.Name = "btnSoundConfig";
+            this.btnSoundConfig.Size = new System.Drawing.Size(184, 22);
+            this.btnSoundConfig.Text = "节点音效配置";
+            this.btnSoundConfig.Click += new System.EventHandler(this.btnSoundConfig_Click);
+            //
             // mnMain
             // 
             this.mnMain.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -173,5 +182,6 @@
         private System.Windows.Forms.ToolStripMenuItem btnShowPSInDots;
         private System.Windows.Forms.ToolStripMenuItem btnTransparency;
         private System.Windows.Forms.ToolStripMenuItem btnBattlePauseNoTimer;
+        private System.Windows.Forms.ToolStripMenuItem btnSoundConfig;
     }
 }

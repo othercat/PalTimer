@@ -26,6 +26,11 @@ namespace Pal98Timer
         private static int call(int act,int data=0)
         {
             int hwnd = FindWindow(null, "改键器");
+            if (hwnd == 0)
+            {
+                // 兼容旧版改键器窗口标题
+                hwnd = FindWindow(null, "改建器");
+            }
             if (hwnd != 0)
             {
                 return SendMessage(hwnd, TIMERCALL, (IntPtr)act, (IntPtr)data).ToInt32();
@@ -100,7 +105,7 @@ namespace Pal98Timer
         }
         public static bool IsWindowOpen()
         {
-            return FindWindow(null, "改键器") != 0;
+            return FindWindow(null, "改键器") != 0 || FindWindow(null, "改建器") != 0;
         }
         public static void Edit()
         {

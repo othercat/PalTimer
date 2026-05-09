@@ -67,6 +67,8 @@ namespace Pal98Timer
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
 
+        private int TotalMonsterCount = 0;  // 撞怪总数
+
         private bool _GameWasRunning = false;  // 游戏是否曾经运行过（用于区分首次检测和游戏关闭后重新检测）
         private DateTime _GameClosedTime = DateTime.MinValue;  // 游戏关闭的时间
         private const int GameClosedSilentPeriodSeconds = 5;  // 游戏关闭后静默等待时间（秒）
@@ -461,11 +463,11 @@ namespace Pal98Timer
 
             if (IsShowSpeed)
             {
-                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return MoveSpeed.ToString("F2") + "   " + "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
             else
             {
-                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "");
+                return "蜂" + MaxFC + " 蜜" + MaxFM + " 火" + displayHCG + " 血" + displayXLL + " 夜" + displayYXY + " 剑" + displayLQJ + ((displayTLF > 0) ? (" 土" + displayTLF) : "") + ((MaxQTJ > 0) ? (" 甲" + MaxQTJ) : "") + " 怪" + TotalMonsterCount;
             }
         }
 
@@ -505,6 +507,17 @@ namespace Pal98Timer
             }
         }
 
+        public override string GetPointEnd()
+        {
+            return "预计通关 " + GetWillClearStr();
+        }
+
+        public override string GetPointSpan()
+        {
+            if (PointSpanName == "") return "--";
+            return PointSpanName + " " + GetPointSpanStr();
+        }
+
         public override void Reset()
         {
             base.Reset();
@@ -522,6 +535,7 @@ namespace Pal98Timer
             MaxYXY = 0;
             MaxQTJ = 0;
             MaxTLF = 0;
+            TotalMonsterCount = 0;
             BattleLong = new TimeSpan(0);
             //InitCheckPoints();
             ST.Reset();
@@ -806,7 +820,7 @@ namespace Pal98Timer
             {
                 if (!HasAlertMutiPal)
                 {
-                    cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
+                    //cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
                     HasAlertMutiPal = true;
                 }
                 return false;
@@ -1050,7 +1064,8 @@ namespace Pal98Timer
             BattleLong = new TimeSpan(0);
             InBattleTime = DateTime.Now;
             biw = new BattleItemWatch();
-            
+            TotalMonsterCount++;  // 撞怪计数器增加
+
             // 重置战斗中实时显示的临时变量
             CurrentBattleHCG = 0;
             CurrentBattleXLL = 0;
@@ -1201,6 +1216,7 @@ namespace Pal98Timer
             exdata["EarthPaper"] = MaxTLF;
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
+            exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
 
             string namedbattles = "";
             foreach (string nmb in NamedBattleRes)

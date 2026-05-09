@@ -868,12 +868,8 @@ namespace Pal98Timer
                     GEX.ClearRect(g, rcName, bg, bgWidth, bgHeight);
                     GEX.ClearRect(g, rcBest, bg, bgWidth, bgHeight);
 
-                    // 根据状态选择背景色
-                    if (isSkipped)
-                    {
-                        g.FillRectangles(bb.CPItemSkippedBG, new Rectangle[] { rcName, rcBest });
-                    }
-                    else if (IsActive)
+                    // 跳过节点沿用普通显示，不做特殊颜色
+                    if (IsActive)
                     {
                         g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcName, rcBest });
                     }
@@ -882,14 +878,8 @@ namespace Pal98Timer
                         g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcName, rcBest });
                     }
 
-                    // 根据状态选择文字颜色
-                    Brush nameFill = isSkipped ? bb.CPSkippedFill : bb.CPNameFill;
-                    Pen nameBorder = isSkipped ? bb.CPSkippedBorder : bb.CPNameBorder;
-                    Brush bestFill = isSkipped ? bb.CPSkippedFill : bb.CPBestFill;
-                    Pen bestBorder = isSkipped ? bb.CPSkippedBorder : bb.CPBestBorder;
-
-                    GEX.DrawText(g, _name, bb.CPNameFont, nameFill, nameBorder, rcName, GLayout.sfCC);
-                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bestFill, bestBorder, rcBest, GLayout.sfFC);
+                    GEX.DrawText(g, _name, bb.CPNameFont, bb.CPNameFill, bb.CPNameBorder, rcName, GLayout.sfCC);
+                    GEX.DrawText(g, TS2HHMMSS(_best), bb.CPBestFont, bb.CPBestFill, bb.CPBestBorder, rcBest, GLayout.sfFC);
                     if (!isForceDrawAll)
                     {
                         ur?.Invoke(rcName);
@@ -903,11 +893,8 @@ namespace Pal98Timer
                     GEX.ClearRect(g, rcCur, bg, bgWidth, bgHeight);
 
                     // 根据状态选择背景色
-                    if (isSkipped)
-                    {
-                        g.FillRectangles(bb.CPItemSkippedBG, new Rectangle[] { rcCha, rcCur });
-                    }
-                    else if (IsActive)
+                    // 跳过节点沿用普通显示，不做特殊颜色
+                    if (IsActive)
                     {
                         g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcCha, rcCur });
                     }
@@ -921,13 +908,7 @@ namespace Pal98Timer
                         Brush fill;
                         Pen border;
 
-                        if (isSkipped)
-                        {
-                            // 跳过节点使用灰色
-                            fill = bb.CPSkippedFill;
-                            border = bb.CPSkippedBorder;
-                        }
-                        else if (_cha.Ticks < 0)
+                        if (_cha.Ticks < 0)
                         {
                             //快
                             fill = bb.CPGoodFill;

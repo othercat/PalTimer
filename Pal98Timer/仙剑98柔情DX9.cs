@@ -1196,6 +1196,7 @@ namespace Pal98Timer
                         else
                         {
                             // 宽限期过后，只在从未确认过DX9时显示错误
+                            // 曾确认过DX9说明游戏正在关闭，静默处理
                             if (!HasConfirmedDX9)
                             {
                                 cryerror = "请使用仙剑98 DX9移植版！窗口句柄无效";
@@ -1203,11 +1204,11 @@ namespace Pal98Timer
                             return false;
                         }
                     }
-                    
+
                     StringBuilder sb = new StringBuilder(256);
                     User32.GetWindowText(tempHandle, sb, sb.Capacity);
                     string windowTitle = sb.ToString();
-                    
+
                     // 处理窗口标题为空或仅包含空白字符的情况（窗口转换期间）
                     if (string.IsNullOrWhiteSpace(windowTitle))
                     {
@@ -1236,6 +1237,7 @@ namespace Pal98Timer
                         else
                         {
                             // 宽限期过后，只在从未确认过DX9时显示错误
+                            // 曾确认过DX9说明游戏正在关闭，静默处理
                             if (!HasConfirmedDX9)
                             {
                                 cryerror = "请使用仙剑98 DX9移植版！无法获取窗口标题";

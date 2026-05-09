@@ -905,6 +905,15 @@ namespace Pal98Timer
             IsBattlePauseNoTimer = btnBattlePauseNoTimer.Checked;
         }
 
+        private void btnSoundConfig_Click(object sender, EventArgs e)
+        {
+            using (SoundConfigForm form = new SoundConfigForm())
+            {
+                form.ShowDialog(this);
+            }
+            btnSoundConfig.Checked = SoundConfig.ins.GlobalEnabled;
+        }
+
         private void LoadTransparency()
         {
             string transparencyFile = "transparency";
