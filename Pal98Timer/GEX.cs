@@ -1087,20 +1087,6 @@ namespace Pal98Timer
             rect.Height = h;
         }
 
-        /// <summary>
-        /// 测量文字在指定字体下的宽度
-        /// </summary>
-        private SizeF MeasureTextSize(string text, Font font)
-        {
-            if (string.IsNullOrEmpty(text) || font == null)
-                return SizeF.Empty;
-
-            using (Bitmap tmpBmp = new Bitmap(1, 1))
-            using (Graphics tmpG = Graphics.FromImage(tmpBmp))
-            {
-                return tmpG.MeasureString(text, font);
-            }
-        }
         private void BuildRects()
         {
             ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
@@ -1114,7 +1100,8 @@ namespace Pal98Timer
             {
                 // Compact layout for 简版
                 ModifyRect(ref rcMoreInfo, 5, Height - 75, Width - 10, 20);
-                BuildCenteredMainTimer(Height - 120, 40);
+                ModifyRect(ref rcMainTimer, 20, Height - 120, Width - 70, 40);
+                ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 10 - rcMainTimer.Width, rcMainTimer.Height);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
 
                 ModifyRect(ref rcSubTimer, 10, Height - 140, GEX.GDIMulti(Width, 0.35F), 20);
@@ -1125,7 +1112,8 @@ namespace Pal98Timer
             {
                 // Standard layout for normal windows
                 ModifyRect(ref rcMoreInfo, 5, Height - 100, Width - 10, 26);
-                BuildCenteredMainTimer(Height - 150, 50);
+                ModifyRect(ref rcMainTimer, 20, Height - 150, Width - 85, 50);
+                ModifyRect(ref rcMainTimerMS, rcMainTimer.X + rcMainTimer.Width, rcMainTimer.Y, Width - 25 - rcMainTimer.Width, rcMainTimer.Height);
                 ModifyRect(ref rcIsC, -1, rcMainTimer.Y + 5, 20, rcMainTimer.Height - 10);
 
                 ModifyRect(ref rcSubTimer, 10, Height - 170, GEX.GDIMulti(Width, 0.35F), 26);
@@ -1141,38 +1129,6 @@ namespace Pal98Timer
             ModifyRect(ref rcICha, rcIBest.X, 0, rcIBest.Width, GItem.Height - GItem.HalfHeight);
             ModifyRect(ref rcICur, rcItems.X + rcItems.Width - 110, 0, 110, GItem.Height);*/
             BuildRects_Item(rcItemScroll.Width > 0);
-        }
-
-        /// <summary>
-        /// 动态计算主计时的布局，使其在窗口中居中
-        /// </summary>
-        /// <param name="y">主计时的 Y 坐标</param>
-        /// <param name="height">主计时的高度</param>
-        private void BuildCenteredMainTimer(int y, int height)
-        {
-            // 测量主时间文字 "00:00:00" 的宽度
-            SizeF mainTimerSize = MeasureTextSize("00:00:00", bb.MainTimerFont);
-            // 测量厘秒文字 "00" 的宽度
-            SizeF msSize = MeasureTextSize("00", bb.MainTimerMSFont);
-            // 测量反作弊 "*" 的宽度
-            SizeF asteriskSize = MeasureTextSize("*", bb.MainTimerFont);
-
-            // 计算整体宽度（主时间 + 间隔 + 厘秒）
-            // 间隔使用主时间宽度的 10% 作为缓冲
-            int gap = (int)(mainTimerSize.Width * 0.1f);
-            int totalWidth = (int)mainTimerSize.Width + gap + (int)msSize.Width;
-
-            // 计算起始位置，使整体居中
-            int startX = (Width - totalWidth) / 2;
-
-            // 设置主计时矩形（包含 "*" 的空间）
-            int mainTimerWidth = (int)mainTimerSize.Width + (int)asteriskSize.Width + 10; // 额外 10 像素缓冲
-            ModifyRect(ref rcMainTimer, startX, y, mainTimerWidth, height);
-
-            // 设置厘秒矩形
-            int msStartX = startX + mainTimerWidth + gap;
-            int msWidth = (int)msSize.Width + 10; // 额外 10 像素缓冲
-            ModifyRect(ref rcMainTimerMS, msStartX, y, msWidth, height);
         }
 
         private void BuildRects_Item(bool showScroll)
@@ -2448,11 +2404,11 @@ namespace Pal98Timer
                 isCChanged = true; // rcMainTimer overlaps rcIsC, so ensure IsC is redrawn after clearing
                 if (isInCheck)
                 {
-                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
+                    GEX.DrawText(g, "*" + TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
                 }
                 else
                 {
-                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfCC);
+                    GEX.DrawText(g, TS2HHMMSS(MainTimer), bb.MainTimerFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimer, GLayout.sfFC);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {

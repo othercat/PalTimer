@@ -261,9 +261,9 @@ PalTimer 现有入口：
 - 这部分不建议和本轮 bugfix 混在一起做。
 - 先修稳定性和路线兼容，再规划架构扩展。
 
-## DONE: 主计时居中显示
+## ~~DONE: 主计时居中显示~~ （已回退）
 
-已在 commit `14bb951` 中实现 `BuildCenteredMainTimer()` + `MeasureTextSize()`，通过 `Graphics.MeasureString` 测量实际文字宽度后整体居中。简版小窗口和标准窗口均使用同一居中逻辑。
+曾在 commit `14bb951` 中实现 `BuildCenteredMainTimer()` + `MeasureTextSize()`，通过 `Graphics.MeasureString` 测量实际文字宽度后整体居中。但居中方案存在以下问题：文字居中对齐（`sfCC`）导致 `*` 号切换时毫秒位置跳动；额外缓冲空间造成主时间与毫秒间距过大。已在 v3.36.3 中回退为 commit `769df93` 的固定偏移+左对齐布局。
 
 ## DONE: 游戏关闭后不再反复提示窗口句柄无效
 
@@ -320,6 +320,15 @@ PalTimer 现有入口：
 
 修复：在 `call()` 和 `IsWindowOpen()` 中兼容两种窗口标题，先查找 `"改键器"`，找不到再查找 `"改建器"`。
 
+## DONE: v3.36.3 Bugfix — 音效试听反馈、MP3兼容性、配置窗口布局、主计时布局回退
+
+修复内容：
+
+- 节点音效试听无反馈：`TestPlay()` 和 `PlaySound()` 中 MCI 错误被静默吞掉。已添加 `mciSendString` 返回值检查，试听失败时弹出 MessageBox 提示错误信息，运行时播放失败写入 Debug 日志。
+- MP3 播放兼容性：部分系统 `mpegvideo` MCI 驱动不可用（错误 266）。新增 `MciOpenFile()` 方法尝试多种 MCI 设备类型；MCI 全部失败时自动回退到 Windows Media Player COM 播放 MP3。三个播放方法统一改用此逻辑。
+- 音效配置窗口快捷键提示文字截断：`lblHotkeyHint` 原先放在快捷键行右侧，空间不足。已移到独立一行（x=15, width=540）。
+- 主计时布局回退：`BuildCenteredMainTimer()` 居中方案导致毫秒位置异常（文字居中对齐受 `*` 号影响、额外缓冲造成间距过大），已删除 `BuildCenteredMainTimer()` 和 `MeasureTextSize()`，恢复为 commit `769df93` 的固定偏移+左对齐布局。
+
 ## DONE: 节点音效开关快捷键与开关提示音
 
 扩展 `SoundConfig` 新增 `ToggleHotkey`（Keys）、`SoundEnabledOnPath` / `SoundEnabledOffPath` 及对应启用状态字段，配置保存到 `sound_config.txt`。
@@ -354,6 +363,9 @@ PalTimer 现有入口：
 - 配置打开/关闭提示音后，确认快捷键切换时分别播放正确 wav/mp3。
 - 击败最终拜月，确认拜月血量为 0 时计时结束。
 - 分别测试 `PAL98DX9`、`PAL98` 与 `PAL98UNHAPPY` 核心。
-- Windows 显示缩放 100% / 125% / 150% 下查看主计时居中。
+- ~~Windows 显示缩放 100% / 125% / 150% 下查看主计时居中~~ （居中已回退，使用固定偏移布局）。
+- 音效配置窗口选择 mp3 文件后点试听，确认能正常播放；选择不存在的文件试听，确认有错误提示。
+- 确认 mp3 和 wav 两种格式都能正常试听和运行时播放。
+- 音效配置窗口快捷键提示文字完整显示，不被截断。
 - 使用 VS2026 的 `Release|x64` 编译产物测试。
 - 在 Win7 SP1 64 位环境验证最低系统兼容性。

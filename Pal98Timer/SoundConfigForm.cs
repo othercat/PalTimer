@@ -154,15 +154,17 @@ namespace Pal98Timer
             btnClearHotkey.Click += (s, e) => { _hotkeyValue = Keys.None; txtToggleHotkey.Text = "未设置"; };
             this.Controls.Add(btnClearHotkey);
 
-            // 快捷键提示
+            y += 28;
+
+            // 快捷键提示（独立一行，避免截断）
             Label lblHotkeyHint = new Label();
             lblHotkeyHint.Text = "点击输入框后按任意键设置，建议避开 F9/F10/F11";
-            lblHotkeyHint.Location = new Point(355, y + 3);
-            lblHotkeyHint.Size = new Size(220, 18);
+            lblHotkeyHint.Location = new Point(15, y + 1);
+            lblHotkeyHint.Size = new Size(540, 18);
             lblHotkeyHint.ForeColor = SystemColors.GrayText;
             this.Controls.Add(lblHotkeyHint);
 
-            y += 32;
+            y += 24;
 
             // 打开提示音
             Label lblSoundOn = new Label();

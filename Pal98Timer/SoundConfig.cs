@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Media;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -89,6 +90,103 @@ namespace Pal98Timer
 
         private string _configPath = "sound_config.txt";
         private int _mciAliasCounter = 0;
+
+        /// <summary>
+        /// 尝试用多种方式打开音频文件，返回成功的 alias，失败返回 null
+        /// </summary>
+        private string MciOpenFile(string filePath)
+        {
+            string alias = "palMci" + Interlocked.Increment(ref _mciAliasCounter);
+            string ext = Path.GetExtension(filePath).ToLower();
+            string quoted = "\"" + filePath + "\"";
+
+            int err;
+
+            if (ext == ".mp3")
+            {
+                // 尝试1: 不指定 type，让 MCI 根据扩展名自动检测
+                err = mciSendString("open " + quoted + " alias " + alias, null, 0, IntPtr.Zero);
+                if (err == 0) return alias;
+
+                // 尝试2: 指定 MPEGVideo
+                err = mciSendString("open " + quoted + " type MPEGVideo alias " + alias, null, 0, IntPtr.Zero);
+                if (err == 0) return alias;
+
+                // 尝试3: 指定 mpegvideo
+                err = mciSendString("open " + quoted + " type mpegvideo alias " + alias, null, 0, IntPtr.Zero);
+                if (err == 0) return alias;
+            }
+            else
+            {
+                // WAV: 先尝试自动检测，再尝试 waveaudio
+                err = mciSendString("open " + quoted + " alias " + alias, null, 0, IntPtr.Zero);
+                if (err == 0) return alias;
+
+                err = mciSendString("open " + quoted + " type waveaudio alias " + alias, null, 0, IntPtr.Zero);
+                if (err == 0) return alias;
+            }
+
+            System.Diagnostics.Debug.WriteLine("MCI: all open attempts failed for " + filePath);
+            return null;
+        }
+
+        /// <summary>
+        /// 使用 Windows Media Player COM 播放 MP3（MCI 不可用时的备用方案）
+        /// </summary>
+        private bool PlayMp3WithWmp(string filePath)
+        {
+            try
+            {
+                Type wmpType = Type.GetTypeFromProgID("WMPlayer.OCX");
+                if (wmpType == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("WMP: WMPlayer.OCX not registered");
+                    return false;
+                }
+
+                object wmp = Activator.CreateInstance(wmpType);
+                try
+                {
+                    // 设置 URL 属性
+                    wmpType.InvokeMember("url",
+                        System.Reflection.BindingFlags.SetProperty, null, wmp,
+                        new object[] { filePath });
+
+                    // 获取 controls 对象并调用 play
+                    object controls = wmpType.InvokeMember("controls",
+                        System.Reflection.BindingFlags.GetProperty, null, wmp, null);
+
+                    controls.GetType().InvokeMember("play",
+                        System.Reflection.BindingFlags.InvokeMethod, null, controls, null);
+
+                    // 等待播放完成
+                    Thread.Sleep(300);
+                    object playState;
+                    int maxWait = 300; // 最多等 30 秒
+                    while (maxWait-- > 0)
+                    {
+                        playState = wmpType.InvokeMember("playState",
+                            System.Reflection.BindingFlags.GetProperty, null, wmp, null);
+                        int state = (int)playState;
+                        // 1=Stopped, 8=MediaEnded
+                        if (state == 1 || state == 8) break;
+                        Thread.Sleep(100);
+                    }
+
+                    Marshal.ReleaseComObject(controls);
+                    return true;
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(wmp);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("WMP playback failed: " + ex.Message);
+                return false;
+            }
+        }
 
         private SoundConfig()
         {
@@ -272,16 +370,23 @@ namespace Pal98Timer
 
             Thread playThread = new Thread(() =>
             {
+                string alias = null;
                 try
                 {
-                    string alias = "palSound" + Interlocked.Increment(ref _mciAliasCounter);
-                    string ext = Path.GetExtension(path).ToLower();
-
-                    if (ext == ".mp3")
+                    alias = MciOpenFile(path);
+                    if (alias != null)
                     {
-                        mciSendString("open \"" + path + "\" type mpegvideo alias " + alias, null, 0, IntPtr.Zero);
-                        mciSendString("play " + alias, null, 0, IntPtr.Zero);
-                        // 等待播放完成后关闭
+                        int err = mciSendString("play " + alias, null, 0, IntPtr.Zero);
+                        if (err != 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine("MCI play failed: " + err);
+                            mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                            alias = null;
+                        }
+                    }
+
+                    if (alias != null)
+                    {
                         Thread.Sleep(500);
                         StringBuilder status = new StringBuilder(128);
                         while (true)
@@ -292,25 +397,16 @@ namespace Pal98Timer
                         }
                         mciSendString("close " + alias, null, 0, IntPtr.Zero);
                     }
-                    else
+                    else if (Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                     {
-                        // wav 格式使用 mciSendString 也兼容
-                        mciSendString("open \"" + path + "\" type waveaudio alias " + alias, null, 0, IntPtr.Zero);
-                        mciSendString("play " + alias, null, 0, IntPtr.Zero);
-                        Thread.Sleep(500);
-                        StringBuilder status = new StringBuilder(128);
-                        while (true)
-                        {
-                            mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
-                            if (status.ToString().Trim() != "playing") break;
-                            Thread.Sleep(100);
-                        }
-                        mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                        // MCI 不可用时，尝试 WMP COM 播放 MP3
+                        PlayMp3WithWmp(path);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 静默忽略播放失败
+                    System.Diagnostics.Debug.WriteLine("PlaySound exception: " + ex.Message);
+                    if (alias != null) try { mciSendString("close " + alias, null, 0, IntPtr.Zero); } catch { }
                 }
             });
             playThread.IsBackground = true;
@@ -326,31 +422,53 @@ namespace Pal98Timer
 
             Thread playThread = new Thread(() =>
             {
+                string alias = null;
                 try
                 {
-                    string alias = "palTest" + Interlocked.Increment(ref _mciAliasCounter);
-                    string ext = Path.GetExtension(filePath).ToLower();
-
-                    if (ext == ".mp3")
+                    alias = MciOpenFile(filePath);
+                    if (alias != null)
                     {
-                        mciSendString("open \"" + filePath + "\" type mpegvideo alias " + alias, null, 0, IntPtr.Zero);
+                        int err = mciSendString("play " + alias, null, 0, IntPtr.Zero);
+                        if (err != 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine("MCI play failed: " + err);
+                            mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                            alias = null;
+                        }
+                    }
+
+                    if (alias != null)
+                    {
+                        Thread.Sleep(500);
+                        StringBuilder status = new StringBuilder(128);
+                        while (true)
+                        {
+                            mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
+                            if (status.ToString().Trim() != "playing") break;
+                            Thread.Sleep(100);
+                        }
+                        mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                    }
+                    else if (Path.GetExtension(filePath).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // MCI 不可用时，尝试 WMP COM 播放 MP3
+                        if (!PlayMp3WithWmp(filePath))
+                        {
+                            MessageBox.Show("无法播放音频，请确认系统已安装 Windows Media Player 或相关解码器。\n路径: " + filePath,
+                                "播放失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }
                     }
                     else
                     {
-                        mciSendString("open \"" + filePath + "\" type waveaudio alias " + alias, null, 0, IntPtr.Zero);
+                        MessageBox.Show("无法打开音频文件，请确认文件格式正确。\n路径: " + filePath,
+                            "播放失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
-                    mciSendString("play " + alias, null, 0, IntPtr.Zero);
-                    Thread.Sleep(500);
-                    StringBuilder status = new StringBuilder(128);
-                    while (true)
-                    {
-                        mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
-                        if (status.ToString().Trim() != "playing") break;
-                        Thread.Sleep(100);
-                    }
-                    mciSendString("close " + alias, null, 0, IntPtr.Zero);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("TestPlay exception: " + ex.Message);
+                    if (alias != null) try { mciSendString("close " + alias, null, 0, IntPtr.Zero); } catch { }
+                }
             });
             playThread.IsBackground = true;
             playThread.Start();
@@ -404,33 +522,32 @@ namespace Pal98Timer
 
                 Thread playThread = new Thread(() =>
                 {
+                    string alias = null;
                     try
                     {
-                        string alias = "palToggle" + Interlocked.Increment(ref _mciAliasCounter);
-                        string ext = Path.GetExtension(path).ToLower();
-
-                        if (ext == ".mp3")
+                        alias = MciOpenFile(path);
+                        if (alias != null)
                         {
-                            mciSendString("open \"" + path + "\" type mpegvideo alias " + alias, null, 0, IntPtr.Zero);
+                            mciSendString("play " + alias, null, 0, IntPtr.Zero);
+                            Thread.Sleep(500);
+                            StringBuilder status = new StringBuilder(128);
+                            while (true)
+                            {
+                                mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
+                                if (status.ToString().Trim() != "playing") break;
+                                Thread.Sleep(100);
+                            }
+                            mciSendString("close " + alias, null, 0, IntPtr.Zero);
                         }
-                        else
+                        else if (Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                         {
-                            mciSendString("open \"" + path + "\" type waveaudio alias " + alias, null, 0, IntPtr.Zero);
+                            PlayMp3WithWmp(path);
                         }
-                        mciSendString("play " + alias, null, 0, IntPtr.Zero);
-                        Thread.Sleep(500);
-                        StringBuilder status = new StringBuilder(128);
-                        while (true)
-                        {
-                            mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
-                            if (status.ToString().Trim() != "playing") break;
-                            Thread.Sleep(100);
-                        }
-                        mciSendString("close " + alias, null, 0, IntPtr.Zero);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // 静默忽略播放失败
+                        System.Diagnostics.Debug.WriteLine("PlayToggleSound exception: " + ex.Message);
+                        if (alias != null) try { mciSendString("close " + alias, null, 0, IntPtr.Zero); } catch { }
                     }
                 });
                 playThread.IsBackground = true;

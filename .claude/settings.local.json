@@ -17,7 +17,18 @@
       "Bash(C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe *)",
       "Bash(\"/c/Program Files \\(x86\\)/Microsoft SDKs/Windows/v7.1A/Bin/x64/mt.exe\" -inputresource:\"C:\\\\SourceCodes\\\\GithubRepos\\\\PalTimer\\\\Pal98Timer\\\\bin\\\\x64\\\\Release\\\\Pal98Timer.exe\" -out:\"/tmp/manifest_check.xml\")",
       "Read(//tmp/**)",
-      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/amd64/MSBuild.exe\" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -t:Rebuild -m)"
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/amd64/MSBuild.exe\" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -t:Rebuild -m)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Pal98Timer/Pal98Timer.csproj -p:Configuration=Release -p:Platform=x64 -verbosity:minimal)",
+      "Read(//c/Program Files/Microsoft Visual Studio//**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio//**)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" Pal98Timer/Pal98Timer.csproj -p:Configuration=Release -p:Platform=x64 -verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal)",
+      "Bash(reg query *)",
+      "Read(//c/Windows/System32/**)",
+      "Read(//c/Windows/SysWOW64/**)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/Roslyn/csc.exe\" /out:\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\" /target:exe /platform:x64 /nologo \"C:/SourceCodes/GithubRepos/PalTimer/mci_test.cs\")",
+      "Bash(\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\")",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/Roslyn/csc.exe\" /out:\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\" /target:exe /platform:x64 \"C:/SourceCodes/GithubRepos/PalTimer/mci_test.cs\")"
     ]
   }
 }
