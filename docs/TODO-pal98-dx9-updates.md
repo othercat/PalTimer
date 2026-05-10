@@ -320,6 +320,14 @@ PalTimer 现有入口：
 
 修复：在 `call()` 和 `IsWindowOpen()` 中兼容两种窗口标题，先查找 `"改键器"`，找不到再查找 `"改建器"`。
 
+## DONE: 节点音效开关快捷键与开关提示音
+
+扩展 `SoundConfig` 新增 `ToggleHotkey`（Keys）、`SoundEnabledOnPath` / `SoundEnabledOffPath` 及对应启用状态字段，配置保存到 `sound_config.txt`。
+
+扩展 `SoundConfigForm` 增加快捷键录入（KeyDown 捕获）、打开/关闭提示音路径选择（浏览+试听），窗口从 320px 增高到 460px 以容纳新控件。
+
+`GForm.OnKeyPress` 在修饰键状态更新后、功能键处理前检查快捷键匹配，切换 `GlobalEnabled` 并立即保存配置，通过 `PlayToggleSound()` 播放提示音（不受 GlobalEnabled 阻挡），UI 线程更新菜单勾选状态。
+
 ## 建议实施顺序
 
 1. 修复游戏关闭后刷屏提示，降低用户干扰。
@@ -327,8 +335,9 @@ PalTimer 现有入口：
 3. 修复主计时居中，提升直播/截图观感。
 4. 修复“土”实时检测，并同步 `PAL98DX9` / `PAL98` / `PAL98UNHAPPY`。
 5. 增加节点快慢提示音效配置。
-6. 抽取 `PAL98DX9` / `PAL98` / `PAL98UNHAPPY` 的共用模块，降低后续三处同步成本。
-7. 针对 LiveSplit / livesplit-core 写单独架构调研文档。
+6. 增加节点音效开关快捷键，以及打开/关闭提示音配置。
+7. 抽取 `PAL98DX9` / `PAL98` / `PAL98UNHAPPY` 的共用模块，降低后续三处同步成本。
+8. 针对 LiveSplit / livesplit-core 写单独架构调研文档。
 
 ## 实机验证清单
 
@@ -341,6 +350,8 @@ PalTimer 现有入口：
 - 未获得土或甲时，确认默认不显示 `土0` / `甲0`。
 - 配置节点提示音后，分别验证分段快、分段慢、总时间快但分段慢、总时间慢但分段快的播放效果。
 - 未配置音效或音频文件丢失时，确认计时器不弹窗刷屏、不影响节点推进。
+- 配置音效开关快捷键后，确认运行中可切换节点音效启用状态。
+- 配置打开/关闭提示音后，确认快捷键切换时分别播放正确 wav/mp3。
 - 击败最终拜月，确认拜月血量为 0 时计时结束。
 - 分别测试 `PAL98DX9`、`PAL98` 与 `PAL98UNHAPPY` 核心。
 - Windows 显示缩放 100% / 125% / 150% 下查看主计时居中。

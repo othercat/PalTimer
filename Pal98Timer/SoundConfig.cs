@@ -5,6 +5,7 @@ using System.Media;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace Pal98Timer
 {
@@ -75,6 +76,17 @@ namespace Pal98Timer
 
         public bool GlobalEnabled { get; set; } = true;
 
+        // 音效开关快捷键
+        public Keys ToggleHotkey { get; set; } = Keys.None;
+        // 音效打开提示音路径
+        public string SoundEnabledOnPath { get; set; } = "";
+        // 音效关闭提示音路径
+        public string SoundEnabledOffPath { get; set; } = "";
+        // 是否播放打开提示音
+        public bool SoundEnabledOnEnabled { get; set; } = false;
+        // 是否播放关闭提示音
+        public bool SoundEnabledOffEnabled { get; set; } = false;
+
         private string _configPath = "sound_config.txt";
         private int _mciAliasCounter = 0;
 
@@ -127,6 +139,15 @@ namespace Pal98Timer
                                 SoundTriggerType type = (SoundTriggerType)Enum.Parse(typeof(SoundTriggerType), key);
                                 ParseSoundEntry(type, value);
                                 break;
+                            case "ToggleHotkey":
+                                try { ToggleHotkey = (Keys)int.Parse(value); } catch { }
+                                break;
+                            case "SoundEnabledOn":
+                                ParseToggleSoundEntry(value, true);
+                                break;
+                            case "SoundEnabledOff":
+                                ParseToggleSoundEntry(value, false);
+                                break;
                         }
                     }
                 }
@@ -152,6 +173,37 @@ namespace Pal98Timer
             }
         }
 
+        private void ParseToggleSoundEntry(string value, bool isOn)
+        {
+            if (value.Contains("|"))
+            {
+                string[] parts = value.Split(new char[] { '|' }, 2);
+                if (isOn)
+                {
+                    SoundEnabledOnEnabled = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
+                    SoundEnabledOnPath = parts.Length > 1 ? parts[1] : "";
+                }
+                else
+                {
+                    SoundEnabledOffEnabled = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
+                    SoundEnabledOffPath = parts.Length > 1 ? parts[1] : "";
+                }
+            }
+            else
+            {
+                if (isOn)
+                {
+                    SoundEnabledOnEnabled = !string.IsNullOrEmpty(value);
+                    SoundEnabledOnPath = value;
+                }
+                else
+                {
+                    SoundEnabledOffEnabled = !string.IsNullOrEmpty(value);
+                    SoundEnabledOffPath = value;
+                }
+            }
+        }
+
         public void SaveConfig()
         {
             try
@@ -165,6 +217,9 @@ namespace Pal98Timer
                     sw.WriteLine("# 启用: true/false");
                     sw.WriteLine();
                     sw.WriteLine("GlobalEnabled=" + (GlobalEnabled ? "true" : "false"));
+                    sw.WriteLine("ToggleHotkey=" + ((int)ToggleHotkey));
+                    sw.WriteLine("SoundEnabledOn=" + (SoundEnabledOnEnabled ? "true" : "false") + "|" + (SoundEnabledOnPath ?? ""));
+                    sw.WriteLine("SoundEnabledOff=" + (SoundEnabledOffEnabled ? "true" : "false") + "|" + (SoundEnabledOffPath ?? ""));
                     sw.WriteLine();
                     foreach (SoundTriggerType type in Enum.GetValues(typeof(SoundTriggerType)))
                     {
@@ -323,6 +378,77 @@ namespace Pal98Timer
                 return SoundTriggerType.TotalFasterSegmentSlower;
             else
                 return SoundTriggerType.TotalSlowerSegmentFaster;
+        }
+
+        /// <summary>
+        /// 播放音效开关提示音（不受 GlobalEnabled 阻挡）
+        /// </summary>
+        public void PlayToggleSound(bool enabled)
+        {
+            try
+            {
+                string path;
+                bool shouldPlay;
+                if (enabled)
+                {
+                    path = SoundEnabledOnPath;
+                    shouldPlay = SoundEnabledOnEnabled;
+                }
+                else
+                {
+                    path = SoundEnabledOffPath;
+                    shouldPlay = SoundEnabledOffEnabled;
+                }
+
+                if (!shouldPlay || string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+
+                Thread playThread = new Thread(() =>
+                {
+                    try
+                    {
+                        string alias = "palToggle" + Interlocked.Increment(ref _mciAliasCounter);
+                        string ext = Path.GetExtension(path).ToLower();
+
+                        if (ext == ".mp3")
+                        {
+                            mciSendString("open \"" + path + "\" type mpegvideo alias " + alias, null, 0, IntPtr.Zero);
+                        }
+                        else
+                        {
+                            mciSendString("open \"" + path + "\" type waveaudio alias " + alias, null, 0, IntPtr.Zero);
+                        }
+                        mciSendString("play " + alias, null, 0, IntPtr.Zero);
+                        Thread.Sleep(500);
+                        StringBuilder status = new StringBuilder(128);
+                        while (true)
+                        {
+                            mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
+                            if (status.ToString().Trim() != "playing") break;
+                            Thread.Sleep(100);
+                        }
+                        mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                    }
+                    catch
+                    {
+                        // 静默忽略播放失败
+                    }
+                });
+                playThread.IsBackground = true;
+                playThread.Start();
+            }
+            catch
+            {
+                // 静默忽略
+            }
+        }
+
+        /// <summary>
+        /// 获取快捷键的显示文本
+        /// </summary>
+        public string GetToggleHotkeyText()
+        {
+            if (ToggleHotkey == Keys.None) return "未设置";
+            return ToggleHotkey.ToString();
         }
     }
 }

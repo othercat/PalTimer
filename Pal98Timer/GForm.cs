@@ -469,6 +469,28 @@ namespace Pal98Timer
                         OnCtrlDown = true;
                     }
                     break;
+            }
+            // 音效开关快捷键（在修饰键状态更新后、功能键处理前检查）
+            if (hookStruct.flags < 128 && SoundConfig.ins.ToggleHotkey != Keys.None)
+            {
+                Keys pressed = (Keys)(hookStruct.vkCode);
+                if (OnCtrlDown || OnCtrlDown2) pressed |= Keys.Control;
+                if (Control.ModifierKeys.HasFlag(Keys.Shift)) pressed |= Keys.Shift;
+                if (Control.ModifierKeys.HasFlag(Keys.Alt)) pressed |= Keys.Alt;
+
+                if (pressed == SoundConfig.ins.ToggleHotkey)
+                {
+                    handle = true;
+                    bool newState = !SoundConfig.ins.GlobalEnabled;
+                    SoundConfig.ins.GlobalEnabled = newState;
+                    SoundConfig.ins.SaveConfig();
+                    SoundConfig.ins.PlayToggleSound(newState);
+                    UI(delegate () { btnSoundConfig.Checked = newState; });
+                    return;
+                }
+            }
+            switch ((Keys)(hookStruct.vkCode))
+            {
                 case Keys.F1:
                     if (hookStruct.flags >= 128)
                     {
