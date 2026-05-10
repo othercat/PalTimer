@@ -535,7 +535,7 @@ namespace Pal98Timer
             {
                 CheckPoints[CurrentStep].Current = MT.CurrentTSOnly;
 
-                if (EnableNonSequentialCheck)
+                if (form.IsNonSequentialCheck)
                 {
                     // 非顺序推进模式：支持跳图路线
                     CheckNonSequentialChecking();
@@ -671,6 +671,7 @@ namespace Pal98Timer
                 _hasCallPointEnd = true;
                 form.CallCloudFinishOne();
                 SendPluginsEvent("OnCheckPointEnd", null);
+                SoundConfig.ins.PlaySound(SoundTriggerType.GameComplete);
             }
         }
         /// <summary>

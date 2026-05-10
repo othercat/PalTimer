@@ -28,7 +28,13 @@
       "Read(//c/Windows/SysWOW64/**)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/Roslyn/csc.exe\" /out:\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\" /target:exe /platform:x64 /nologo \"C:/SourceCodes/GithubRepos/PalTimer/mci_test.cs\")",
       "Bash(\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\")",
-      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/Roslyn/csc.exe\" /out:\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\" /target:exe /platform:x64 \"C:/SourceCodes/GithubRepos/PalTimer/mci_test.cs\")"
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/Roslyn/csc.exe\" /out:\"C:/SourceCodes/GithubRepos/PalTimer/mci_test.exe\" /target:exe /platform:x64 \"C:/SourceCodes/GithubRepos/PalTimer/mci_test.cs\")",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2026\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" PalTimer.sln /p:Configuration=Release /p:Platform=x64 /m /nologo)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2026/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/SourceCodes/GithubRepos/PalTimer/PalTimer.sln\" /p:Configuration=Release /p:Platform=x64 /m /nologo)",
+      "Bash(cmd.exe //c \"where /R \\\\\"C:\\\\\\\\Program Files\\\\\" MSBuild.exe 2>NUL\")",
+      "Bash(cmd.exe //c \"dir \\\\\"C:\\\\\\\\Program Files\\\\\\\\Microsoft Visual Studio\\\\\\\\2026\\\\\\\\\\\\\" /b\")",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/SourceCodes/GithubRepos/PalTimer/PalTimer.sln\" -p:Configuration=Release -p:Platform=x64 -verbosity:minimal)",
+      "Bash(xxd)"
     ]
   }
 }

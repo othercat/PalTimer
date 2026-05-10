@@ -41,7 +41,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 2. 当前工作状态
 
-**版本：v3.36.3**（2026-05-10）
+**版本：v3.36.4**（2026-05-10）
 
 当前 master 分支干净，所有近期改动已提交。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
@@ -51,6 +51,10 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 ---
 
 ## 3. 已完成内容
+
+### v3.36.4 (2026-05-10)
+- 跳图路线（非顺序节点推进）改为功能开关，默认关闭，功能菜单中可手动开启
+- 新增"最终通关"音效配置，通关时自动播放
 
 ### v3.36.3 (2026-05-10)
 - 修复节点音效试听无反馈（添加 MCI 错误检查和提示）
@@ -126,12 +130,16 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ### 2026-05-10 会话
 
-- `SoundConfig.cs`：新增 `MciOpenFile()` 尝试多种 MCI 设备类型；新增 `PlayMp3WithWmp()` WMP COM 回退；`TestPlay()`/`PlaySound()`/`PlayToggleSound()` 统一使用 MCI→WMP 链式播放
-- `SoundConfigForm.cs`：快捷键提示标签从内联改为独立一行，修复文字截断
-- `GEX.cs`：删除 `BuildCenteredMainTimer()` 和 `MeasureTextSize()`，恢复 commit `769df93` 的固定偏移+左对齐布局
-- `GForm.cs`：版本号更新为 `3.36.3`
-- `README.md`：添加 v3.36.3 更新说明，标记 v3.36.2 居中为已回退
-- `docs/TODO-pal98-dx9-updates.md`：添加 v3.36.3 DONE 段落，更新居中为已回退并记录原因
+- `SoundConfig.cs`：新增 `GameComplete` 枚举值和中文描述；新增 `MciOpenFile()` + `PlayMp3WithWmp()` 播放链；音效优先级机制（通关=30 > 总时间=20 > 分段=10）；优先级中断播放
+- `SoundConfigForm.cs`：快捷键提示标签独立一行；初始高度增加容纳"最终通关"行
+- `TimerCore.cs`：`Checking()` 改为读取 `form.IsNonSequentialCheck`；`OnCheckPointEnd()` 新增通关音效播放
+- `GForm.cs`：版本号更新为 `3.36.4`；新增 `IsNonSequentialCheck` 字段、点击处理、`skip_node` 文件加载/保存
+- `GForm.Designer.cs`：功能菜单新增"跳图路线(非顺序节点)"勾选项
+- `仙剑98柔情.cs`/`仙剑98柔情DX9.cs`/`仙剑98柔情不欢乐模式.cs`：删除 `EnableNonSequentialCheck = true` 硬编码；`LoadGame()` 中保存/恢复 `TotalMonsterCount`（云读档不清零撞怪）；`UI_SaveGameEx`/接力-接盘/云读档暂停状态保持修复
+- `GEX.cs`：删除 `BuildCenteredMainTimer()` 和 `MeasureTextSize()`，恢复固定偏移布局
+- `KeyChangerDel.cs`：F11 改键兼容"改建器"和"改键器"两种窗口标题
+- `README.md`：合并 v3.36.2/3/4 为统一的 v3.36.4 更新说明
+- `docs/TODO-pal98-dx9-updates.md`：添加 DONE 段落
 
 ---
 
@@ -146,7 +154,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 编译结果：
 
 ```text
-通过 — Build succeeded, 0 errors, 0 warnings (或少量不相关 warning)
+通过 — Build succeeded, 0 errors, 只有不相关 warning
 ```
 
 实机测试需手动进行（需要仙剑98游戏环境）：

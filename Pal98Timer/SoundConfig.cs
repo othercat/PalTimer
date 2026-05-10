@@ -30,7 +30,11 @@ namespace Pal98Timer
         /// <summary>
         /// 总时间慢了但分段快了
         /// </summary>
-        TotalSlowerSegmentFaster
+        TotalSlowerSegmentFaster,
+        /// <summary>
+        /// 最终通关
+        /// </summary>
+        GameComplete
     }
 
     /// <summary>
@@ -46,7 +50,24 @@ namespace Pal98Timer
                 case SoundTriggerType.SegmentSlower: return "分段慢了";
                 case SoundTriggerType.TotalFasterSegmentSlower: return "总时间快但分段慢";
                 case SoundTriggerType.TotalSlowerSegmentFaster: return "总时间慢但分段快";
+                case SoundTriggerType.GameComplete: return "最终通关";
                 default: return type.ToString();
+            }
+        }
+
+        /// <summary>
+        /// 获取音效优先级（数值越大优先级越高）
+        /// </summary>
+        public static int GetPriority(this SoundTriggerType type)
+        {
+            switch (type)
+            {
+                case SoundTriggerType.GameComplete: return 30;
+                case SoundTriggerType.TotalFasterSegmentSlower:
+                case SoundTriggerType.TotalSlowerSegmentFaster: return 20;
+                case SoundTriggerType.SegmentFaster:
+                case SoundTriggerType.SegmentSlower: return 10;
+                default: return 0;
             }
         }
     }
@@ -90,6 +111,11 @@ namespace Pal98Timer
 
         private string _configPath = "sound_config.txt";
         private int _mciAliasCounter = 0;
+
+        // 优先级跟踪
+        private readonly object _playLock = new object();
+        private int _currentPlayingPriority = 0;
+        private string _currentPlayingAlias = null;
 
         /// <summary>
         /// 尝试用多种方式打开音频文件，返回成功的 alias，失败返回 null
@@ -234,6 +260,7 @@ namespace Pal98Timer
                             case "SegmentSlower":
                             case "TotalFasterSegmentSlower":
                             case "TotalSlowerSegmentFaster":
+                            case "GameComplete":
                                 SoundTriggerType type = (SoundTriggerType)Enum.Parse(typeof(SoundTriggerType), key);
                                 ParseSoundEntry(type, value);
                                 break;
@@ -358,15 +385,46 @@ namespace Pal98Timer
         }
 
         /// <summary>
-        /// 异步播放音效（非阻塞，支持 wav 和 mp3）
+        /// 停止当前正在播放的低优先级音效
+        /// </summary>
+        private void StopCurrentSound()
+        {
+            string aliasToStop = null;
+            lock (_playLock)
+            {
+                aliasToStop = _currentPlayingAlias;
+                _currentPlayingAlias = null;
+                _currentPlayingPriority = 0;
+            }
+            if (aliasToStop != null)
+            {
+                try { mciSendString("stop " + aliasToStop, null, 0, IntPtr.Zero); } catch { }
+                try { mciSendString("close " + aliasToStop, null, 0, IntPtr.Zero); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 异步播放音效（非阻塞，支持优先级中断，支持 wav 和 mp3）
         /// </summary>
         public void PlaySound(SoundTriggerType type)
+        {
+            PlaySound(type, type.GetPriority());
+        }
+
+        private void PlaySound(SoundTriggerType type, int priority)
         {
             if (!GlobalEnabled) return;
             if (!IsSoundEnabled(type)) return;
 
             string path = GetSoundPath(type);
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+
+            // 优先级检查：中断低优先级音效
+            lock (_playLock)
+            {
+                if (priority < _currentPlayingPriority) return;
+            }
+            StopCurrentSound();
 
             Thread playThread = new Thread(() =>
             {
@@ -376,12 +434,27 @@ namespace Pal98Timer
                     alias = MciOpenFile(path);
                     if (alias != null)
                     {
+                        lock (_playLock)
+                        {
+                            _currentPlayingAlias = alias;
+                            _currentPlayingPriority = priority;
+                        }
+
                         int err = mciSendString("play " + alias, null, 0, IntPtr.Zero);
                         if (err != 0)
                         {
                             System.Diagnostics.Debug.WriteLine("MCI play failed: " + err);
+                            string failedAlias = alias;
                             mciSendString("close " + alias, null, 0, IntPtr.Zero);
                             alias = null;
+                            lock (_playLock)
+                            {
+                                if (_currentPlayingAlias == failedAlias)
+                                {
+                                    _currentPlayingAlias = null;
+                                    _currentPlayingPriority = 0;
+                                }
+                            }
                         }
                     }
 
@@ -391,11 +464,24 @@ namespace Pal98Timer
                         StringBuilder status = new StringBuilder(128);
                         while (true)
                         {
+                            // 检查是否被更高优先级中断
+                            lock (_playLock)
+                            {
+                                if (_currentPlayingAlias != alias) break;
+                            }
                             mciSendString("status " + alias + " mode", status, 128, IntPtr.Zero);
                             if (status.ToString().Trim() != "playing") break;
                             Thread.Sleep(100);
                         }
                         mciSendString("close " + alias, null, 0, IntPtr.Zero);
+                        lock (_playLock)
+                        {
+                            if (_currentPlayingAlias == alias)
+                            {
+                                _currentPlayingAlias = null;
+                                _currentPlayingPriority = 0;
+                            }
+                        }
                     }
                     else if (Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                     {
@@ -407,6 +493,14 @@ namespace Pal98Timer
                 {
                     System.Diagnostics.Debug.WriteLine("PlaySound exception: " + ex.Message);
                     if (alias != null) try { mciSendString("close " + alias, null, 0, IntPtr.Zero); } catch { }
+                    lock (_playLock)
+                    {
+                        if (_currentPlayingAlias == alias)
+                        {
+                            _currentPlayingAlias = null;
+                            _currentPlayingPriority = 0;
+                        }
+                    }
                 }
             });
             playThread.IsBackground = true;

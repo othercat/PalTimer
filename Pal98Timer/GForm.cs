@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.36.3";
+        public const string CurrentVersion = "3.36.4";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -138,6 +138,7 @@ namespace Pal98Timer
 
             ShowKCEnable();
             LoadTransparency();
+            LoadNonSequentialCheck();
         }
 
         private void GForm_Shown(object sender, EventArgs e)
@@ -936,6 +937,14 @@ namespace Pal98Timer
             btnSoundConfig.Checked = SoundConfig.ins.GlobalEnabled;
         }
 
+        public bool IsNonSequentialCheck = false;
+        private void btnNonSequentialCheck_Click(object sender, EventArgs e)
+        {
+            btnNonSequentialCheck.Checked = !btnNonSequentialCheck.Checked;
+            IsNonSequentialCheck = btnNonSequentialCheck.Checked;
+            SaveNonSequentialCheck();
+        }
+
         private void LoadTransparency()
         {
             string transparencyFile = "transparency";
@@ -960,6 +969,29 @@ namespace Pal98Timer
             try
             {
                 File.WriteAllText(transparencyFile, transparencyValue.ToString());
+            }
+            catch { }
+        }
+
+        private void LoadNonSequentialCheck()
+        {
+            try
+            {
+                if (File.Exists("skip_node"))
+                {
+                    string content = File.ReadAllText("skip_node").Trim();
+                    IsNonSequentialCheck = content == "1";
+                }
+            }
+            catch { }
+            btnNonSequentialCheck.Checked = IsNonSequentialCheck;
+        }
+
+        private void SaveNonSequentialCheck()
+        {
+            try
+            {
+                File.WriteAllText("skip_node", IsNonSequentialCheck ? "1" : "0");
             }
             catch { }
         }

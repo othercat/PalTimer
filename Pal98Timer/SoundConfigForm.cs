@@ -37,7 +37,7 @@ namespace Pal98Timer
         private void InitializeComponent()
         {
             this.Text = "节点音效配置";
-            this.Size = new Size(600, 460);
+            this.Size = new Size(600, 492);
             this.StartPosition = FormStartPosition.CenterParent;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;

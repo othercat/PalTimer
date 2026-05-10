@@ -337,6 +337,30 @@ PalTimer 现有入口：
 
 `GForm.OnKeyPress` 在修饰键状态更新后、功能键处理前检查快捷键匹配，切换 `GlobalEnabled` 并立即保存配置，通过 `PlayToggleSound()` 播放提示音（不受 GlobalEnabled 阻挡），UI 线程更新菜单勾选状态。
 
+## DONE: 跳图路线改为功能开关
+
+非顺序节点推进从内核硬编码改为用户可控的功能开关。功能菜单新增"跳图路线(非顺序节点)"勾选项，默认不勾选（传统顺序模式），勾选后启用非顺序推进。
+
+实现：`GForm.IsNonSequentialCheck` 字段 + `skip_node` 文件持久化（内容 `1`/`0`）。`TimerCore.Checking()` 改为读取 `form.IsNonSequentialCheck`。三个 PAL98 内核删除 `EnableNonSequentialCheck = true` 硬编码。
+
+原因：mod 提前给物品（如水灵珠）会导致基于物品的节点被误触发，影响正常玩法。
+
+## DONE: 最终通关音效配置
+
+`SoundTriggerType` 枚举新增 `GameComplete`。`OnCheckPointEnd()` 中播放此音效。配置窗口自动多一行"最终通关"，用法与其他节点音效一致。
+
+新增音效优先级机制：`GetPriority()` 返回优先级值（通关=30 > 总时间=20 > 分段=10）。`PlaySound()` 支持优先级中断——高优先级音效会停止当前正在播放的低优先级音效，低优先级不会打断高优先级。
+
+## DONE: 云读档不覆盖撞怪计数
+
+`PALCloud.dll` 接口不包含 `TotalMonsterCount`（撞怪总数），导致云读档后怪计数归零。在三个内核的 `LoadGame()` 方法中，`SetTimerFromString` 调用前后保存并恢复 `TotalMonsterCount`，使云读档和接力读档均不影响撞怪计数。
+
+## DONE: 暂停状态下操作存档后保持暂停
+
+用户手动暂停后操作云存档/接力存档，存档完成后计时器自动恢复计时。已修复：在 `UI_SaveGameEx`、接力-接盘、云读档三处使用 `wasPausedBefore` 模式，操作前记录暂停状态，操作后仅在原先未暂停时才恢复。三个内核均已同步。
+
+节点音效每行的勾选框即为实时启用开关，勾选后才在节点完成/通关时播放，配置通过 `sound_config.txt` 的 `enabled|path` 格式持久化。
+
 ## 建议实施顺序
 
 1. 修复游戏关闭后刷屏提示，降低用户干扰。

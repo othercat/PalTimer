@@ -39,6 +39,7 @@
             this.btnTransparency = new System.Windows.Forms.ToolStripMenuItem();
             this.btnBattlePauseNoTimer = new System.Windows.Forms.ToolStripMenuItem();
             this.btnSoundConfig = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnNonSequentialCheck = new System.Windows.Forms.ToolStripMenuItem();
             this.mnMain = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.btnChangeStyle = new System.Windows.Forms.ToolStripMenuItem();
             this.btnPluginManage = new System.Windows.Forms.ToolStripMenuItem();
@@ -62,7 +63,8 @@
             this.btnEditBest,
             this.btnTransparency,
             this.btnBattlePauseNoTimer,
-            this.btnSoundConfig});
+            this.btnSoundConfig,
+            this.btnNonSequentialCheck});
             this.mnData.Name = "mnData";
             this.mnData.Size = new System.Drawing.Size(185, 114);
             // 
@@ -116,6 +118,13 @@
             this.btnSoundConfig.Size = new System.Drawing.Size(184, 22);
             this.btnSoundConfig.Text = "节点音效配置";
             this.btnSoundConfig.Click += new System.EventHandler(this.btnSoundConfig_Click);
+            //
+            // btnNonSequentialCheck
+            //
+            this.btnNonSequentialCheck.Name = "btnNonSequentialCheck";
+            this.btnNonSequentialCheck.Size = new System.Drawing.Size(184, 22);
+            this.btnNonSequentialCheck.Text = "跳图路线(非顺序节点)";
+            this.btnNonSequentialCheck.Click += new System.EventHandler(this.btnNonSequentialCheck_Click);
             //
             // mnMain
             // 
@@ -183,5 +192,6 @@
         private System.Windows.Forms.ToolStripMenuItem btnTransparency;
         private System.Windows.Forms.ToolStripMenuItem btnBattlePauseNoTimer;
         private System.Windows.Forms.ToolStripMenuItem btnSoundConfig;
+        private System.Windows.Forms.ToolStripMenuItem btnNonSequentialCheck;
     }
 }
