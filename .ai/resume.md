@@ -41,16 +41,22 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 2. 当前工作状态
 
-**版本：v3.36.4**（2026-05-10）
+**版本：v3.36.5**（2026-05-15）
 
-当前 master 分支干净，所有近期改动已提交。主要工作集中在：
+进入 task-014 前 master 分支干净，所有近期改动已提交；当前已有 task-014 未提交修复改动。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
 - 稳定性修复（窗口句柄刷屏、MP3 播放兼容）
 - 三个高相似内核（PAL98/PAL98DX9/PAL98UNHAPPY）的功能同步
 
+当前工作区有 task-014 的未提交修复改动：三个 PAL98 内核和 `.ai/banana_pause_resume_regression_check.py`。
+
 ---
 
 ## 3. 已完成内容
+
+### v3.36.5 (2026-05-15)
+- 修复 PAL98 / PAL98DX9 / PAL98UNHAPPY 香蕉树反作弊暂停叠加 F9 手动暂停后，拿到香蕉仍无法恢复计时的问题
+- 调整云存档、云读档、接力-存档、接力-接盘暂停语义：无论操作前是否暂停，操作完成后都保持暂停，由用户手动恢复计时
 
 ### v3.36.4 (2026-05-10)
 - 跳图路线（非顺序节点推进）改为功能开关，默认关闭，功能菜单中可手动开启
@@ -85,6 +91,32 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 4. 未完成内容
 
+### 高优先级 - 已修复，待构建环境和实机验证
+
+- **task-015：云存档 / 云读档 / 接力存读档完成后永远保持暂停 — 已修复，待验证**
+  - 新要求：无论云存档或云读档之前是否暂停，操作完成后都保持 `IsUIPause == true`，由用户手动恢复计时。
+  - 用户确认：`接力-存档` / `接力-接盘` 也采用同一语义，操作完成后保持暂停。
+  - 修复内容：PAL98 / PAL98DX9 / PAL98UNHAPPY 三个内核已移除云/接力存读档路径中的 `wasPausedBefore` 自动恢复逻辑，保留操作开始时 `SetUIPause(true)`。
+  - 回归检查：新增 `.ai/cloud_save_load_pause_regression_check.py`；修复前失败，修复后通过。
+  - 构建状态：本机 MSBuild 可用，但缺 .NET Framework 4.0 targeting pack，Release|x64 在项目加载阶段报 `MSB3644`。
+  - 实机状态：仍需人工验证云存档、云读档、接力存档、接力接盘操作完成后保持暂停。
+  - Task Context：`PAL98_AI_WORKSPACE/.ai/task_contexts/task-015-paltimer-cloud-save-load-always-pause.md`
+
+- **task-014：香蕉树反作弊暂停/恢复 Bug 修复**
+  - 修复内容：PAL98 / PAL98DX9 / PAL98UNHAPPY 三个内核在 `HasStartGame()` 之前增加 `IsInUnCheat` guard，已进入反作弊暂停时先调用 `CheckCheatEnd()`，确保 F9 暂停期间拿到香蕉也能清除反作弊暂停状态。
+  - 安全边界：未修改 `GForm.cs`、`TimerCore.cs`、README、docs、工程文件；未在 F9 暂停期间直接调用 `MT.Start()`。
+  - 回归检查：新增 `.ai/banana_pause_resume_regression_check.py`；修复前失败，修复后通过。
+  - 构建状态：本机 MSBuild 可用，但缺 .NET Framework 4.0 targeting pack，Release|x64 在项目加载阶段报 `MSB3644`，需要在装有目标包的机器上重跑构建。
+  - 实机状态：仍需人工验证“站到香蕉树 -> F9 暂停 -> 拿香蕉 -> F9 恢复”路径。
+
+- **task-013：香蕉树反作弊暂停/恢复 Bug — LIKELY_BUG**
+  - 诊断结论：确认存在 Bug。当玩家在反作弊窗口期内手动暂停（F9）再拿香蕉，`CheckCheatEnd()` 因 `HasStartGame()` 返回 false 被跳过，`IsInUnCheat` 永远无法清除，计时器永久停止。
+  - 影响范围：PAL98 / PAL98DX9 / PAL98UNHAPPY 三个内核均受影响
+  - 根因：`HasStartGame()` 在 `IsPause==true` 时返回 false，导致反作弊检查块被整体跳过，`CheckCheatEnd()` 无法执行
+  - 推荐修复方案：将 `CheckCheatEnd()` 从 `HasStartGame()` 块中移出，确保拿到香蕉时无论暂停状态都能清除 `IsInUnCheat`
+  - 报告位置：`.ai/BANANA_PAUSE_RESUME_BUG_REVIEW.md`
+  - 已进入 task-014 修复。
+
 ### 已知问题
 - **主计时居中**：曾在 v3.36.2 中尝试用 `Graphics.MeasureString` 实现居中，但因文字居中对齐（`sfCC`）导致 `*` 号切换时毫秒位置跳动，v3.36.3 已回退。当前使用固定偏移+左对齐布局，部分用户电脑上主时间视觉不完全居中。需要后续重新设计居中方案。
 
@@ -99,9 +131,11 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 新的 AI 接手后，优先做以下事情：
 
 1. 读取 `docs/TODO-pal98-dx9-updates.md` 了解完整开发计划
-2. 如需修 bug，先确认问题是否可复现
-3. 如需编译，使用 VS2026 的 Release|x64 配置（见下方编译命令）
-4. 修改后需在 README.md 更新版本记录，在 TODO 更新状态
+2. task-014 和 task-015 代码层修复已完成，先在装有 .NET Framework 4.0 targeting pack 的机器上重跑 Release|x64 构建
+3. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时
+4. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复
+5. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动
+6. 如需发布版本，再决定是否更新 README.md 版本记录
 
 ---
 
@@ -128,6 +162,33 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 7. 最近改动
 
+### 2026-05-15 会话
+
+- task-015 云存档 / 云读档完成后永远保持暂停任务已插入
+- 新要求：无论云存档或云读档之前是否暂停，操作完成后都保持暂停，用户手动恢复计时
+- 用户确认：接力存档 / 接力接盘也采用同一语义，操作完成后保持暂停
+- 修复：三个 PAL98 主内核已移除 `wasPausedBefore` + `if (!wasPausedBefore) SetUIPause(false)` 自动恢复模式，云/接力存读档操作后保持暂停
+- 新增 `.ai/cloud_save_load_pause_regression_check.py`：结构性回归检查，确认三套内核不再残留云/接力操作后的自动恢复暂停逻辑
+- 验证：云/接力暂停回归检查通过；task-014 香蕉树回归检查仍通过；MSBuild Release|x64 因本机缺 .NET Framework 4.0 targeting pack 报 `MSB3644`，未完成编译验证
+- 输出：`PAL98_AI_WORKSPACE/.ai/task_contexts/task-015-paltimer-cloud-save-load-always-pause.md`
+
+- 版本号更新为 v3.36.5
+- 修改 `GForm.CurrentVersion`、`AssemblyVersion`、`AssemblyFileVersion` 为 `3.36.5`
+- README 新增 v3.36.5 更新说明，记录香蕉树/F9 恢复修复和云/接力操作后保持暂停
+
+- task-014 香蕉树反作弊暂停/恢复 Bug 修复完成（代码层）
+- 修改 `Pal98Timer/仙剑98柔情.cs`、`Pal98Timer/仙剑98柔情DX9.cs`、`Pal98Timer/仙剑98柔情不欢乐模式.cs`：在 `HasStartGame()` 之前增加 `IsInUnCheat` 检查并调用 `CheckCheatEnd()`，让手动暂停期间拿到香蕉也能清除反作弊暂停状态
+- 新增 `.ai/banana_pause_resume_regression_check.py`：结构性回归检查，确认三套内核都在 `HasStartGame()` 之前处理已进入的反作弊暂停结束，且未在该区域调用 `MT.Start()`
+- 验证：回归检查通过；MSBuild Release|x64 因本机缺 .NET Framework 4.0 targeting pack 报 `MSB3644`，未完成编译验证
+- 待验证：真实游戏中执行“站到香蕉树→F9暂停→拿香蕉→F9恢复”
+
+- task-013 香蕉树反作弊暂停/恢复 Bug 只读诊断完成
+- 结论：LIKELY_BUG — `HasStartGame()` 在 `IsPause==true` 时跳过整个反作弊检查块，导致 `CheckCheatEnd()` 无法清除 `IsInUnCheat`
+- 影响：三个内核（PAL98/PAL98DX9/PAL98UNHAPPY）均受影响
+- 输出：`.ai/BANANA_PAUSE_RESUME_BUG_REVIEW.md`（完整诊断报告）
+- 更新：`.ai/resume.md`（task-013 状态和下一步建议）
+- 未修改任何 .cs 文件、README、docs、工程文件或真实游戏数据
+
 ### 2026-05-10 会话
 
 - `SoundConfig.cs`：新增 `GameComplete` 枚举值和中文描述；新增 `MciOpenFile()` + `PlayMp3WithWmp()` 播放链；音效优先级机制（通关=30 > 总时间=20 > 分段=10）；优先级中断播放
@@ -145,13 +206,31 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 8. 测试状态
 
-最近一次编译命令：
+本轮编译命令：
 
 ```bash
 "/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
 ```
 
-编译结果：
+本轮编译结果：
+
+```text
+失败 — MSB3644，当前机器缺少 .NETFramework,Version=v4.0 的引用程序集 / targeting pack；项目尚未进入 C# 编译阶段。
+```
+
+本轮已通过的静态回归检查：
+
+```bash
+C:\Users\other\miniconda3\envs\paltools\python.exe .ai\banana_pause_resume_regression_check.py
+C:\Users\other\miniconda3\envs\paltools\python.exe .ai\cloud_save_load_pause_regression_check.py
+```
+
+```text
+PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
+PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
+```
+
+上一轮成功编译结果：
 
 ```text
 通过 — Build succeeded, 0 errors, 只有不相关 warning

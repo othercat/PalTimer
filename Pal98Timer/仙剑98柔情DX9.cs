@@ -579,13 +579,11 @@ namespace Pal98Timer
 
         private void UI_SaveGameEx(FormEx f,OnExSuccess cb, string fn = "SRPG.bin")
         {
-            bool wasPausedBefore = IsUIPause;
             SetUIPause(true);
             InfoShow isw = null;
             isw = new InfoShow(f, delegate ()
             {
                 SuspendSaveListen();
-                if (!wasPausedBefore) SetUIPause(false);
                 isw.Dispose();
             });
             isw.lblInfo.Text = "计时器已暂停，请在游戏中存档";
@@ -612,7 +610,6 @@ namespace Pal98Timer
                              f.Alert("操作中断");
                          }
                      }
-                     if (!wasPausedBefore) SetUIPause(false);
                      isw.Dispose();
                  }, fn);
             }
@@ -627,7 +624,6 @@ namespace Pal98Timer
                 {
                     isw.Dispose();
                 }
-                if (!wasPausedBefore) SetUIPause(false);
             }
             else
             {
@@ -846,7 +842,6 @@ namespace Pal98Timer
                             dw.btnOK.Enabled = true;
                             dw.Dispose();
 
-                            bool wasPausedBefore = IsUIPause;
                             SetUIPause(true);
                             InfoShow isw = null;
                             isw = new InfoShow(f, delegate ()
@@ -856,7 +851,6 @@ namespace Pal98Timer
                             isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
                             isw.btnOK.Text = "我已读档";
                             isw.ShowDialog(f);
-                            if (!wasPausedBefore) SetUIPause(false);
                         }
                         catch (Exception ee)
                         {
@@ -917,7 +911,6 @@ namespace Pal98Timer
                     form.Error(ex.Message);
                     return;
                 }
-                bool wasPausedBefore = IsUIPause;
                 SetUIPause(true);
                 InfoShow isw = null;
                 isw = new InfoShow(form, delegate ()
@@ -927,7 +920,6 @@ namespace Pal98Timer
                 isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中'进度一'后关闭此窗口";
                 isw.btnOK.Text = "我已读档";
                 isw.ShowDialog(form);
-                if (!wasPausedBefore) SetUIPause(false);
             };
 
             btnSwitch= form.NewMenuItem();
@@ -1049,6 +1041,11 @@ namespace Pal98Timer
                     }
                 }
                 catch { }
+
+                if (IsInUnCheat)
+                {
+                    CheckCheatEnd();
+                }
 
                 if (HasStartGame())
                 {
