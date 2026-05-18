@@ -35,7 +35,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 - 仙剑98柔情版（PAL98）及其 DX9 移植版（PAL98DX9）、不欢乐模式（PAL98UNHAPPY）
 - 其他内核（仙剑98Steam、仙剑2Steam、仙剑3、仙剑5前传、梦幻2.2、古剑2、自定义）
 
-技术栈：C# / .NET Framework 4.0 / WinForms / GDI+，编译目标 x64，最低系统 Win7 SP1。
+技术栈：C# / .NET Framework 4.7.2 / WinForms / GDI+，编译目标以解决方案配置为准，最低系统目标仍需兼容 Win7 SP1。
 
 ---
 
@@ -43,12 +43,14 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-进入 task-014 前 master 分支干净，所有近期改动已提交；当前已有 task-014 未提交修复改动。主要工作集中在：
+当前维护分支：`codex/paltimer-opacity-net472`。
+
+task-111 / task-112 已完成代码层和构建验证，等待或已经进入 checkpoint commit / push。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
 - 稳定性修复（窗口句柄刷屏、MP3 播放兼容）
 - 三个高相似内核（PAL98/PAL98DX9/PAL98UNHAPPY）的功能同步
-
-当前工作区有 task-014 的未提交修复改动：三个 PAL98 内核和 `.ai/banana_pause_resume_regression_check.py`。
+- UI 可读性：透明度功能当前语义为“背景图透明度”，文字、按钮和计时数字保持不透明。
+- 工具链：项目目标框架已从 .NET Framework 4.0 / 4.5 升级到 .NET Framework 4.7.2，便于 VS2026/MSBuild 18 编译，并保留 Win7 SP1 运行时目标。
 
 ---
 
@@ -93,12 +95,26 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ### 高优先级 - 已修复，待构建环境和实机验证
 
+- **task-112：计时器项目升级到 .NET Framework 4.7.2 — 已完成构建验证**
+  - 背景：本机卸载 VS2019 后，VS2026/MSBuild 18 无法找到 `.NETFramework,Version=v4.0` 引用程序集；用户因 Win7 SP1 兼容目标确认选择 4.7.2。
+  - 修复内容：主程序、插件和辅助项目 `.csproj` 统一到 `v4.7.2`；已有 `app.config` 的 supportedRuntime SKU 同步为 `.NETFramework,Version=v4.7.2`。
+  - 验证：升级前 Release 编译因 `MSB3644` 失败；升级后 `Pal98Timer.sln` Release `Any CPU` 编译通过，`Pal98TimerOBSPlugin.csproj` Release `AnyCPU` 单独编译通过。
+  - 已知警告：仍有既有架构不匹配、未使用变量和 `AppDomain.GetCurrentThreadId()` 过时警告；不是本次升级阻塞。
+  - Task Context：`PAL98_AI_WORKSPACE/.ai/task_contexts/task-112-paltimer-net472-upgrade.md`
+
+- **task-111：透明度功能改为背景图透明度 — 已完成构建验证，待 Human 视觉/OBS 验收**
+  - 背景：用户要求不新增“背景图透明度”，而是直接把现有“透明度”功能改成背景图透明度；整体窗口透明度可由 OBS 截取框处理。
+  - 修复内容：菜单文案改为“背景透明度”；`UpdateTransparency()` 固定 `Form.Opacity=1.0`；背景图绘制通过 alpha 处理，文字、按钮和计时数字保持不透明。
+  - 验证：随 task-112 使用 VS2026/MSBuild 18 完成 Release 编译。
+  - 待验证：Human 打开计时器确认背景透明度滑动效果、文字可读性和 OBS 截取效果。
+  - Task Context：`PAL98_AI_WORKSPACE/.ai/task_contexts/task-111-paltimer-background-image-opacity.md`
+
 - **task-015：云存档 / 云读档 / 接力存读档完成后永远保持暂停 — 已修复，待验证**
   - 新要求：无论云存档或云读档之前是否暂停，操作完成后都保持 `IsUIPause == true`，由用户手动恢复计时。
   - 用户确认：`接力-存档` / `接力-接盘` 也采用同一语义，操作完成后保持暂停。
   - 修复内容：PAL98 / PAL98DX9 / PAL98UNHAPPY 三个内核已移除云/接力存读档路径中的 `wasPausedBefore` 自动恢复逻辑，保留操作开始时 `SetUIPause(true)`。
   - 回归检查：新增 `.ai/cloud_save_load_pause_regression_check.py`；修复前失败，修复后通过。
-  - 构建状态：本机 MSBuild 可用，但缺 .NET Framework 4.0 targeting pack，Release|x64 在项目加载阶段报 `MSB3644`。
+  - 构建状态：task-112 后本机 VS2026/MSBuild 18 可完成 Release `Any CPU` 编译；仍需按发布目标决定是否补测 Release|x64。
   - 实机状态：仍需人工验证云存档、云读档、接力存档、接力接盘操作完成后保持暂停。
   - Task Context：`PAL98_AI_WORKSPACE/.ai/task_contexts/task-015-paltimer-cloud-save-load-always-pause.md`
 
@@ -106,7 +122,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
   - 修复内容：PAL98 / PAL98DX9 / PAL98UNHAPPY 三个内核在 `HasStartGame()` 之前增加 `IsInUnCheat` guard，已进入反作弊暂停时先调用 `CheckCheatEnd()`，确保 F9 暂停期间拿到香蕉也能清除反作弊暂停状态。
   - 安全边界：未修改 `GForm.cs`、`TimerCore.cs`、README、docs、工程文件；未在 F9 暂停期间直接调用 `MT.Start()`。
   - 回归检查：新增 `.ai/banana_pause_resume_regression_check.py`；修复前失败，修复后通过。
-  - 构建状态：本机 MSBuild 可用，但缺 .NET Framework 4.0 targeting pack，Release|x64 在项目加载阶段报 `MSB3644`，需要在装有目标包的机器上重跑构建。
+  - 构建状态：task-112 后本机 VS2026/MSBuild 18 可完成 Release `Any CPU` 编译；仍需按发布目标决定是否补测 Release|x64。
   - 实机状态：仍需人工验证“站到香蕉树 -> F9 暂停 -> 拿香蕉 -> F9 恢复”路径。
 
 - **task-013：香蕉树反作弊暂停/恢复 Bug — LIKELY_BUG**
@@ -131,11 +147,13 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 新的 AI 接手后，优先做以下事情：
 
 1. 读取 `docs/TODO-pal98-dx9-updates.md` 了解完整开发计划
-2. task-014 和 task-015 代码层修复已完成，先在装有 .NET Framework 4.0 targeting pack 的机器上重跑 Release|x64 构建
-3. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时
-4. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复
-5. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动
-6. 如需发布版本，再决定是否更新 README.md 版本记录
+2. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度
+3. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime
+4. task-014 和 task-015 代码层修复已完成，仍需实机验证
+5. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时
+6. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复
+7. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动
+8. 如需发布版本，再决定是否更新 README.md 版本记录
 
 ---
 
@@ -161,6 +179,20 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 ---
 
 ## 7. 最近改动
+
+### 2026-05-18 会话
+
+- task-112 计时器项目升级到 .NET Framework 4.7.2
+- 修改主程序、插件和辅助项目 `.csproj`：`TargetFrameworkVersion` 统一为 `v4.7.2`
+- 修改已有 `app.config`：supportedRuntime SKU 从 `.NETFramework,Version=v4.0` 改为 `.NETFramework,Version=v4.7.2`
+- 验证：升级前 VS2026/MSBuild 18 因缺 `.NETFramework,Version=v4.0` targeting pack 报 `MSB3644`；升级后 `Pal98Timer.sln` Release `Any CPU` 编译通过，`Pal98TimerOBSPlugin.csproj` Release `AnyCPU` 单独编译通过
+- 备注：保留 Win7 SP1 兼容目标，但目标机需安装 .NET Framework 4.7.2 runtime；未升级到 4.8 / 4.8.1
+
+- task-111 透明度功能改为背景图透明度
+- 修改 `GForm.cs` / `GForm.Designer.cs`：菜单和输入框文案改为“背景透明度”，`UpdateTransparency()` 不再降低整个 Form 透明度
+- 修改 `GEX.cs`：背景图绘制支持 alpha；背景图透明时文字、按钮和计时数字保持不透明
+- 验证：随 task-112 编译通过
+- 待验证：Human 视觉确认和 OBS 场景效果确认
 
 ### 2026-05-15 会话
 
