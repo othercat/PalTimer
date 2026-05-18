@@ -102,7 +102,7 @@
             // 
             this.btnTransparency.Name = "btnTransparency";
             this.btnTransparency.Size = new System.Drawing.Size(184, 22);
-            this.btnTransparency.Text = "透明度 (100%)";
+            this.btnTransparency.Text = "背景透明度 (100%)";
             this.btnTransparency.Click += new System.EventHandler(this.btnTransparency_Click);
             // 
             // btnBattlePauseNoTimer

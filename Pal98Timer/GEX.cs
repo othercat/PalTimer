@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
@@ -14,9 +15,9 @@ namespace Pal98Timer
         {
             return (int)(multi * ori);
         }
-        public static void ClearRect(Graphics g, Rectangle rect, Image bg = null, int bgW = 0, int bgH = 0)
+        public static void ClearRect(Graphics g, Rectangle rect, Image bg = null, int bgW = 0, int bgH = 0, float bgOpacity = 1F)
         {
-            if (bg == null || bgW <= 0 || bgH <= 0)
+            if (bg == null || bgW <= 0 || bgH <= 0 || bgOpacity <= 0F)
             {
                 var tmp = g.CompositingMode;
                 g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
@@ -27,16 +28,39 @@ namespace Pal98Timer
             }
             else
             {
+                var tmp = g.CompositingMode;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(0, 0, 0, 0)))
+                {
+                    g.FillRectangle(b, rect);
+                }
+                g.CompositingMode = tmp;
+
                 float iw = (float)bg.Width / bgW;
                 float ih = (float)bg.Height / bgH;
-                g.DrawImage(bg, rect,
-                new Rectangle(
+                DrawImage(g, bg, rect, new Rectangle(
                     GDIMulti(rect.X, iw),
                     GDIMulti(rect.Y, ih),
                     GDIMulti(rect.Width, iw),
                     GDIMulti(rect.Height, ih)
-                    ),
-                GraphicsUnit.Pixel);
+                    ), bgOpacity);
+            }
+        }
+        public static void DrawImage(Graphics g, Image img, Rectangle destRect, Rectangle srcRect, float opacity)
+        {
+            if (img == null) return;
+            if (opacity <= 0F) return;
+            if (opacity >= 1F)
+            {
+                g.DrawImage(img, destRect, srcRect, GraphicsUnit.Pixel);
+                return;
+            }
+            using (ImageAttributes ia = new ImageAttributes())
+            {
+                ColorMatrix cm = new ColorMatrix();
+                cm.Matrix33 = opacity;
+                ia.SetColorMatrix(cm, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+                g.DrawImage(img, destRect, srcRect.X, srcRect.Y, srcRect.Width, srcRect.Height, GraphicsUnit.Pixel, ia);
             }
         }
         public static void DrawText(Graphics g, string text, Font font, Brush fillBrush, Pen strokePen, Rectangle rect, StringFormat sf)
@@ -393,7 +417,19 @@ namespace Pal98Timer
             }
         }
         private Image bg = null;
+        private float bgOpacity = 1F;
         private bool isBGChanged = false;
+        public void SetBGOpacity(int value)
+        {
+            if (value < 0) value = 0;
+            if (value > 100) value = 100;
+            float opacity = value / 100F;
+            if (Math.Abs(bgOpacity - opacity) > 0.001F)
+            {
+                bgOpacity = opacity;
+                isBGChanged = true;
+            }
+        }
         public void SetBG(string path)
         {
             Image tmp = null;
@@ -852,7 +888,7 @@ namespace Pal98Timer
                     }
                 }
             }
-            public bool Draw(Graphics g, bool isForceDrawAll, GBoard bb, Rectangle rcName, Rectangle rcBest, Rectangle rcCha, Rectangle rcCur, Image bg, int bgWidth, int bgHeight, delUpdateRect ur = null)
+            public bool Draw(Graphics g, bool isForceDrawAll, GBoard bb, Rectangle rcName, Rectangle rcBest, Rectangle rcCha, Rectangle rcCur, Image bg, int bgWidth, int bgHeight, float bgOpacity, delUpdateRect ur = null)
             {
                 bool ret = false;
                 if (isForceDrawAll) isDirty = true;
@@ -865,8 +901,8 @@ namespace Pal98Timer
 
                 if (isDirty)
                 {
-                    GEX.ClearRect(g, rcName, bg, bgWidth, bgHeight);
-                    GEX.ClearRect(g, rcBest, bg, bgWidth, bgHeight);
+                    GEX.ClearRect(g, rcName, bg, bgWidth, bgHeight, bgOpacity);
+                    GEX.ClearRect(g, rcBest, bg, bgWidth, bgHeight, bgOpacity);
 
                     // 跳过节点沿用普通显示，不做特殊颜色
                     if (IsActive)
@@ -889,8 +925,8 @@ namespace Pal98Timer
 
                 if (IsTimeDirty)
                 {
-                    GEX.ClearRect(g, rcCha, bg, bgWidth, bgHeight);
-                    GEX.ClearRect(g, rcCur, bg, bgWidth, bgHeight);
+                    GEX.ClearRect(g, rcCha, bg, bgWidth, bgHeight, bgOpacity);
+                    GEX.ClearRect(g, rcCur, bg, bgWidth, bgHeight, bgOpacity);
 
                     // 根据状态选择背景色
                     // 跳过节点沿用普通显示，不做特殊颜色
@@ -2152,9 +2188,10 @@ namespace Pal98Timer
             if (CG == null) return false;
             if (isSizeChanged || isBGChanged)
             {
+                CG.Clear(Color.Transparent);
                 if (bg != null)
                 {
-                    CG.DrawImage(bg, 0, 0, Width, Height);
+                    GEX.DrawImage(CG, bg, new Rectangle(0, 0, Width, Height), new Rectangle(0, 0, bg.Width, bg.Height), bgOpacity);
                 }
                 else
                 {
@@ -2264,7 +2301,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, close_rc, bg, Width, Height);
+                    GEX.ClearRect(g, close_rc, bg, Width, Height, bgOpacity);
                 }
                 var mode = g.SmoothingMode;
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
@@ -2284,7 +2321,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, config_rc, bg, Width, Height);
+                    GEX.ClearRect(g, config_rc, bg, Width, Height, bgOpacity);
                 }
                 if (configIcon != null)
                 {
@@ -2303,7 +2340,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcTitle, bg, Width, Height);
+                    GEX.ClearRect(g, rcTitle, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, Title, bb.TitleFont, bb.TitleFill, bb.TitleBorder, rcTitle, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2319,7 +2356,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcGameVersion, bg, Width, Height);
+                    GEX.ClearRect(g, rcGameVersion, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, GameVersion, bb.GVersionFont, bb.GVersionFill, bb.GVersionBorder, rcGameVersion, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2335,7 +2372,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcVersion, bg, Width, Height);
+                    GEX.ClearRect(g, rcVersion, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, Version, bb.VersionFont, bb.VersionFill, bb.VersionBorder, rcVersion, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2351,7 +2388,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcBL, bg, Width, Height);
+                    GEX.ClearRect(g, rcBL, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, BL, bb.BLFont, bb.BLFill, bb.BLBorder, rcBL, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2367,7 +2404,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcBR, bg, Width, Height);
+                    GEX.ClearRect(g, rcBR, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, BR, bb.BRFont, bb.BRFill, bb.BRBorder, rcBR, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2383,7 +2420,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMoreInfo, bg, Width, Height);
+                    GEX.ClearRect(g, rcMoreInfo, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, MoreInfo, bb.MoreInfoFont, bb.MoreInfoFill, bb.MoreInfoBorder, rcMoreInfo, GLayout.sfCC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2399,7 +2436,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMainTimer, bg, Width, Height);
+                    GEX.ClearRect(g, rcMainTimer, bg, Width, Height, bgOpacity);
                 }
                 isCChanged = true; // rcMainTimer overlaps rcIsC, so ensure IsC is redrawn after clearing
                 if (isInCheck)
@@ -2422,7 +2459,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcMainTimerMS, bg, Width, Height);
+                    GEX.ClearRect(g, rcMainTimerMS, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, MainTimer.Milliseconds.ToString().PadLeft(3, '0').Substring(0, 2), bb.MainTimerMSFont, bb.MainTimerFill, bb.MainTimerBorder, rcMainTimerMS, GLayout.sfCC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2438,7 +2475,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcSubTimer, bg, Width, Height);
+                    GEX.ClearRect(g, rcSubTimer, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, SubTimer, bb.SubTimerFont, bb.SubTimerFill, bb.SubTimerBorder, rcSubTimer, GLayout.sfNC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2454,7 +2491,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcOutTimer, bg, Width, Height);
+                    GEX.ClearRect(g, rcOutTimer, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, OutTimer, bb.OutTimerFont, bb.OutTimerFill, bb.OutTimerBorder, rcOutTimer, GLayout.sfFC);
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
@@ -2470,7 +2507,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcWillClear, bg, Width, Height);
+                    GEX.ClearRect(g, rcWillClear, bg, Width, Height, bgOpacity);
                 }
                 GEX.DrawText(g, WillClear, bb.WillClearFont, bb.WillClearFill, bb.WillClearBorder, rcWillClear, GLayout.sfNC);
                 GEX.DrawText(g, PointSpan, bb.WillClearFont, bb.WillClearFill, bb.WillClearBorder, rcWillClear, GLayout.sfFC);
@@ -2487,7 +2524,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, btn_rc, bg, Width, Height);
+                    GEX.ClearRect(g, btn_rc, bg, Width, Height, bgOpacity);
                 }
                 isForceDrawAll = true;
             }
@@ -2514,7 +2551,7 @@ namespace Pal98Timer
                 {
                     ret = true;
                     ModifyRect(ref rc, startX + p * (GBtn.Margin + GBtn.Width), btn_rc.Y, GBtn.Width, btn_rc.Height);
-                    GEX.ClearRect(g, rc, bg, Width, Height);
+                    GEX.ClearRect(g, rc, bg, Width, Height, bgOpacity);
                     cur.Draw(g, rc, bb);
                     if (!isForceDrawAll)
                     {
@@ -2536,7 +2573,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcDots, bg, Width, Height);
+                    GEX.ClearRect(g, rcDots, bg, Width, Height, bgOpacity);
                 }
                 if (LastDots != null)
                 {
@@ -2596,11 +2633,11 @@ namespace Pal98Timer
             {
                 if ((!isSizeChanged && !isBGChanged) || isBBChanged)
                 {
-                    GEX.ClearRect(g, rcItems, bg, Width, Height);
+                    GEX.ClearRect(g, rcItems, bg, Width, Height, bgOpacity);
                 }
                 if (!isSizeChanged && !isBGChanged && isItemScroll && rcItemScroll.Width > 0)
                 {
-                    GEX.ClearRect(g, rcItemScroll, bg, Width, Height);
+                    GEX.ClearRect(g, rcItemScroll, bg, Width, Height, bgOpacity);
                 }
                 isForceDrawAll = true;
             }
@@ -2617,7 +2654,7 @@ namespace Pal98Timer
                 rcIBest.Y = y;
                 rcICha.Y = y + bb.ItemHalfHeight;
                 rcICur.Y = y;
-                if (itemList[i].Draw(g, isForceDrawAll, bb, rcIName, rcIBest, rcICha, rcICur, bg, Width, Height, ur))
+                if (itemList[i].Draw(g, isForceDrawAll, bb, rcIName, rcIBest, rcICha, rcICur, bg, Width, Height, bgOpacity, ur))
                 {
                     ret = true;
                 }
@@ -2638,7 +2675,7 @@ namespace Pal98Timer
             {
                 if (!isSizeChanged && !isBGChanged)
                 {
-                    GEX.ClearRect(g, rcIsC, bg, Width, Height);
+                    GEX.ClearRect(g, rcIsC, bg, Width, Height, bgOpacity);
                 }
                 if (isC)
                 {

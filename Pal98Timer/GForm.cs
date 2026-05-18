@@ -17,7 +17,7 @@ namespace Pal98Timer
         private TimerCore core;
         private bool IsAutoLuck = false;
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
-        private int transparencyValue = 100; // 透明度 0-100, 100为不透明
+        private int transparencyValue = 100; // 背景图透明度 0-100, 100为不透明
 
         public GRender rr;
         public GRender.GBtn btnPause;
@@ -998,22 +998,22 @@ namespace Pal98Timer
 
         private void UpdateTransparency()
         {
-            // 将0-100的透明度值转换为Form的Opacity (0.0-1.0)
-            // 0表示完全透明，100表示完全不透明
-            this.Opacity = transparencyValue / 100.0;
+            // 透明度只作用于背景图，文字、按钮和计时数字保持不透明。
+            this.Opacity = 1.0;
+            rr?.SetBGOpacity(transparencyValue);
         }
 
         private void UpdateTransparencyText()
         {
-            btnTransparency.Text = "透明度 (" + transparencyValue + "%)";
+            btnTransparency.Text = "背景透明度 (" + transparencyValue + "%)";
         }
 
         private void btnTransparency_Click(object sender, EventArgs e)
         {
             // 创建一个简单的输入对话框
             string input = Microsoft.VisualBasic.Interaction.InputBox(
-                "请输入透明度 (0-100):\n0 = 完全透明\n100 = 完全不透明",
-                "设置透明度",
+                "请输入背景图透明度 (0-100):\n0 = 背景图完全透明\n100 = 背景图完全不透明\n文字、按钮和计时数字不会变透明",
+                "设置背景图透明度",
                 transparencyValue.ToString());
             
             if (!string.IsNullOrEmpty(input))
