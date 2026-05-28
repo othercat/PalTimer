@@ -164,6 +164,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 | `README.md` | 项目说明、快捷键、版本更新记录 |
 | `docs/TODO-pal98-dx9-updates.md` | 详细开发计划、验收清单 |
 | `.ai/resume.md` | 当前交接文件（本文件） |
+| `.ai/DEFENDER_FALSE_POSITIVE_DEPLOYMENT_NOTE.md` | Windows Defender 拦截 / 误报部署知识 |
 | `.ai/decisions.md` | 长期技术决策 |
 | `.ai/env.md` | 多电脑环境差异 |
 | `Pal98Timer/GForm.cs` | 主窗体、快捷键处理、版本号 `CurrentVersion` |
@@ -181,6 +182,12 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ## 7. 最近改动
 
 ### 2026-05-18 会话
+
+- 记录 Windows Defender 拦截 / 误报部署知识
+- 新增 `.ai/DEFENDER_FALSE_POSITIVE_DEPLOYMENT_NOTE.md`
+- 结论：`BadImageFormatException` 与 Defender `Behavior:Win32/DefenseEvasion.A!ml` 是两类问题；前者多为误用 `Any CPU` 输出导致 32/64 位不匹配，后者更可能来自未签名 exe + 低级键盘 hook + OpenProcess / ReadProcessMemory / WriteProcessMemory 等敏感行为组合
+- 短期建议：测试包使用完整 `Release|x64` 目录，不裸发来源不明 exe；确认 hash 和来源可信后再临时允许
+- 长期建议：代码签名、完整发布包、降低启动期可疑行为面，需单独开任务评估
 
 - task-112 计时器项目升级到 .NET Framework 4.7.2
 - 修改主程序、插件和辅助项目 `.csproj`：`TargetFrameworkVersion` 统一为 `v4.7.2`
