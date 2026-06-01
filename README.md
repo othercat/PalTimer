@@ -1,4 +1,8 @@
 # 自动计时器使用说明
+> Current maintained fork of PalTimer for original PAL98 speedrunning, inherited from ihouou/PalTimer and maintained by othercat.
+
+> Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
+
 **需要 .NET Framework 4.7.2 框架**
 
 目前支持自动计时的游戏（点击主界面右上方的设置按钮可以选择切换）：
