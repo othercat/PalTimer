@@ -1,5 +1,9 @@
 # 自动计时器使用说明
-**需要 .net framework 4.0 框架**
+> Current maintained fork of PalTimer for original PAL98 speedrunning, inherited from ihouou/PalTimer and maintained by othercat.
+
+> Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
+
+**需要 .NET Framework 4.7.2 框架**
 
 目前支持自动计时的游戏（点击主界面右上方的设置按钮可以选择切换）：
 
@@ -104,6 +108,9 @@
 ## v3.36.5 (2026-05-15 by othercat)
 修复仙剑98柔情、仙剑98柔情DX9、仙剑98柔情不欢乐模式中，香蕉树反作弊暂停期间按 F9 手动暂停后，拿到香蕉再恢复时计时器无法继续的问题
 调整云存档、云读档、接力-存档、接力-接盘的暂停语义：无论操作前是否暂停，操作完成后都保持暂停，需要手动恢复计时
+透明度功能改为背景图透明度：文字、按钮和计时数字保持不透明，方便 OBS 等直播软件单独控制截取框整体透明度
+项目目标框架升级到 .NET Framework 4.7.2，解决新版本 Visual Studio / MSBuild 缺少 .NET Framework 4.0 targeting pack 时无法编译的问题；版本号仍保持 3.36.5
+发布/部署仍应使用 Release|x64 输出（`Pal98Timer\bin\x64\Release`），避免 Any CPU 输出在启动时加载 64 位 PalCloudLib.dll 发生 BadImageFormatException 闪退
 
 ## v3.36.4 (2026-05-10 by othercat)
 节点或通关完成时可配置快慢提示音效，支持 wav/mp3 外部音频文件，功能菜单--节点音效配置可设置每种情况的音效并试听，可以在配置菜单设置快捷键

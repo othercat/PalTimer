@@ -8,7 +8,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>ModuleAddrX64Delegate</RootNamespace>
     <AssemblyName>ModuleAddrX64Delegate</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
