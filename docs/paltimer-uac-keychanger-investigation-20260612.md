@@ -285,6 +285,8 @@ WriteProcessMemory(...)
 
 三套 PAL98 内核现在在找到 Pal.exe 但 `OpenProcess(0x1F0FFF, ...)` 返回 0 时：
 
+- `Process.HasExited` 无法检查时仍保留 Pal.exe 候选，避免把管理员权限进程误判为“不存在”
+- 在读取窗口句柄/标题之前先用 `CanOpenPalProcess()` 探测权限，确保 PalTimer 常驻、PAL.exe 后启动或重启为管理员权限时也能提示
 - 不设置 `PID`，避免进入“看似已连接但句柄无效”的状态
 - 通过 `cryerror` 显示一次提示，避免循环刷屏
 - 当 Windows 错误码为 5 时，提示 PAL.exe 可能以管理员身份运行；普通场景建议关闭 PAL.exe 管理员权限，如果 PAL.exe 必须管理员运行，则提示 PalTimer 也要管理员运行
@@ -305,5 +307,6 @@ C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_p
 仍需人工实机验证：
 
 - 普通权限 PAL.exe + 普通权限 PalTimer：确认 PAL98/PAL98DX9/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger 行为不变
-- 管理员权限 PAL.exe + 普通权限 PalTimer：确认提示出现一次且不刷屏，记录读内存、快捷键和 KeyChanger 的失败表现
+- PalTimer 先常驻，再启动管理员权限 PAL.exe：确认提示出现一次且不刷屏，记录读内存、快捷键和 KeyChanger 的失败表现
+- 普通权限 PAL.exe 运行后关闭，再以管理员权限重启 PAL.exe：确认提示出现一次且不刷屏
 - 管理员权限 PalTimer：确认启动时出现一次权限提示，且不阻止用户继续使用

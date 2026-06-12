@@ -800,7 +800,7 @@ namespace Pal98Timer
             // 过滤已退出的进程
             var aliveProcesses = res.Where(p => {
                 try { return !p.HasExited; }
-                catch { return false; }
+                catch { return true; }
             }).ToArray();
 
             // 游戏关闭后的静默等待期
@@ -841,6 +841,11 @@ namespace Pal98Timer
 
                 if (PID == -1)
                 {
+                    if (!CanOpenPalProcess(res[0]))
+                    {
+                        return false;
+                    }
+
                     IntPtr tempHandle = res[0].MainWindowHandle;
 
                     // 如果窗口句柄为空，可能是游戏正在关闭
@@ -930,6 +935,24 @@ namespace Pal98Timer
             }
 
             PalHandle = IntPtr.Zero;
+            int errorCode = Kernel32.GetLastWin32Error();
+            if (!HasAlertPalOpenProcessError)
+            {
+                cryerror = BuildOpenPalProcessError(errorCode);
+                HasAlertPalOpenProcessError = true;
+            }
+            return false;
+        }
+
+        private bool CanOpenPalProcess(Process process)
+        {
+            int handle = Kernel32.OpenProcess(0x1F0FFF, false, process.Id);
+            if (handle != 0)
+            {
+                Kernel32.CloseHandle(handle);
+                return true;
+            }
+
             int errorCode = Kernel32.GetLastWin32Error();
             if (!HasAlertPalOpenProcessError)
             {

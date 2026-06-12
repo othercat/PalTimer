@@ -17,11 +17,15 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
     return (
         "private bool HasAlertPalOpenProcessError = false;" in text
         and "private bool TryOpenPalProcess(Process process)" in text
+        and "private bool CanOpenPalProcess(Process process)" in text
         and "private string BuildOpenPalProcessError(int errorCode)" in text
         and "Kernel32.ERROR_ACCESS_DENIED" in text
         and "PAL.exe 可能以管理员身份运行" in text
         and "PalHandle = new IntPtr(handle);" in text
+        and "Kernel32.CloseHandle(handle);" in text
         and "PalHandle = new IntPtr(Kernel32.OpenProcess" not in text
+        and "catch { return true; }" in text
+        and "if (!CanOpenPalProcess(res[0]))" in text
         and text.find(open_call) != -1
         and text.find(pid_assign, text.find(open_call)) != -1
     )

@@ -200,6 +200,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 2026-06-12 会话（task-113 权限提示后续）
 
+- 修复实测问题：PalTimer 常驻、PAL.exe 后续以管理员权限启动时，旧逻辑可能在 `Process.HasExited` 检查异常后把 Pal.exe 当成不存在，导致没有权限提示
+- 修改 PAL98 / PAL98DX9 / PAL98UNHAPPY 三内核进程过滤逻辑：`HasExited` 无法检查时仍保留 Pal.exe 候选，并先用 `CanOpenPalProcess()` 探测权限；打不开则走一次性权限提示
 - 调整 `.ai/resume.md` 接手规则：Codex 普通开发不再要求读取 `CLAUDE.md`；只有审计 Claude Code 入口、迁移 agent-setting 或排查 Claude/Codex 指令冲突时才读
 - 修改 `Pal98Timer/GForm.cs`：启动后检测 PalTimer 是否以管理员身份运行，若是则一次性提示普通速通和 pal98autotest 推荐关闭管理员权限；若 PAL.exe 因其他补丁必须管理员运行，则 PalTimer 也应同权限运行
 - 修改 `Pal98Timer/Kernel32.cs`：`OpenProcess` 增加 `SetLastError=true`，新增 `ERROR_ACCESS_DENIED` 和 `GetLastWin32Error()`
