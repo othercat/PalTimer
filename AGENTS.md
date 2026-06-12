@@ -1,0 +1,1 @@
+../../../../agent-setting/generated/projects/PalTimer/AGENTS.md
