@@ -43,7 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-opacity-net472`。
+当前维护分支：`codex/paltimer-uac-asinvoker`。
+
+task-113 已在当前分支完成代码层验证：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker`，`Release|x64` 构建通过，产物 manifest 和普通权限启动烟测通过，仍需 PAL98DX9/PAL98/PAL98UNHAPPY 实机回归。
 
 task-111 / task-112 已完成代码层和构建验证，等待或已经进入 checkpoint commit / push。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
@@ -92,6 +94,17 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 4. 未完成内容
+
+### 高优先级 - 已修复，待实机验证
+
+- **task-113：取消 PalTimer 主程序默认 UAC 提权 — 已完成代码层和构建验证**
+  - 背景：`pal98autotest` 从普通进程启动部署版 `Pal98Timer.exe` 时遇到 `WinError 740`，说明当前主程序要求提升权限。
+  - 修复内容：当前分支 `codex/paltimer-uac-asinvoker` 只修改 `Pal98Timer/Properties/app.manifest`，将主程序有效 `requestedExecutionLevel` 从 `requireAdministrator` 改为 `asInvoker`。
+  - 安全边界：未修改 `.cs`、`.csproj`、KeyChanger 启动逻辑、`OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`、x64 发布配置或真实部署目录。
+  - 验证：`Pal98Timer.sln` `Release|x64` 构建通过；用 Windows SDK `mt.exe` 抽取 `Pal98Timer/bin/x64/Release/Pal98Timer.exe` manifest，确认有效节点为 `level="asInvoker"`；从普通 PowerShell 启动产物不再出现 `WinError 740`。
+  - 注意：本次烟测关闭 PalTimer 时 `CloseMainWindow()` 未让进程自行退出，已强制结束本次启动的进程；未发现残留 `Pal98Timer` / `KeyChanger` 进程。
+  - 待实机：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏；管理员权限启动游戏时记录非提升 PalTimer 的失败表现。
+  - 调查文档：`docs/paltimer-uac-keychanger-investigation-20260612.md`
 
 ### 高优先级 - 已修复，待构建环境和实机验证
 
@@ -146,14 +159,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. 读取 `docs/TODO-pal98-dx9-updates.md` 了解完整开发计划
-2. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度
-3. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime
-4. task-014 和 task-015 代码层修复已完成，仍需实机验证
-5. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时
-6. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复
-7. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动
-8. 如需发布版本，再决定是否更新 README.md 版本记录
+1. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；如目标游戏以管理员运行，记录非提升 PalTimer 的失败表现。
+2. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
+3. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
+4. task-014 和 task-015 代码层修复已完成，仍需实机验证。
+5. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
+6. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
+7. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
+8. 如需发布版本，再决定是否更新 README.md 版本记录。
 
 ---
 
@@ -180,6 +193,22 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-12 会话（task-113 实施）
+
+- 新建并切换到 `codex/paltimer-uac-asinvoker`
+- 修改 `Pal98Timer/Properties/app.manifest`：主程序有效 `requestedExecutionLevel` 从 `requireAdministrator` 改为 `asInvoker`
+- 保持 KeyChanger、C# 运行时代码、工程文件、发布平台和真实部署目录不变
+- 验证：`Release|x64` 构建通过；产物 manifest 抽取确认有效节点为 `asInvoker`；普通 PowerShell 启动 `Pal98Timer/bin/x64/Release/Pal98Timer.exe` 成功，不再出现 `WinError 740`
+- 验证：`git diff --check`、`.ai/banana_pause_resume_regression_check.py`、`.ai/cloud_save_load_pause_regression_check.py` 均通过
+- 待验证：PAL98DX9/PAL98/PAL98UNHAPPY 实机读内存、F9/F10/F11、KeyChanger、云功能，以及管理员权限游戏进程的边界表现
+
+### 2026-06-12 会话
+
+- 只读调查 PalTimer 默认 UAC 提权来源，并新增 `docs/paltimer-uac-keychanger-investigation-20260612.md`
+- 结论：当前 `Pal98Timer.exe` 要求 UAC 的直接来源是 `Pal98Timer/Properties/app.manifest` 的 `requireAdministrator`；`KeyChanger.exe` 在 3.34.1 后已独立，源码中未发现 KeyChanger 自己强制 UAC 或主程序用 `runas` 启动 KeyChanger
+- 建议后续新分支最小验证：主程序 manifest 改为 `asInvoker`，保持 Release|x64 和 KeyChanger 现状不变，再做普通权限启动、PAL98DX9 读内存、F9/F10/F11、KeyChanger 和云功能回归
+- 本轮未修改 `.cs`、`.csproj`、manifest、发布包或真实部署目录
 
 ### 2026-05-18 会话
 
@@ -248,20 +277,22 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 本轮编译命令：
 
 ```bash
-"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
 ```
 
 本轮编译结果：
 
 ```text
-失败 — MSB3644，当前机器缺少 .NETFramework,Version=v4.0 的引用程序集 / targeting pack；项目尚未进入 C# 编译阶段。
+通过 — Build succeeded, 0 errors；仅有既有 warning（未使用变量、AppDomain.GetCurrentThreadId() 过时等）。
+产物：Pal98Timer/bin/x64/Release/Pal98Timer.exe
 ```
 
-本轮已通过的静态回归检查：
+本轮已通过的静态 / 结构性回归检查：
 
 ```bash
-C:\Users\other\miniconda3\envs\paltools\python.exe .ai\banana_pause_resume_regression_check.py
-C:\Users\other\miniconda3\envs\paltools\python.exe .ai\cloud_save_load_pause_regression_check.py
+git diff --check
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\banana_pause_resume_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\cloud_save_load_pause_regression_check.py
 ```
 
 ```text
@@ -269,17 +300,26 @@ PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
 PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
 ```
 
-上一轮成功编译结果：
+本轮产物 manifest 检查：
 
 ```text
-通过 — Build succeeded, 0 errors, 只有不相关 warning
+Windows SDK mt.exe 抽取 Pal98Timer/bin/x64/Release/Pal98Timer.exe manifest，确认有效 requestedExecutionLevel 为 level="asInvoker"。
+注释示例中仍包含 requireAdministrator，不是生效节点。
+```
+
+本轮普通权限启动烟测：
+
+```text
+从普通 PowerShell 启动 Pal98Timer/bin/x64/Release/Pal98Timer.exe 成功，进程保持运行，不再出现 WinError 740。
+关闭烟测：CloseMainWindow() 未让本次进程自行退出，已强制结束；未发现残留 Pal98Timer / KeyChanger 进程。
 ```
 
 实机测试需手动进行（需要仙剑98游戏环境）：
-- 音效试听：选择 MP3/WAV 文件点击试听，确认能播放或有错误提示
-- 音效开关快捷键：配置后运行中按快捷键，确认切换生效
-- 主计时布局：确认毫秒紧跟主时间，不出现过大间距
-- 详见 `docs/TODO-pal98-dx9-updates.md` 末尾的实机验证清单
+- task-113：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏。
+- task-113：如果 PAL98DX9 被管理员方式启动，记录非提升 PalTimer 的读内存、快捷键和 KeyChanger 失败表现。
+- task-111：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取效果符合直播需求。
+- task-014：站到香蕉树 -> F9 暂停 -> 拿香蕉 -> F9 恢复，确认计时器能恢复。
+- task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停。
 
 ---
 
@@ -287,10 +327,10 @@ PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
 
 ### 当前开发环境
 
-- 项目路径：`C:\SourceCodes\GithubRepos\PalTimer`
+- 项目路径：`D:\Workspace\KnowledgeRoots\PAL\othercat\PalTimer`
 - 主要环境：Windows 11 Pro，VS2026 (v18)
 - 编译目标：Release|x64
-- .NET Framework 4.0 目标
+- .NET Framework 4.7.2 目标
 
 ### 其他环境
 
