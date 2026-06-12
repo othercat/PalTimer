@@ -14,10 +14,10 @@
 2. 如存在以下文件，也需要阅读：
    - `README.md`
    - `AGENTS.md`
-   - `CLAUDE.md`
    - `TODO.md`
    - `.ai/decisions.md`
    - `.ai/env.md`
+   - `CLAUDE.md`：仅在审计 Claude Code 入口、迁移 agent-setting 或排查 Claude/Codex 指令冲突时阅读；普通 Codex 开发不需要读取。
 3. 执行 `git status`，确认当前工作区状态。
 4. 如果本文件与代码状态冲突，以代码和 Git 状态为准，并更新本文件。
 5. 不要假设本机路径、Python 环境、Node 环境、游戏路径和其他电脑一致。
@@ -45,7 +45,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前维护分支：`codex/paltimer-uac-asinvoker`。
 
-task-113 已在当前分支完成代码层验证：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker`，`Release|x64` 构建通过，产物 manifest 和普通权限启动烟测通过，仍需 PAL98DX9/PAL98/PAL98UNHAPPY 实机回归。
+task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限提示，遇到可能由管理员权限导致的拒绝访问时会提醒用户用普通权限重启 PAL.exe，仍需 PAL98DX9/PAL98/PAL98UNHAPPY 实机回归。
 
 task-111 / task-112 已完成代码层和构建验证，等待或已经进入 checkpoint commit / push。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
@@ -97,11 +97,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 高优先级 - 已修复，待实机验证
 
-- **task-113：取消 PalTimer 主程序默认 UAC 提权 — 已完成代码层和构建验证**
+- **task-113：取消 PalTimer 主程序默认 UAC 提权并提示权限不匹配 — 已完成代码层和构建验证**
   - 背景：`pal98autotest` 从普通进程启动部署版 `Pal98Timer.exe` 时遇到 `WinError 740`，说明当前主程序要求提升权限。
-  - 修复内容：当前分支 `codex/paltimer-uac-asinvoker` 只修改 `Pal98Timer/Properties/app.manifest`，将主程序有效 `requestedExecutionLevel` 从 `requireAdministrator` 改为 `asInvoker`。
-  - 安全边界：未修改 `.cs`、`.csproj`、KeyChanger 启动逻辑、`OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`、x64 发布配置或真实部署目录。
+  - 修复内容：当前分支 `codex/paltimer-uac-asinvoker` 已修改 `Pal98Timer/Properties/app.manifest`，将主程序有效 `requestedExecutionLevel` 从 `requireAdministrator` 改为 `asInvoker`。
+  - 后续修复：`Kernel32.OpenProcess` 开启 `SetLastError=true`；PAL98 / PAL98DX9 / PAL98UNHAPPY 三内核在 `OpenProcess` 返回 0 时只提示一次权限失败信息，`ERROR_ACCESS_DENIED=5` 时明确提示 PAL.exe 可能以管理员身份运行。
+  - 安全边界：未修改 `.csproj`、KeyChanger 启动逻辑、`ReadProcessMemory` / `WriteProcessMemory`、内存地址、节点判定、暂停语义、x64 发布配置或真实部署目录。
   - 验证：`Pal98Timer.sln` `Release|x64` 构建通过；用 Windows SDK `mt.exe` 抽取 `Pal98Timer/bin/x64/Release/Pal98Timer.exe` manifest，确认有效节点为 `level="asInvoker"`；从普通 PowerShell 启动产物不再出现 `WinError 740`。
+  - 结构检查：新增 `.ai/pal_open_process_permission_regression_check.py`，确认三套 PAL98 内核都有权限失败提示 guard，且不再直接把 `OpenProcess` 结果塞进 `PalHandle`。
   - 注意：本次烟测关闭 PalTimer 时 `CloseMainWindow()` 未让进程自行退出，已强制结束本次启动的进程；未发现残留 `Pal98Timer` / `KeyChanger` 进程。
   - 待实机：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏；管理员权限启动游戏时记录非提升 PalTimer 的失败表现。
   - 调查文档：`docs/paltimer-uac-keychanger-investigation-20260612.md`
@@ -193,6 +195,15 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-12 会话（task-113 权限提示后续）
+
+- 调整 `.ai/resume.md` 接手规则：Codex 普通开发不再要求读取 `CLAUDE.md`；只有审计 Claude Code 入口、迁移 agent-setting 或排查 Claude/Codex 指令冲突时才读
+- 修改 `Pal98Timer/Kernel32.cs`：`OpenProcess` 增加 `SetLastError=true`，新增 `ERROR_ACCESS_DENIED` 和 `GetLastWin32Error()`
+- 修改 `Pal98Timer/仙剑98柔情.cs`、`Pal98Timer/仙剑98柔情DX9.cs`、`Pal98Timer/仙剑98柔情不欢乐模式.cs`：三内核打开 Pal.exe 进程失败时只提示一次；错误码 5 时提示 PAL.exe 可能以管理员身份运行，建议普通权限重启 PAL.exe 或保持 PalTimer/PAL.exe 同权限级别
+- 新增 `.ai/pal_open_process_permission_regression_check.py`：结构性检查三内核的权限提示 guard
+- 验证：`Release|x64` 构建通过；`git diff --check`、`.ai/pal_open_process_permission_regression_check.py`、`.ai/banana_pause_resume_regression_check.py`、`.ai/cloud_save_load_pause_regression_check.py` 均通过
+- 待验证：需要实机启动管理员权限 PAL.exe 观察非提升 PalTimer 的提示文案；普通权限 PAL.exe 路径应不受影响
 
 ### 2026-06-12 会话（task-113 实施）
 
@@ -293,11 +304,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 git diff --check
 C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\banana_pause_resume_regression_check.py
 C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\cloud_save_load_pause_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_permission_regression_check.py
 ```
 
 ```text
 PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
 PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
+PASS: PAL98 kernels prompt when Pal.exe cannot be opened, including likely elevation mismatch.
 ```
 
 本轮产物 manifest 检查：
@@ -316,7 +329,7 @@ Windows SDK mt.exe 抽取 Pal98Timer/bin/x64/Release/Pal98Timer.exe manifest，�
 
 实机测试需手动进行（需要仙剑98游戏环境）：
 - task-113：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏。
-- task-113：如果 PAL98DX9 被管理员方式启动，记录非提升 PalTimer 的读内存、快捷键和 KeyChanger 失败表现。
+- task-113：如果 PAL98DX9/PAL98/PAL98UNHAPPY 被管理员方式启动，记录非提升 PalTimer 的读内存、快捷键和 KeyChanger 失败表现，并确认权限提示只出现一次、不刷屏。
 - task-111：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取效果符合直播需求。
 - task-014：站到香蕉树 -> F9 暂停 -> 拿香蕉 -> F9 恢复，确认计时器能恢复。
 - task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停。

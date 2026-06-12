@@ -1,0 +1,58 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+KERNELS = [
+    ROOT / "Pal98Timer" / "仙剑98柔情.cs",
+    ROOT / "Pal98Timer" / "仙剑98柔情DX9.cs",
+    ROOT / "Pal98Timer" / "仙剑98柔情不欢乐模式.cs",
+]
+
+
+def _kernel_has_permission_prompt(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8-sig")
+    open_call = "if (!TryOpenPalProcess(res[0]))"
+    pid_assign = "PID = PalProcess.Id;"
+
+    return (
+        "private bool HasAlertPalOpenProcessError = false;" in text
+        and "private bool TryOpenPalProcess(Process process)" in text
+        and "private string BuildOpenPalProcessError(int errorCode)" in text
+        and "Kernel32.ERROR_ACCESS_DENIED" in text
+        and "PAL.exe 可能以管理员身份运行" in text
+        and "PalHandle = new IntPtr(handle);" in text
+        and "PalHandle = new IntPtr(Kernel32.OpenProcess" not in text
+        and text.find(open_call) != -1
+        and text.find(pid_assign, text.find(open_call)) != -1
+    )
+
+
+def _kernel32_captures_open_process_error() -> bool:
+    text = (ROOT / "Pal98Timer" / "Kernel32.cs").read_text(encoding="utf-8-sig")
+    return (
+        "public const int ERROR_ACCESS_DENIED = 5;" in text
+        and '[DllImport("kernel32.dll", SetLastError = true)]' in text
+        and "public static extern int OpenProcess" in text
+        and "public static int GetLastWin32Error()" in text
+        and "Marshal.GetLastWin32Error()" in text
+    )
+
+
+def main() -> int:
+    failed = [path for path in KERNELS if not _kernel_has_permission_prompt(path)]
+    if not _kernel32_captures_open_process_error():
+        print("FAIL: Kernel32.OpenProcess does not capture last-error state.")
+        return 1
+
+    if failed:
+        print("FAIL: missing OpenProcess permission prompt guard:")
+        for path in failed:
+            print(f"- {path.relative_to(ROOT)}")
+        return 1
+
+    print("PASS: PAL98 kernels prompt when Pal.exe cannot be opened, including likely elevation mismatch.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

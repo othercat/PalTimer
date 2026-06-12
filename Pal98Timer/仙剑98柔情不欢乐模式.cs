@@ -67,6 +67,7 @@ namespace Pal98Timer
 
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
+        private bool HasAlertPalOpenProcessError = false;
 
         private float MoveSpeed = 0;
         private DateTime LastFlushTime = DateTime.Now;
@@ -1232,10 +1233,14 @@ namespace Pal98Timer
                             }
                         }
 
+                        if (!TryOpenPalProcess(res[0]))
+                        {
+                            return false;
+                        }
+
                         PalProcess = res[0];
                         GameWindowHandle = res[0].MainWindowHandle;
                         PID = PalProcess.Id;
-                        PalHandle = new IntPtr(Kernel32.OpenProcess(0x1F0FFF, false, PID));
                         CalcPalMD5();
                         HasConfirmedDX9 = true;
                         _GameWasRunning = true;  // 标记游戏曾经运行过
@@ -1387,6 +1392,37 @@ namespace Pal98Timer
             }
         }
 
+        private bool TryOpenPalProcess(Process process)
+        {
+            int handle = Kernel32.OpenProcess(0x1F0FFF, false, process.Id);
+            if (handle != 0)
+            {
+                PalHandle = new IntPtr(handle);
+                HasAlertPalOpenProcessError = false;
+                return true;
+            }
+
+            PalHandle = IntPtr.Zero;
+            int errorCode = Kernel32.GetLastWin32Error();
+            if (!HasAlertPalOpenProcessError)
+            {
+                cryerror = BuildOpenPalProcessError(errorCode);
+                HasAlertPalOpenProcessError = true;
+            }
+            return false;
+        }
+
+        private string BuildOpenPalProcessError(int errorCode)
+        {
+            if (errorCode == Kernel32.ERROR_ACCESS_DENIED)
+            {
+                return "无法打开 Pal.exe 进程（Windows 错误码 5：拒绝访问）。PAL.exe 可能以管理员身份运行，请用普通权限重启 PAL.exe，或让 PalTimer 与 PAL.exe 使用相同权限级别。";
+            }
+
+            string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
+            return "无法打开 Pal.exe 进程" + errorText + "。如果 PAL.exe 以管理员身份运行，请用普通权限重启 PAL.exe，或让 PalTimer 与 PAL.exe 使用相同权限级别。";
+        }
+
         /// <summary>
         /// 清理游戏状态，但保留 _GameWasRunning 标志
         /// </summary>
@@ -1399,6 +1435,7 @@ namespace Pal98Timer
             GMD5 = "none";
             DX9Version = "未知";
             InitialDetectionTime = null;
+            HasAlertPalOpenProcessError = false;
             // 注意：不重置 HasConfirmedDX9 和 _GameWasRunning
             // 这些状态用于区分首次检测和游戏关闭后重新检测
         }

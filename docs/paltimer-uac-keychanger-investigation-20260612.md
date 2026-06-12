@@ -266,3 +266,36 @@ WriteProcessMemory(...)
 
 - 普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 的读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期
 - PAL98DX9 以管理员权限启动时，非提升 PalTimer 的读内存、快捷键和 KeyChanger 失败表现
+
+## 权限失败提示后续实施记录
+
+根据后续确认：如果 PAL.exe 被管理员权限启动，而 PalTimer 以普通权限启动，PalTimer 很可能无法打开目标进程句柄并读取内存。已做最小提示增强：
+
+- `Pal98Timer/Kernel32.cs`：给 `OpenProcess` 增加 `SetLastError=true`，并暴露 `ERROR_ACCESS_DENIED=5` / `GetLastWin32Error()`
+- `Pal98Timer/仙剑98柔情.cs`
+- `Pal98Timer/仙剑98柔情DX9.cs`
+- `Pal98Timer/仙剑98柔情不欢乐模式.cs`
+
+三套 PAL98 内核现在在找到 Pal.exe 但 `OpenProcess(0x1F0FFF, ...)` 返回 0 时：
+
+- 不设置 `PID`，避免进入“看似已连接但句柄无效”的状态
+- 通过 `cryerror` 显示一次提示，避免循环刷屏
+- 当 Windows 错误码为 5 时，提示 PAL.exe 可能以管理员身份运行，并建议用普通权限重启 PAL.exe，或让 PalTimer 与 PAL.exe 使用相同权限级别
+
+新增结构性检查：
+
+```bash
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_permission_regression_check.py
+```
+
+已完成验证：
+
+- `Pal98Timer.sln` `Release|x64` 构建通过
+- `git diff --check` 通过
+- `.ai/pal_open_process_permission_regression_check.py` 通过
+- 既有香蕉树反作弊暂停和云/接力暂停结构性检查继续通过
+
+仍需人工实机验证：
+
+- 普通权限 PAL.exe + 普通权限 PalTimer：确认 PAL98/PAL98DX9/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger 行为不变
+- 管理员权限 PAL.exe + 普通权限 PalTimer：确认提示出现一次且不刷屏，记录读内存、快捷键和 KeyChanger 的失败表现
