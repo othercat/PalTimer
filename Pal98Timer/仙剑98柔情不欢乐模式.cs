@@ -1416,11 +1416,11 @@ namespace Pal98Timer
         {
             if (errorCode == Kernel32.ERROR_ACCESS_DENIED)
             {
-                return "无法打开 Pal.exe 进程（Windows 错误码 5：拒绝访问）。PAL.exe 可能以管理员身份运行，请用普通权限重启 PAL.exe，或让 PalTimer 与 PAL.exe 使用相同权限级别。";
+                return "无法打开 Pal.exe 进程（Windows 错误码 5：拒绝访问）。PAL.exe 可能以管理员身份运行。普通速通和 pal98autotest 自动化测试建议关闭 PAL.exe 管理员权限；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
             }
 
             string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
-            return "无法打开 Pal.exe 进程" + errorText + "。如果 PAL.exe 以管理员身份运行，请用普通权限重启 PAL.exe，或让 PalTimer 与 PAL.exe 使用相同权限级别。";
+            return "无法打开 Pal.exe 进程" + errorText + "。普通速通和 pal98autotest 自动化测试建议让 PAL.exe 和 PalTimer 都用普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
         }
 
         /// <summary>

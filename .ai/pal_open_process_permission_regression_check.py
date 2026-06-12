@@ -38,10 +38,28 @@ def _kernel32_captures_open_process_error() -> bool:
     )
 
 
+def _gform_warns_when_elevated() -> bool:
+    text = (ROOT / "Pal98Timer" / "GForm.cs").read_text(encoding="utf-8-sig")
+    return (
+        "using System.Security.Principal;" in text
+        and "private bool HasAlertElevatedProcess = false;" in text
+        and "ShowElevationGuidanceIfNeeded();" in text
+        and "private void ShowElevationGuidanceIfNeeded()" in text
+        and "private bool IsCurrentProcessElevated()" in text
+        and "WindowsBuiltInRole.Administrator" in text
+        and "普通速通和 pal98autotest 自动化测试建议关闭管理员权限" in text
+        and "只有当 PAL.exe 因其他补丁必须管理员运行时" in text
+    )
+
+
 def main() -> int:
     failed = [path for path in KERNELS if not _kernel_has_permission_prompt(path)]
     if not _kernel32_captures_open_process_error():
         print("FAIL: Kernel32.OpenProcess does not capture last-error state.")
+        return 1
+
+    if not _gform_warns_when_elevated():
+        print("FAIL: GForm does not warn when PalTimer itself is running elevated.")
         return 1
 
     if failed:
@@ -50,7 +68,7 @@ def main() -> int:
             print(f"- {path.relative_to(ROOT)}")
         return 1
 
-    print("PASS: PAL98 kernels prompt when Pal.exe cannot be opened, including likely elevation mismatch.")
+    print("PASS: PAL98 kernels and PalTimer startup explain elevation mismatch constraints.")
     return 0
 
 

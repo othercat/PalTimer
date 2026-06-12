@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.IO;
+using System.Security.Principal;
 using System.Text;
 using System.Windows.Forms;
 using PalCloudLib;
@@ -30,6 +31,7 @@ namespace Pal98Timer
         private KeyboardLib _keyboardHook = null;
         private int locx = 0;
         private int locy = 0;
+        private bool HasAlertElevatedProcess = false;
         public GForm():base(true)
         {
             _keyboardHook = new KeyboardLib();
@@ -145,6 +147,32 @@ namespace Pal98Timer
         {
             this.SetDesktopBounds(locx, locy, this.Width, this.Height);
             UpdateTransparency();
+            ShowElevationGuidanceIfNeeded();
+        }
+
+        private void ShowElevationGuidanceIfNeeded()
+        {
+            if (HasAlertElevatedProcess || !IsCurrentProcessElevated())
+            {
+                return;
+            }
+
+            HasAlertElevatedProcess = true;
+            Error("检测到 PalTimer 正在以管理员身份运行。普通速通和 pal98autotest 自动化测试建议关闭管理员权限，让 PAL.exe 和 PalTimer 都用普通权限运行；只有当 PAL.exe 因其他补丁必须管理员运行时，才让 PalTimer 也以管理员权限运行。", "权限提示");
+        }
+
+        private bool IsCurrentProcessElevated()
+        {
+            try
+            {
+                WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void InitCloud()
