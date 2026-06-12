@@ -20,7 +20,7 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
         and "private bool CanOpenPalProcess(Process process)" in text
         and "private string BuildOpenPalProcessError(int errorCode)" in text
         and "Kernel32.ERROR_ACCESS_DENIED" in text
-        and "PAL.exe 可能以管理员身份运行" in text
+        and "TimerCore.ElevatedPalProcessErrorMessage" in text
         and "PalHandle = new IntPtr(handle);" in text
         and "Kernel32.CloseHandle(handle);" in text
         and "PalHandle = new IntPtr(Kernel32.OpenProcess" not in text
@@ -42,17 +42,24 @@ def _kernel32_captures_open_process_error() -> bool:
     )
 
 
-def _gform_warns_when_elevated() -> bool:
+def _gform_closes_after_elevated_pal_error() -> bool:
     text = (ROOT / "Pal98Timer" / "GForm.cs").read_text(encoding="utf-8-sig")
     return (
-        "using System.Security.Principal;" in text
-        and "private bool HasAlertElevatedProcess = false;" in text
-        and "ShowElevationGuidanceIfNeeded();" in text
-        and "private void ShowElevationGuidanceIfNeeded()" in text
-        and "private bool IsCurrentProcessElevated()" in text
-        and "WindowsBuiltInRole.Administrator" in text
-        and "普通速通和 pal98autotest 自动化测试建议关闭管理员权限" in text
-        and "只有当 PAL.exe 因其他补丁必须管理员运行时" in text
+        "private bool IsCriticalExitRequested = false;" in text
+        and "cryerr == TimerCore.ElevatedPalProcessErrorMessage" in text
+        and "IsCriticalExitRequested = true;" in text
+        and "Close();" in text
+        and "if (IsCriticalExitRequested)" in text
+        and "using System.Security.Principal;" not in text
+        and "ShowElevationGuidanceIfNeeded" not in text
+    )
+
+
+def _timer_core_has_short_elevation_message() -> bool:
+    text = (ROOT / "Pal98Timer" / "TimerCore.cs").read_text(encoding="utf-8-sig")
+    return (
+        'public const string ElevatedPalProcessErrorMessage = "PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行";'
+        in text
     )
 
 
@@ -62,8 +69,12 @@ def main() -> int:
         print("FAIL: Kernel32.OpenProcess does not capture last-error state.")
         return 1
 
-    if not _gform_warns_when_elevated():
-        print("FAIL: GForm does not warn when PalTimer itself is running elevated.")
+    if not _timer_core_has_short_elevation_message():
+        print("FAIL: TimerCore does not define the short elevation mismatch message.")
+        return 1
+
+    if not _gform_closes_after_elevated_pal_error():
+        print("FAIL: GForm does not close after the elevated Pal.exe error is acknowledged.")
         return 1
 
     if failed:
@@ -72,7 +83,7 @@ def main() -> int:
             print(f"- {path.relative_to(ROOT)}")
         return 1
 
-    print("PASS: PAL98 kernels and PalTimer startup explain elevation mismatch constraints.")
+    print("PASS: PAL98 kernels show the short elevated Pal.exe message and close PalTimer after acknowledgement.")
     return 0
 
 

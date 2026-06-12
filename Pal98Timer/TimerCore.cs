@@ -15,6 +15,8 @@ namespace Pal98Timer
     /// </summary>
     public abstract class TimerCore
     {
+        public const string ElevatedPalProcessErrorMessage = "PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行";
+
         /// <summary>
         /// 主计时器
         /// </summary>

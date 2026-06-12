@@ -271,7 +271,8 @@ WriteProcessMemory(...)
 
 根据后续确认：如果 PAL.exe 被管理员权限启动，而 PalTimer 以普通权限启动，PalTimer 很可能无法打开目标进程句柄并读取内存。已做最小提示增强：
 
-- `Pal98Timer/GForm.cs`：启动后检测 PalTimer 是否以管理员身份运行，并显示一次性权限提示
+- `Pal98Timer/GForm.cs`：当三内核返回管理员权限 PAL.exe 的短提示后，用户确认即关闭 PalTimer，并跳过二次退出确认
+- `Pal98Timer/TimerCore.cs`：新增共享短提示 `PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行`
 - `Pal98Timer/Kernel32.cs`：给 `OpenProcess` 增加 `SetLastError=true`，并暴露 `ERROR_ACCESS_DENIED=5` / `GetLastWin32Error()`
 - `Pal98Timer/仙剑98柔情.cs`
 - `Pal98Timer/仙剑98柔情DX9.cs`
@@ -280,8 +281,8 @@ WriteProcessMemory(...)
 当前用户提示约束：
 
 - 普通速通和 pal98autotest 自动化测试：推荐 PAL.exe 和 PalTimer 都用普通权限运行
-- 如果 PAL.exe 因其他补丁或未来项目必须管理员运行：PalTimer 也需要以管理员权限运行，保持两者权限级别一致
-- 如果检测到 PalTimer 自己正在以管理员身份运行：提醒用户普通场景应关闭管理员权限，但不阻止继续使用
+- 如果 PAL.exe 因其他补丁或未来项目必须管理员运行：PalTimer 也需要由用户人工以管理员权限启动
+- 不再因为 PalTimer 自己以管理员身份运行而主动提示；PAL.exe 是普通权限、PalTimer 是管理员权限时也不提示
 
 三套 PAL98 内核现在在找到 Pal.exe 但 `OpenProcess(0x1F0FFF, ...)` 返回 0 时：
 
@@ -289,7 +290,8 @@ WriteProcessMemory(...)
 - 在读取窗口句柄/标题之前先用 `CanOpenPalProcess()` 探测权限，确保 PalTimer 常驻、PAL.exe 后启动或重启为管理员权限时也能提示
 - 不设置 `PID`，避免进入“看似已连接但句柄无效”的状态
 - 通过 `cryerror` 显示一次提示，避免循环刷屏
-- 当 Windows 错误码为 5 时，提示 PAL.exe 可能以管理员身份运行；普通场景建议关闭 PAL.exe 管理员权限，如果 PAL.exe 必须管理员运行，则提示 PalTimer 也要管理员运行
+- 当 Windows 错误码为 5 时，显示短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”
+- 用户确认短提示后 PalTimer 直接关闭；下次普通权限启动且 PAL.exe 仍为管理员权限时会再次提示并退出
 
 新增结构性检查：
 
@@ -307,6 +309,7 @@ C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_p
 仍需人工实机验证：
 
 - 普通权限 PAL.exe + 普通权限 PalTimer：确认 PAL98/PAL98DX9/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger 行为不变
-- PalTimer 先常驻，再启动管理员权限 PAL.exe：确认提示出现一次且不刷屏，记录读内存、快捷键和 KeyChanger 的失败表现
-- 普通权限 PAL.exe 运行后关闭，再以管理员权限重启 PAL.exe：确认提示出现一次且不刷屏
-- 管理员权限 PalTimer：确认启动时出现一次权限提示，且不阻止用户继续使用
+- PalTimer 先常驻，再启动管理员权限 PAL.exe：确认短提示出现一次，点击确定后 PalTimer 直接关闭，不再弹二次退出确认
+- 普通权限 PAL.exe 运行后关闭，再以管理员权限重启 PAL.exe：确认短提示出现一次，点击确定后 PalTimer 直接关闭
+- 管理员权限 PAL.exe + 管理员权限 PalTimer：确认不提示
+- 普通权限 PAL.exe + 管理员权限 PalTimer：确认不提示

@@ -45,7 +45,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前维护分支：`codex/paltimer-uac-asinvoker`。
 
-task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限提示，遇到可能由管理员权限导致的拒绝访问时会提醒用户保持 PAL.exe / PalTimer 权限级别一致；PalTimer 自身以管理员启动时也会一次性提醒普通速通和 pal98autotest 推荐关闭管理员权限。
+task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限处理。当前语义是：只有 PAL.exe 以管理员权限运行、而 PalTimer 非管理员导致错误码 5 时，弹出短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”，用户确认后 PalTimer 直接关闭；PAL.exe 和 PalTimer 同为管理员、或 PAL.exe 普通而 PalTimer 管理员时不额外提示。
 
 task-111 / task-112 已完成代码层和构建验证，等待或已经进入 checkpoint commit / push。主要工作集中在：
 - 音效系统（节点音效配置、音效开关快捷键）
@@ -100,14 +100,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - **task-113：取消 PalTimer 主程序默认 UAC 提权并提示权限不匹配 — 已完成代码层和构建验证**
   - 背景：`pal98autotest` 从普通进程启动部署版 `Pal98Timer.exe` 时遇到 `WinError 740`，说明当前主程序要求提升权限。
   - 修复内容：当前分支 `codex/paltimer-uac-asinvoker` 已修改 `Pal98Timer/Properties/app.manifest`，将主程序有效 `requestedExecutionLevel` 从 `requireAdministrator` 改为 `asInvoker`。
-  - 后续修复：`Kernel32.OpenProcess` 开启 `SetLastError=true`；PAL98 / PAL98DX9 / PAL98UNHAPPY 三内核在 `OpenProcess` 返回 0 时只提示一次权限失败信息，`ERROR_ACCESS_DENIED=5` 时明确提示 PAL.exe 可能以管理员身份运行。
-  - 权限约束：普通速通和 pal98autotest 自动化测试推荐 PAL.exe / PalTimer 都普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，则 PalTimer 也需要管理员运行以保持同权限级别。
-  - PalTimer 自身提醒：`GForm` 在发现 PalTimer 以管理员身份运行时显示一次权限提示，建议普通场景关闭管理员权限，但说明 PAL.exe 必须提权时 PalTimer 也应同权限运行。
+  - 后续修复：`Kernel32.OpenProcess` 开启 `SetLastError=true`；PAL98 / PAL98DX9 / PAL98UNHAPPY 三内核在 `OpenProcess` 返回 0 时只提示一次权限失败信息，`ERROR_ACCESS_DENIED=5` 时显示短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”。
+  - 权限约束：普通速通和 pal98autotest 自动化测试推荐 PAL.exe / PalTimer 都普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，则 PalTimer 也需要人工以管理员权限启动。
+  - 退出语义：确认短提示后 PalTimer 直接关闭，不再弹出二次退出确认；再次普通权限启动且 PAL.exe 仍为管理员权限时会继续提示并退出。
   - 安全边界：未修改 `.csproj`、KeyChanger 启动逻辑、`ReadProcessMemory` / `WriteProcessMemory`、内存地址、节点判定、暂停语义、x64 发布配置或真实部署目录。
   - 验证：`Pal98Timer.sln` `Release|x64` 构建通过；用 Windows SDK `mt.exe` 抽取 `Pal98Timer/bin/x64/Release/Pal98Timer.exe` manifest，确认有效节点为 `level="asInvoker"`；从普通 PowerShell 启动产物不再出现 `WinError 740`。
   - 结构检查：新增 `.ai/pal_open_process_permission_regression_check.py`，确认三套 PAL98 内核都有权限失败提示 guard，且不再直接把 `OpenProcess` 结果塞进 `PalHandle`。
   - 注意：本次烟测关闭 PalTimer 时 `CloseMainWindow()` 未让进程自行退出，已强制结束本次启动的进程；未发现残留 `Pal98Timer` / `KeyChanger` 进程。
-  - 待实机：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏；管理员权限启动游戏时记录非提升 PalTimer 的失败表现。
+  - 待实机：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏；管理员权限 PAL.exe + 普通权限 PalTimer 时确认短提示后直接退出；管理员权限 PAL.exe + 管理员权限 PalTimer 时确认不提示。
   - 调查文档：`docs/paltimer-uac-keychanger-investigation-20260612.md`
 
 ### 高优先级 - 已修复，待构建环境和实机验证
@@ -163,7 +163,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；如目标游戏以管理员运行，记录非提升 PalTimer 的失败表现。
+1. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
 2. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
 3. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
 4. task-014 和 task-015 代码层修复已完成，仍需实机验证。
@@ -203,12 +203,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - 修复实测问题：PalTimer 常驻、PAL.exe 后续以管理员权限启动时，旧逻辑可能在 `Process.HasExited` 检查异常后把 Pal.exe 当成不存在，导致没有权限提示
 - 修改 PAL98 / PAL98DX9 / PAL98UNHAPPY 三内核进程过滤逻辑：`HasExited` 无法检查时仍保留 Pal.exe 候选，并先用 `CanOpenPalProcess()` 探测权限；打不开则走一次性权限提示
 - 调整 `.ai/resume.md` 接手规则：Codex 普通开发不再要求读取 `CLAUDE.md`；只有审计 Claude Code 入口、迁移 agent-setting 或排查 Claude/Codex 指令冲突时才读
-- 修改 `Pal98Timer/GForm.cs`：启动后检测 PalTimer 是否以管理员身份运行，若是则一次性提示普通速通和 pal98autotest 推荐关闭管理员权限；若 PAL.exe 因其他补丁必须管理员运行，则 PalTimer 也应同权限运行
+- 修改 `Pal98Timer/GForm.cs`：删除 PalTimer 自身管理员启动提示；当三内核返回短权限提示后，用户确认即关闭 PalTimer，并跳过二次退出确认
+- 修改 `Pal98Timer/TimerCore.cs`：新增共享短提示 `PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行`
 - 修改 `Pal98Timer/Kernel32.cs`：`OpenProcess` 增加 `SetLastError=true`，新增 `ERROR_ACCESS_DENIED` 和 `GetLastWin32Error()`
-- 修改 `Pal98Timer/仙剑98柔情.cs`、`Pal98Timer/仙剑98柔情DX9.cs`、`Pal98Timer/仙剑98柔情不欢乐模式.cs`：三内核打开 Pal.exe 进程失败时只提示一次；错误码 5 时提示 PAL.exe 可能以管理员身份运行，默认建议关闭 PAL.exe 管理员权限；如果 PAL.exe 必须管理员运行，则提示 PalTimer 也要管理员运行
+- 修改 `Pal98Timer/仙剑98柔情.cs`、`Pal98Timer/仙剑98柔情DX9.cs`、`Pal98Timer/仙剑98柔情不欢乐模式.cs`：三内核打开 Pal.exe 进程失败时只提示一次；错误码 5 时使用短提示，覆盖 PalTimer 常驻后 PAL.exe 再以管理员权限启动/重启的场景
 - 新增 `.ai/pal_open_process_permission_regression_check.py`：结构性检查三内核的权限提示 guard
 - 验证：`Release|x64` 构建通过；`git diff --check`、`.ai/pal_open_process_permission_regression_check.py`、`.ai/banana_pause_resume_regression_check.py`、`.ai/cloud_save_load_pause_regression_check.py` 均通过
-- 待验证：需要实机启动管理员权限 PAL.exe 观察非提升 PalTimer 的提示文案；普通权限 PAL.exe 路径应不受影响
+- 部署：已覆盖部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5`；备份目录为 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5\.deploy-backup-20260612-204548`；按用户要求未部署/恢复 `ModuleAddrX86Delegate.exe` 和 `ModuleAddrX64Delegate.exe`
+- 待验证：管理员权限 PAL.exe + 普通权限 PalTimer 时短提示后直接退出；管理员权限 PAL.exe + 管理员权限 PalTimer 不提示；普通权限 PAL.exe + 管理员权限 PalTimer 不提示；普通权限 PAL.exe + 普通权限 PalTimer 路径不受影响
 
 ### 2026-06-12 会话（task-113 实施）
 
@@ -315,7 +317,7 @@ C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_p
 ```text
 PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
 PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
-PASS: PAL98 kernels and PalTimer startup explain elevation mismatch constraints.
+PASS: PAL98 kernels show the short elevated Pal.exe message and close PalTimer after acknowledgement.
 ```
 
 本轮产物 manifest 检查：
@@ -334,8 +336,8 @@ Windows SDK mt.exe 抽取 Pal98Timer/bin/x64/Release/Pal98Timer.exe manifest，�
 
 实机测试需手动进行（需要仙剑98游戏环境）：
 - task-113：普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 读内存、F9/F10/F11、KeyChanger、云验证/云存读档、关闭游戏后不刷屏。
-- task-113：如果 PAL98DX9/PAL98/PAL98UNHAPPY 被管理员方式启动，记录非提升 PalTimer 的读内存、快捷键和 KeyChanger 失败表现，并确认权限提示只出现一次、不刷屏。
-- task-113：以管理员身份启动 PalTimer，确认只出现一次“普通速通和 pal98autotest 推荐关闭管理员权限；PAL.exe 必须提权时 PalTimer 也要同权限”的提示，且不阻止继续使用。
+- task-113：如果 PAL98DX9/PAL98/PAL98UNHAPPY 被管理员方式启动、PalTimer 普通权限运行，确认短提示出现一次，点击确定后 PalTimer 直接关闭，不再弹二次退出确认；下次同样条件启动仍会提示并退出。
+- task-113：管理员权限 PAL.exe + 管理员权限 PalTimer 时不提示；普通权限 PAL.exe + 管理员权限 PalTimer 时不提示；普通权限 PAL.exe + 普通权限 PalTimer 路径不受影响。
 - task-111：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取效果符合直播需求。
 - task-014：站到香蕉树 -> F9 暂停 -> 拿香蕉 -> F9 恢复，确认计时器能恢复。
 - task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停。
