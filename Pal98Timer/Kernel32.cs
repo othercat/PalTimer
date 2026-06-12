@@ -28,8 +28,15 @@ namespace HFrame.OS
             );
 
 
-        [DllImport("kernel32.dll")]
+        public const int ERROR_ACCESS_DENIED = 5;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern int OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        public static int GetLastWin32Error()
+        {
+            return Marshal.GetLastWin32Error();
+        }
 
         [DllImport("kernel32.dll ")]
         public static extern bool CloseHandle(int hProcess);

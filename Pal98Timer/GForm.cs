@@ -30,6 +30,7 @@ namespace Pal98Timer
         private KeyboardLib _keyboardHook = null;
         private int locx = 0;
         private int locy = 0;
+        private bool IsCriticalExitRequested = false;
         public GForm():base(true)
         {
             _keyboardHook = new KeyboardLib();
@@ -649,6 +650,10 @@ namespace Pal98Timer
                     }
                 }
             }
+            if (IsCriticalExitRequested)
+            {
+                return;
+            }
             if (!Confirm("确定退出计时器么？"))
             {
                 e.Cancel = true;
@@ -713,6 +718,12 @@ namespace Pal98Timer
                 if (cryerr != "")
                 {
                     Error(cryerr);
+                    if (cryerr == TimerCore.ElevatedPalProcessErrorMessage)
+                    {
+                        IsCriticalExitRequested = true;
+                        Close();
+                        return;
+                    }
                 }
                 rr.SetGameVersion(core.GetGameVersion());
                 rr.SetWillClear(core.GetPointEnd());

@@ -66,6 +66,7 @@ namespace Pal98Timer
 
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
+        private bool HasAlertPalOpenProcessError = false;
 
         private int TotalMonsterCount = 0;  // 撞怪总数
 
@@ -799,7 +800,7 @@ namespace Pal98Timer
             // 过滤已退出的进程
             var aliveProcesses = res.Where(p => {
                 try { return !p.HasExited; }
-                catch { return false; }
+                catch { return true; }
             }).ToArray();
 
             // 游戏关闭后的静默等待期
@@ -840,6 +841,11 @@ namespace Pal98Timer
 
                 if (PID == -1)
                 {
+                    if (!CanOpenPalProcess(res[0]))
+                    {
+                        return false;
+                    }
+
                     IntPtr tempHandle = res[0].MainWindowHandle;
 
                     // 如果窗口句柄为空，可能是游戏正在关闭
@@ -856,10 +862,14 @@ namespace Pal98Timer
                         return false;
                     }
 
+                    if (!TryOpenPalProcess(res[0]))
+                    {
+                        return false;
+                    }
+
                     PalProcess = res[0];
                     GameWindowHandle = tempHandle;
                     PID = PalProcess.Id;
-                    PalHandle = new IntPtr(Kernel32.OpenProcess(0x1F0FFF, false, PID));
                     CalcPalMD5();
                     _GameWasRunning = true;
                     _GameClosedTime = DateTime.MinValue;
@@ -914,6 +924,55 @@ namespace Pal98Timer
             }
         }
 
+        private bool TryOpenPalProcess(Process process)
+        {
+            int handle = Kernel32.OpenProcess(0x1F0FFF, false, process.Id);
+            if (handle != 0)
+            {
+                PalHandle = new IntPtr(handle);
+                HasAlertPalOpenProcessError = false;
+                return true;
+            }
+
+            PalHandle = IntPtr.Zero;
+            int errorCode = Kernel32.GetLastWin32Error();
+            if (!HasAlertPalOpenProcessError)
+            {
+                cryerror = BuildOpenPalProcessError(errorCode);
+                HasAlertPalOpenProcessError = true;
+            }
+            return false;
+        }
+
+        private bool CanOpenPalProcess(Process process)
+        {
+            int handle = Kernel32.OpenProcess(0x1F0FFF, false, process.Id);
+            if (handle != 0)
+            {
+                Kernel32.CloseHandle(handle);
+                return true;
+            }
+
+            int errorCode = Kernel32.GetLastWin32Error();
+            if (!HasAlertPalOpenProcessError)
+            {
+                cryerror = BuildOpenPalProcessError(errorCode);
+                HasAlertPalOpenProcessError = true;
+            }
+            return false;
+        }
+
+        private string BuildOpenPalProcessError(int errorCode)
+        {
+            if (errorCode == Kernel32.ERROR_ACCESS_DENIED)
+            {
+                return TimerCore.ElevatedPalProcessErrorMessage;
+            }
+
+            string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
+            return "无法打开 Pal.exe 进程" + errorText + "。普通速通和 pal98autotest 自动化测试建议让 PAL.exe 和 PalTimer 都用普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
+        }
+
         /// <summary>
         /// 清理游戏状态，但保留 _GameWasRunning 标志
         /// </summary>
@@ -924,6 +983,7 @@ namespace Pal98Timer
             PalProcess = null;
             PID = -1;
             GMD5 = "none";
+            HasAlertPalOpenProcessError = false;
         }
 
         private void CalcPalMD5()
