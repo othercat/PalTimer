@@ -43,9 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-automation-title-fallback`。
+当前维护分支：`codex/paltimer-automation-tick-snapshot`。
 
-task-114 继续推进：gated automation snapshot file export、no-BOM fix、automation-only `--automation-non-sequential-splits` 已合并到 `master`。真实 same-run gate v3 证明 route outcome / real 1x validation / same-run provenance / source gate 均通过，且非顺序 split flag 已到达 PalTimer，但 snapshot 仍只有 `core_loaded`，说明 PalTimer 没有进入 PAL.exe 状态读取和节点推进。当前分支新增 automation-only `--automation-accept-pal98-base-title`，仅在 `--automation-snapshot-export` 启用时允许 PAL98DX9 / PAL98UNHAPPY 内核接受基础 PAL98 窗口标题，并在 automation snapshot 中输出 `pal_process_attach` 诊断，用于区分标题 gate、窗口句柄、OpenProcess 权限和多进程问题；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。
+task-114 继续推进：gated automation snapshot file export、no-BOM fix、automation-only `--automation-non-sequential-splits` 与 `--automation-accept-pal98-base-title` 已合并到 `master`。真实 same-run gate v4 证明 route outcome / real 1x validation / same-run provenance / source gate 均通过，且两个 automation flag 已到达 PalTimer，但最后写出的 snapshot 仍停在 `core_loaded`，没有后续 `checkpoint` / `run_end` 证据。当前分支新增 automation-only 低频 tick snapshot：后台 tick 后每 500ms 最多刷新一次 automation snapshot，用于区分“线程未启动 / tick 未执行”和“tick 执行但 attach 或 split 未达成”；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket，不改变 `OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory` / 节点判定。
 
 task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限处理。当前语义是：只有 PAL.exe 以管理员权限运行、而 PalTimer 非管理员导致错误码 5 时，弹出短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”，用户确认后 PalTimer 直接关闭；PAL.exe 和 PalTimer 同为管理员、或 PAL.exe 普通而 PalTimer 管理员时不额外提示。
 
@@ -175,7 +175,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. task-114：让 Kimi/Codex 复核 automation PAL98 base-title fallback 与 AutoTest 透传 PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate，并在 compact review 中检查 `pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
+1. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
 2. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
 3. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
 4. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
@@ -210,6 +210,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-14 会话（task-114 automation tick snapshot）
+
+- 真实 same-run gate v4 结果：route outcome / real 1x validation / same-run provenance / source gate 均通过；`--automation-non-sequential-splits` 与 `--automation-accept-pal98-base-title` 均到达 PalTimer，但 snapshot 仍停留在 `core_loaded`，`pal_process_attach.status=not_checked`
+- 诊断校正：`not_checked` 只证明最后持久化的 snapshot 是 `core_loaded`，不能单独证明 `OnTick()` / `GetPalHandle()` 从未执行；因为 PalTimer 此前只在 `core_loaded` / `checkpoint` / `run_end` 写 snapshot
+- 本分支新增 automation-only tick snapshot：`TimerCore.Start()` 在每次 `OnTick()` 后调用 `WriteAutomationTickSnapshotIfDue()`，仅当 `AutomationArgs.Current.Enabled` 时生效，每 500ms 最多写一次 `export_trigger=automation_tick`
+- envelope 新增 `automation_tick_snapshot_interval_ms`，便于 AutoTest/Kimi 判断当前导出是否包含低频 tick 刷新能力
+- 安全边界：未修改具体 PAL98 内核、OpenProcess/RPM/WPM、节点判定、云/OBS/计时核心；普通无 automation export flag 路径零副作用
 
 ### 2026-06-14 会话（task-114 automation PAL98 base-title fallback）
 
