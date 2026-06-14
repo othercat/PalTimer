@@ -15,16 +15,32 @@ def _program_parses_automation_flags() -> bool:
     )
 
 
+def _extract_write_automation_snapshot_body(text: str) -> str:
+    marker = "public void WriteAutomationSnapshot(string trigger)"
+    start = text.find(marker)
+    if start < 0:
+        return ""
+
+    end_marker = "\n        public void _ResetAll()"
+    end = text.find(end_marker, start)
+    if end < 0:
+        return text[start:]
+    return text[start:end]
+
+
 def _gform_writes_snapshot_only_when_enabled() -> bool:
     text = (ROOT / "Pal98Timer" / "GForm.cs").read_text(encoding="utf-8-sig")
+    body = _extract_write_automation_snapshot_body(text)
     return (
         "public void WriteAutomationSnapshot(string trigger)" in text
-        and "if (!AutomationArgs.Current.Enabled || core == null)" in text
+        and "if (!AutomationArgs.Current.Enabled || core == null)" in body
         and "core.BuildAutomationSnapshotJson(trigger, AutomationArgs.Current.SnapshotRunId)"
-        in text
+        in body
+        and "new UTF8Encoding(false)" in body
+        and "StreamWriter(fileStream, Encoding.UTF8)" not in body
         and 'WriteAutomationSnapshot("checkpoint");' in text
         and 'WriteAutomationSnapshot("core_loaded");' in text
-        and "Automation export must not affect normal timer behavior." in text
+        and "Automation export must not affect normal timer behavior." in body
     )
 
 
