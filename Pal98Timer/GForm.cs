@@ -354,7 +354,7 @@ namespace Pal98Timer
                 }
                 using (FileStream fileStream = new FileStream("LastCore", FileMode.Create))
                 {
-                    using (StreamWriter streamWriter = new StreamWriter(fileStream, new UTF8Encoding(false)))
+                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
                     {
                         streamWriter.Write(core.GetType().Name);
                         streamWriter.Flush();
@@ -407,7 +407,7 @@ namespace Pal98Timer
                 }
                 using (FileStream fileStream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read))
                 {
-                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
+                    using (StreamWriter streamWriter = new StreamWriter(fileStream, new UTF8Encoding(false)))
                     {
                         streamWriter.Write(core.BuildAutomationSnapshotJson(trigger, AutomationArgs.Current.SnapshotRunId));
                         streamWriter.Flush();
