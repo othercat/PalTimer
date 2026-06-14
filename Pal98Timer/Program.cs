@@ -16,6 +16,7 @@ namespace Pal98Timer
         [STAThread]
         static void Main()
         {
+            AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
             ClearTmpBG();
             UpdateBestFiles();
             KeyChangerDel.Open();
@@ -86,6 +87,37 @@ namespace Pal98Timer
                     }
                 }
             }
+        }
+    }
+
+    internal class AutomationArgs
+    {
+        public static AutomationArgs Current = new AutomationArgs();
+
+        public string SnapshotExportPath = "";
+        public string SnapshotRunId = "";
+
+        public bool Enabled
+        {
+            get { return SnapshotExportPath != ""; }
+        }
+
+        public static AutomationArgs Parse(string[] args)
+        {
+            AutomationArgs parsed = new AutomationArgs();
+            for (int i = 1; i < args.Length; i++)
+            {
+                string arg = args[i];
+                if (arg == "--automation-snapshot-export" && i + 1 < args.Length)
+                {
+                    parsed.SnapshotExportPath = args[++i];
+                }
+                else if (arg == "--automation-snapshot-run-id" && i + 1 < args.Length)
+                {
+                    parsed.SnapshotRunId = args[++i];
+                }
+            }
+            return parsed;
         }
     }
 }
