@@ -12,8 +12,11 @@ def _program_parses_automation_flags() -> bool:
         and '"--automation-snapshot-export"' in text
         and '"--automation-snapshot-run-id"' in text
         and '"--automation-non-sequential-splits"' in text
+        and '"--automation-accept-pal98-base-title"' in text
         and "public bool Enabled" in text
         and "public bool EnableNonSequentialSplits" in text
+        and "public bool EnablePal98BaseTitleFallback" in text
+        and "get { return Enabled && AcceptPal98BaseTitle; }" in text
     )
 
 
@@ -61,10 +64,34 @@ def _timer_core_builds_autotest_snapshot_envelope() -> bool:
         in text
         and 'snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;'
         in text
+        and 'snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;'
+        in text
+        and "FillAutomationSnapshotDiagnostics(snapshot);" in text
+        and "protected virtual void FillAutomationSnapshotDiagnostics(HObj snapshot)" in text
         and 'snapshot["paltimer_internal"] = new HObj(GetTimerJson());' in text
         and 'form?.WriteAutomationSnapshot("run_end");' in text
         and "public bool IsRunning" in text
     )
+
+
+def _pal98_title_fallback_is_automation_only() -> bool:
+    filenames = ["仙剑98柔情DX9.cs", "仙剑98柔情不欢乐模式.cs"]
+    for filename in filenames:
+        text = (ROOT / "Pal98Timer" / filename).read_text(encoding="utf-8-sig")
+        required = (
+            "ShouldAcceptAutomationBaseTitle(isBaseGameTitle)" in text
+            and "AutomationArgs.Current.EnablePal98BaseTitleFallback" in text
+            and '"connected_by_automation_base_title"' in text
+            and 'DX9Version = "automation-base-title";' in text
+            and "protected override void FillAutomationSnapshotDiagnostics(HObj snapshot)"
+            in text
+            and 'attach["automation_accept_pal98_base_title"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;'
+            in text
+            and 'snapshot["pal_process_attach"] = attach;' in text
+        )
+        if not required:
+            return False
+    return True
 
 
 def main() -> int:
@@ -72,6 +99,7 @@ def main() -> int:
         "Program.cs automation args": _program_parses_automation_flags(),
         "GForm.cs gated writer": _gform_writes_snapshot_only_when_enabled(),
         "TimerCore.cs AutoTest envelope": _timer_core_builds_autotest_snapshot_envelope(),
+        "PAL98 title fallback": _pal98_title_fallback_is_automation_only(),
     }
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
