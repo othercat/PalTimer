@@ -97,6 +97,7 @@ namespace Pal98Timer
         public string SnapshotExportPath = "";
         public string SnapshotRunId = "";
         public bool NonSequentialSplits = false;
+        public bool AcceptPal98BaseTitle = false;
 
         public bool Enabled
         {
@@ -106,6 +107,11 @@ namespace Pal98Timer
         public bool EnableNonSequentialSplits
         {
             get { return Enabled && NonSequentialSplits; }
+        }
+
+        public bool EnablePal98BaseTitleFallback
+        {
+            get { return Enabled && AcceptPal98BaseTitle; }
         }
 
         public static AutomationArgs Parse(string[] args)
@@ -125,6 +131,10 @@ namespace Pal98Timer
                 else if (arg == "--automation-non-sequential-splits")
                 {
                     parsed.NonSequentialSplits = true;
+                }
+                else if (arg == "--automation-accept-pal98-base-title")
+                {
+                    parsed.AcceptPal98BaseTitle = true;
                 }
             }
             return parsed;

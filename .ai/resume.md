@@ -43,9 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-automation-nonseq-splits`。
+当前维护分支：`codex/paltimer-automation-title-fallback`。
 
-task-114 继续推进：gated automation snapshot file export 与 no-BOM fix 已合并到 `master`。真实 same-run gate v2 证明 BOM、route outcome、same-run provenance 均已通过，但 PalTimer 从中段 route 同跑时停在首个 split `见石碑`，未推进到 `上船`。本分支新增 automation-only `--automation-non-sequential-splits`，仅在 `--automation-snapshot-export` 启用时临时开启非顺序 split 捕捉，不写回 `skip_node`，用于 same-run gate 从中段 route 捕获后续 split；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。
+task-114 继续推进：gated automation snapshot file export、no-BOM fix、automation-only `--automation-non-sequential-splits` 已合并到 `master`。真实 same-run gate v3 证明 route outcome / real 1x validation / same-run provenance / source gate 均通过，且非顺序 split flag 已到达 PalTimer，但 snapshot 仍只有 `core_loaded`，说明 PalTimer 没有进入 PAL.exe 状态读取和节点推进。当前分支新增 automation-only `--automation-accept-pal98-base-title`，仅在 `--automation-snapshot-export` 启用时允许 PAL98DX9 / PAL98UNHAPPY 内核接受基础 PAL98 窗口标题，并在 automation snapshot 中输出 `pal_process_attach` 诊断，用于区分标题 gate、窗口句柄、OpenProcess 权限和多进程问题；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。
 
 task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限处理。当前语义是：只有 PAL.exe 以管理员权限运行、而 PalTimer 非管理员导致错误码 5 时，弹出短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”，用户确认后 PalTimer 直接关闭；PAL.exe 和 PalTimer 同为管理员、或 PAL.exe 普通而 PalTimer 管理员时不额外提示。
 
@@ -104,6 +104,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
   - 修复内容：`Program.cs` 解析 `--automation-snapshot-export <path>` 与 `--automation-snapshot-run-id <RUN_ID>`；`GForm.cs` 在 flag 启用时写 automation snapshot；`TimerCore.cs` 新增 `BuildAutomationSnapshotJson()` 输出 AutoTest envelope，并保留 `GetTimerJson()` 为 `paltimer_internal`。
   - 触发点：flag 启用后，加载 core 写 `core_loaded` snapshot；节点推进写 `checkpoint` snapshot；最终通关写 `run_end` snapshot。无 flag 时不写文件。
   - same-run route 说明：如果 PalTimer 在 route 中段才启动，顺序 split 模式会停在首个 split；本分支增加 `--automation-non-sequential-splits`，只在 automation snapshot export 启用时临时开启非顺序 split 捕捉，避免修改用户持久化 `skip_node`。
+  - attach/title 说明：真实 same-run gate v3 证明非顺序 split flag 已生效，但 PalTimer 未 attach / 未读到 PAL.exe 状态。当前分支增加 `--automation-accept-pal98-base-title`，只在 automation snapshot export 启用时允许 PAL98DX9 / PAL98UNHAPPY 接受基础 PAL98 窗口标题，并写出 `pal_process_attach` 诊断；无 flag 时仍要求 DX9 标题确认。
   - 输出边界：`source=paltimer_automation_export`；不读/写 cloud ID，不接 OBS socket，不开 HTTP listener，不修改云上传逻辑，不改变 `ReadProcessMemory` / `WriteProcessMemory` / OpenProcess / 节点判定。
   - 验证：`Release|x64` 构建通过；`git diff --check`；`.ai/automation_snapshot_export_regression_check.py`、`.ai/banana_pause_resume_regression_check.py`、`.ai/cloud_save_load_pause_regression_check.py`、`.ai/pal_open_process_permission_regression_check.py` 均通过。
   - 待验证：AutoTest 侧 source whitelist 接受 `paltimer_automation_export`；真实同跑时确认导出的 split 名称、timer_status、timer_time 与 route-bootstrap gate 对齐。
@@ -174,7 +175,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. task-114：让 Kimi/Codex 复核 automation snapshot export PR；AutoTest 侧同步 source whitelist；之后用真实 route-bootstrap + PalTimer 导出文件跑 same-run snapshot gate。
+1. task-114：让 Kimi/Codex 复核 automation PAL98 base-title fallback 与 AutoTest 透传 PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate，并在 compact review 中检查 `pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
 2. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
 3. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
 4. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
@@ -209,6 +210,15 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-14 会话（task-114 automation PAL98 base-title fallback）
+
+- 真实 same-run gate v3 结果：route outcome / real 1x validation / same-run provenance / source gate 均通过；`--automation-non-sequential-splits` 已到达 PalTimer，snapshot 中 `non_sequential_check_enabled=true`；但 snapshot 只有 `core_loaded`，`timer_status=not_started`，未写 `checkpoint` / `run_end`
+- 源码分析结论：PAL98DX9 / PAL98UNHAPPY 的 `GetPalHandle()` 在普通路径必须等待窗口标题带 DX9 标识；same-run gate 使用的 v1.14 基线可能只暴露基础 PAL98 标题，导致 PalTimer 能启动但不 attach / 不读状态
+- 本分支新增 automation-only flag：`--automation-accept-pal98-base-title`；只有同时启用 `--automation-snapshot-export` 时才允许 PAL98DX9 / PAL98UNHAPPY 接受基础 PAL98 标题，普通用户路径仍不变
+- automation snapshot envelope 新增 `automation_pal98_base_title_fallback`，PAL98DX9 / PAL98UNHAPPY 新增 `pal_process_attach` 诊断字段，记录 attach status、Pal 进程数量、窗口标题、title match、automation acceptance、OpenProcess error code
+- 验证：`Release|x64` 构建通过；`git diff --check`；automation snapshot / banana pause / cloud pause / OpenProcess permission 结构性回归脚本均通过
+- 待验证：AutoTest 侧透传新 flag 后，重跑真实 same-run gate，期望 either `split_reached=true` for `上船`，或 compact snapshot 明确显示 attach gate 失败原因
 
 ### 2026-06-14 会话（task-114 same-run 中段 route split 捕捉）
 

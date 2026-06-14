@@ -1135,6 +1135,7 @@ namespace Pal98Timer
             snapshot["timer_time"] = TItem.TimeSpanToFullString(GetMainWatch());
             snapshot["non_sequential_check_enabled"] = form != null && form.IsNonSequentialCheck;
             snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;
+            snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;
             snapshot["source"] = "paltimer_automation_export";
             snapshot["snapshot_time"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffK");
             snapshot["export_trigger"] = trigger;
@@ -1142,6 +1143,7 @@ namespace Pal98Timer
             {
                 snapshot["autotest_run_id"] = runId;
             }
+            FillAutomationSnapshotDiagnostics(snapshot);
             try
             {
                 snapshot["paltimer_internal"] = new HObj(GetTimerJson());
@@ -1151,6 +1153,10 @@ namespace Pal98Timer
                 snapshot["paltimer_internal_json"] = GetTimerJson();
             }
             return snapshot.ToJson();
+        }
+
+        protected virtual void FillAutomationSnapshotDiagnostics(HObj snapshot)
+        {
         }
 
         private CheckPoint GetAutomationCompletedSplit()

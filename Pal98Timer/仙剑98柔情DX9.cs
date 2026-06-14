@@ -68,6 +68,14 @@ namespace Pal98Timer
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
         private bool HasAlertPalOpenProcessError = false;
+        private string LastPalAttachStatus = "not_checked";
+        private int LastPalProcessCount = 0;
+        private int LastPalProcessId = -1;
+        private string LastPalWindowTitle = "";
+        private bool LastPalTitleMatchedDx9 = false;
+        private bool LastPalTitleMatchedBase = false;
+        private bool LastPalTitleAcceptedByAutomation = false;
+        private int LastOpenPalProcessErrorCode = 0;
 
         private float MoveSpeed = 0;
         private DateTime LastFlushTime = DateTime.Now;
@@ -1127,10 +1135,12 @@ namespace Pal98Timer
                 try { return !p.HasExited; }
                 catch { return true; }
             }).ToArray();
+            LastPalProcessCount = aliveProcesses.Length;
 
             // 游戏关闭后的静默等待期
             if (_GameWasRunning && aliveProcesses.Length == 0)
             {
+                RecordAttachProbe("game_closed_silent_wait");
                 // 游戏曾经运行过但现在没有进程，进入静默等待
                 if (_GameClosedTime == DateTime.MinValue)
                 {
@@ -1149,6 +1159,7 @@ namespace Pal98Timer
 
             if (aliveProcesses.Length > 1)
             {
+                RecordAttachProbe("multiple_pal_processes");
                 if (!HasAlertMutiPal)
                 {
                     //cryerror = "检测到多个Pal.exe进程，请关闭其他的，只保留一个！";
@@ -1165,6 +1176,7 @@ namespace Pal98Timer
                 // 刷新进程信息以获取最新状态
                 try { res[0].Refresh(); }
                 catch { }
+                RecordAttachProbe("process_found", res[0]);
 
                 if (PID == -1)
                 {
@@ -1178,6 +1190,7 @@ namespace Pal98Timer
                     // 处理窗口句柄可能为空的情况（窗口转换期间）
                     if (tempHandle == IntPtr.Zero)
                     {
+                        RecordAttachProbe("window_handle_missing", res[0]);
                         // 如果游戏曾经运行过，可能是游戏正在关闭或重启
                         if (_GameWasRunning)
                         {
@@ -1219,6 +1232,7 @@ namespace Pal98Timer
                     // 处理窗口标题为空或仅包含空白字符的情况（窗口转换期间）
                     if (string.IsNullOrWhiteSpace(windowTitle))
                     {
+                        RecordAttachProbe("window_title_missing", res[0], windowTitle);
                         // 如果游戏曾经运行过，可能是游戏正在关闭或重启
                         if (_GameWasRunning)
                         {
@@ -1264,39 +1278,48 @@ namespace Pal98Timer
                                           windowTitle.StartsWith("PAL98") || 
                                           windowTitle.StartsWith("Pal98") ||
                                           windowTitle.Equals("sdf", StringComparison.OrdinalIgnoreCase);  // VB4初始窗口
+                    RecordTitleProbe("title_checked", res[0], windowTitle, hasDX9Title, isBaseGameTitle, false);
                     
-                    if (hasDX9Title)
+                    if (hasDX9Title || ShouldAcceptAutomationBaseTitle(isBaseGameTitle))
                     {
+                        bool acceptedByAutomationBaseTitle = !hasDX9Title;
                         // 找到DX9标题，提取版本号并连接
-                        int versionStartIndex = windowTitle.IndexOf("(v");
-                        if (versionStartIndex != -1)
+                        if (acceptedByAutomationBaseTitle)
                         {
-                            int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex);
-                            if (versionEndIndex != -1)
-                            {
-                                DX9Version = windowTitle.Substring(versionStartIndex + 2, versionEndIndex - versionStartIndex - 2);
-                            }
+                            DX9Version = "automation-base-title";
                         }
                         else
                         {
-                            int versionStartIndex_old1 = windowTitle.IndexOf("(新补丁");
-                            if (versionStartIndex_old1 != -1)
+                            int versionStartIndex = windowTitle.IndexOf("(v");
+                            if (versionStartIndex != -1)
                             {
-                                int versionEndIndex = windowTitle.IndexOf(" 测试版)", versionStartIndex_old1);
+                                int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex);
                                 if (versionEndIndex != -1)
                                 {
-                                    DX9Version = windowTitle.Substring(versionStartIndex_old1 + 4, versionEndIndex - versionStartIndex_old1 - 3);
+                                    DX9Version = windowTitle.Substring(versionStartIndex + 2, versionEndIndex - versionStartIndex - 2);
                                 }
                             }
-                            else 
+                            else
                             {
-                                int versionStartIndex_old2 = windowTitle.IndexOf("(");
-                                if (versionStartIndex_old2 != -1)
+                                int versionStartIndex_old1 = windowTitle.IndexOf("(新补丁");
+                                if (versionStartIndex_old1 != -1)
                                 {
-                                    int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex_old2);
+                                    int versionEndIndex = windowTitle.IndexOf(" 测试版)", versionStartIndex_old1);
                                     if (versionEndIndex != -1)
                                     {
-                                        DX9Version = windowTitle.Substring(versionStartIndex_old2, versionEndIndex - versionStartIndex_old2 - 3);
+                                        DX9Version = windowTitle.Substring(versionStartIndex_old1 + 4, versionEndIndex - versionStartIndex_old1 - 3);
+                                    }
+                                }
+                                else
+                                {
+                                    int versionStartIndex_old2 = windowTitle.IndexOf("(");
+                                    if (versionStartIndex_old2 != -1)
+                                    {
+                                        int versionEndIndex = windowTitle.IndexOf(")", versionStartIndex_old2);
+                                        if (versionEndIndex != -1)
+                                        {
+                                            DX9Version = windowTitle.Substring(versionStartIndex_old2, versionEndIndex - versionStartIndex_old2 - 3);
+                                        }
                                     }
                                 }
                             }
@@ -1315,10 +1338,18 @@ namespace Pal98Timer
                         _GameWasRunning = true;  // 标记游戏曾经运行过
                         _GameClosedTime = DateTime.MinValue;  // 重置关闭时间
                         InitialDetectionTime = null;  // 重置初始检测时间
+                        RecordTitleProbe(
+                            acceptedByAutomationBaseTitle ? "connected_by_automation_base_title" : "connected",
+                            res[0],
+                            windowTitle,
+                            hasDX9Title,
+                            isBaseGameTitle,
+                            acceptedByAutomationBaseTitle);
                         return true;
                     }
                     else if (isBaseGameTitle)
                     {
+                        RecordTitleProbe("base_title_waiting_for_dx9", res[0], windowTitle, hasDX9Title, isBaseGameTitle, false);
                         // 如果游戏曾经运行过，可能是游戏正在关闭或重启
                         if (_GameWasRunning)
                         {
@@ -1353,6 +1384,7 @@ namespace Pal98Timer
                     }
                     else
                     {
+                        RecordTitleProbe("title_not_recognized", res[0], windowTitle, hasDX9Title, isBaseGameTitle, false);
                         // 既不是DX9标题也不是基础游戏标题
                         // 如果游戏曾经运行过，可能是游戏正在关闭或重启
                         if (_GameWasRunning)
@@ -1427,6 +1459,7 @@ namespace Pal98Timer
                                     }
                                 }
                                 HasConfirmedDX9 = true;
+                                RecordTitleProbe("connected", res[0], windowTitle, hasDX9Title, false, false);
                             }
                         }
 
@@ -1451,6 +1484,7 @@ namespace Pal98Timer
             }
             else
             {
+                RecordAttachProbe("no_pal_process");
                 // 没有找到进程
                 if (_GameWasRunning)
                 {
@@ -1468,11 +1502,14 @@ namespace Pal98Timer
             {
                 PalHandle = new IntPtr(handle);
                 HasAlertPalOpenProcessError = false;
+                LastOpenPalProcessErrorCode = 0;
                 return true;
             }
 
             PalHandle = IntPtr.Zero;
             int errorCode = Kernel32.GetLastWin32Error();
+            LastOpenPalProcessErrorCode = errorCode;
+            RecordAttachProbe("open_process_failed", process, null, errorCode);
             if (!HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
@@ -1487,10 +1524,13 @@ namespace Pal98Timer
             if (handle != 0)
             {
                 Kernel32.CloseHandle(handle);
+                LastOpenPalProcessErrorCode = 0;
                 return true;
             }
 
             int errorCode = Kernel32.GetLastWin32Error();
+            LastOpenPalProcessErrorCode = errorCode;
+            RecordAttachProbe("can_open_process_failed", process, null, errorCode);
             if (!HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
@@ -1508,6 +1548,57 @@ namespace Pal98Timer
 
             string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
             return "无法打开 Pal.exe 进程" + errorText + "。普通速通和 pal98autotest 自动化测试建议让 PAL.exe 和 PalTimer 都用普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
+        }
+
+        private bool ShouldAcceptAutomationBaseTitle(bool isBaseGameTitle)
+        {
+            return isBaseGameTitle && AutomationArgs.Current.EnablePal98BaseTitleFallback;
+        }
+
+        private void RecordAttachProbe(string status, Process process = null, string windowTitle = null, int errorCode = 0)
+        {
+            LastPalAttachStatus = status;
+            if (process != null)
+            {
+                LastPalProcessId = process.Id;
+            }
+            if (windowTitle != null)
+            {
+                LastPalWindowTitle = windowTitle;
+            }
+            if (errorCode > 0)
+            {
+                LastOpenPalProcessErrorCode = errorCode;
+            }
+        }
+
+        private void RecordTitleProbe(
+            string status,
+            Process process,
+            string windowTitle,
+            bool hasDX9Title,
+            bool isBaseGameTitle,
+            bool acceptedByAutomation)
+        {
+            RecordAttachProbe(status, process, windowTitle);
+            LastPalTitleMatchedDx9 = hasDX9Title;
+            LastPalTitleMatchedBase = isBaseGameTitle;
+            LastPalTitleAcceptedByAutomation = acceptedByAutomation;
+        }
+
+        protected override void FillAutomationSnapshotDiagnostics(HObj snapshot)
+        {
+            HObj attach = new HObj();
+            attach["status"] = LastPalAttachStatus;
+            attach["process_count"] = LastPalProcessCount;
+            attach["process_id"] = LastPalProcessId;
+            attach["window_title"] = LastPalWindowTitle;
+            attach["title_matched_dx9"] = LastPalTitleMatchedDx9;
+            attach["title_matched_base"] = LastPalTitleMatchedBase;
+            attach["title_accepted_by_automation"] = LastPalTitleAcceptedByAutomation;
+            attach["automation_accept_pal98_base_title"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;
+            attach["open_process_error_code"] = LastOpenPalProcessErrorCode;
+            snapshot["pal_process_attach"] = attach;
         }
 
         /// <summary>
