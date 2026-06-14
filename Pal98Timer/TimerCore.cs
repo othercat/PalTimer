@@ -829,6 +829,11 @@ namespace Pal98Timer
         /// 检测间隔（毫秒）
         /// </summary>
         protected int CheckInterval = 70;
+        /// <summary>
+        /// 自动化快照刷新间隔（毫秒），仅在 automation snapshot export 启用时生效
+        /// </summary>
+        private const int AutomationTickSnapshotIntervalMilliseconds = 500;
+        private DateTime LastAutomationTickSnapshotTime = DateTime.MinValue;
 
         /// <summary>
         /// 是否启用非顺序节点推进（跳图路线支持）
@@ -851,10 +856,28 @@ namespace Pal98Timer
                         OnTick();
                     }
                     catch { }
+                    WriteAutomationTickSnapshotIfDue();
                     System.Threading.Thread.Sleep(CheckInterval);
                 }
             });
             SendPluginsEvent("Start", null);
+        }
+        private void WriteAutomationTickSnapshotIfDue()
+        {
+            if (!AutomationArgs.Current.Enabled || form == null)
+            {
+                return;
+            }
+
+            DateTime now = DateTime.Now;
+            if (LastAutomationTickSnapshotTime != DateTime.MinValue &&
+                (now - LastAutomationTickSnapshotTime).TotalMilliseconds < AutomationTickSnapshotIntervalMilliseconds)
+            {
+                return;
+            }
+
+            LastAutomationTickSnapshotTime = now;
+            form.WriteAutomationSnapshot("automation_tick");
         }
         /// <summary>
         /// 每次Tick调用的逻辑
@@ -1136,6 +1159,7 @@ namespace Pal98Timer
             snapshot["non_sequential_check_enabled"] = form != null && form.IsNonSequentialCheck;
             snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;
             snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;
+            snapshot["automation_tick_snapshot_interval_ms"] = AutomationTickSnapshotIntervalMilliseconds;
             snapshot["source"] = "paltimer_automation_export";
             snapshot["snapshot_time"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffK");
             snapshot["export_trigger"] = trigger;

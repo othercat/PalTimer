@@ -66,11 +66,27 @@ def _timer_core_builds_autotest_snapshot_envelope() -> bool:
         in text
         and 'snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;'
         in text
+        and 'snapshot["automation_tick_snapshot_interval_ms"] = AutomationTickSnapshotIntervalMilliseconds;'
+        in text
         and "FillAutomationSnapshotDiagnostics(snapshot);" in text
         and "protected virtual void FillAutomationSnapshotDiagnostics(HObj snapshot)" in text
         and 'snapshot["paltimer_internal"] = new HObj(GetTimerJson());' in text
         and 'form?.WriteAutomationSnapshot("run_end");' in text
         and "public bool IsRunning" in text
+    )
+
+
+def _timer_core_writes_tick_snapshot_only_for_automation() -> bool:
+    text = (ROOT / "Pal98Timer" / "TimerCore.cs").read_text(encoding="utf-8-sig")
+    return (
+        "private const int AutomationTickSnapshotIntervalMilliseconds = 500;" in text
+        and "private DateTime LastAutomationTickSnapshotTime = DateTime.MinValue;" in text
+        and "private void WriteAutomationTickSnapshotIfDue()" in text
+        and "if (!AutomationArgs.Current.Enabled || form == null)" in text
+        and "LastAutomationTickSnapshotTime = now;" in text
+        and 'form.WriteAutomationSnapshot("automation_tick");' in text
+        and "OnTick();" in text
+        and "WriteAutomationTickSnapshotIfDue();" in text
     )
 
 
@@ -99,6 +115,7 @@ def main() -> int:
         "Program.cs automation args": _program_parses_automation_flags(),
         "GForm.cs gated writer": _gform_writes_snapshot_only_when_enabled(),
         "TimerCore.cs AutoTest envelope": _timer_core_builds_autotest_snapshot_envelope(),
+        "TimerCore.cs gated tick snapshot": _timer_core_writes_tick_snapshot_only_for_automation(),
         "PAL98 title fallback": _pal98_title_fallback_is_automation_only(),
     }
     failed = [name for name, ok in checks.items() if not ok]
