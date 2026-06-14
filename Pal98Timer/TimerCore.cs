@@ -1133,6 +1133,8 @@ namespace Pal98Timer
             snapshot["current_split"] = currentSplit;
             snapshot["split_reached"] = split != null;
             snapshot["timer_time"] = TItem.TimeSpanToFullString(GetMainWatch());
+            snapshot["non_sequential_check_enabled"] = form != null && form.IsNonSequentialCheck;
+            snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;
             snapshot["source"] = "paltimer_automation_export";
             snapshot["snapshot_time"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffK");
             snapshot["export_trigger"] = trigger;
