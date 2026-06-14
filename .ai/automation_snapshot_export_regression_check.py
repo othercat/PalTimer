@@ -22,6 +22,7 @@ def _gform_writes_snapshot_only_when_enabled() -> bool:
         and "if (!AutomationArgs.Current.Enabled || core == null)" in text
         and "core.BuildAutomationSnapshotJson(trigger, AutomationArgs.Current.SnapshotRunId)"
         in text
+        and "new UTF8Encoding(false)" in text
         and 'WriteAutomationSnapshot("checkpoint");' in text
         and 'WriteAutomationSnapshot("core_loaded");' in text
         and "Automation export must not affect normal timer behavior." in text

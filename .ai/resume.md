@@ -43,9 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-automation-snapshot-export`。
+当前维护分支：`codex/paltimer-automation-snapshot-no-bom`。
 
-task-114 正在本分支推进：为 pal98autotest / route-bootstrap gate 增加显式 gated automation snapshot file export。当前代码层实现已完成：只有传入 `--automation-snapshot-export <path>` 时才写 `pal98.paltimer.snapshot` JSON；默认普通用户路径不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。还需要 Kimi/Codex 复核 PR、并在 AutoTest 侧同步 source whitelist 后再做真实同跑验证。
+task-114 继续推进：gated automation snapshot file export 已合并到 `master`，真实 same-run gate 证明 PalTimer 能用 `--automation-snapshot-export <path>` 写出 `source=paltimer_automation_export` snapshot，但发现 .NET Framework `Encoding.UTF8` 写出的 UTF-8 BOM 会让 AutoTest 旧 reader 解析失败。本分支把 automation snapshot writer 改为 `new UTF8Encoding(false)`，避免后续导出 JSON 带 BOM；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。
 
 task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限处理。当前语义是：只有 PAL.exe 以管理员权限运行、而 PalTimer 非管理员导致错误码 5 时，弹出短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”，用户确认后 PalTimer 直接关闭；PAL.exe 和 PalTimer 同为管理员、或 PAL.exe 普通而 PalTimer 管理员时不额外提示。
 
@@ -208,6 +208,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-14 会话（task-114 automation snapshot BOM follow-up）
+
+- 修复真实 same-run gate 发现的 BOM 兼容问题：`GForm.WriteAutomationSnapshot()` 的 automation snapshot writer 从 `Encoding.UTF8` 改为 `new UTF8Encoding(false)`，后续导出的 `pal98.paltimer.snapshot` JSON 不再带 UTF-8 BOM
+- 更新 `.ai/automation_snapshot_export_regression_check.py`，检查 gated writer 继续使用 no-BOM UTF-8
+- 验证：`Release|x64` 构建通过；`git diff --check`；automation snapshot / banana pause / cloud pause / OpenProcess permission 结构性回归脚本均通过
+- 仍需 AutoTest 侧兼容旧 BOM snapshot reader，并在 route-bootstrap gate 用正确 `--route-kind speedrun` 重跑真实 same-run gate
 
 ### 2026-06-14 会话（task-114 automation snapshot export v0）
 
