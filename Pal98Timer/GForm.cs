@@ -95,6 +95,9 @@ namespace Pal98Timer
                 InitCloud();
             };
 
+            LoadNonSequentialCheck();
+            ApplyAutomationOptions();
+
             CoreBtns = new Dictionary<string, ToolStripMenuItem>();
             List<string> cores = TimerCore.GetAllCores();
             foreach (string cn in cores)
@@ -139,7 +142,6 @@ namespace Pal98Timer
 
             ShowKCEnable();
             LoadTransparency();
-            LoadNonSequentialCheck();
         }
 
         private void GForm_Shown(object sender, EventArgs e)
@@ -1032,6 +1034,15 @@ namespace Pal98Timer
             }
             catch { }
             btnNonSequentialCheck.Checked = IsNonSequentialCheck;
+        }
+
+        private void ApplyAutomationOptions()
+        {
+            if (AutomationArgs.Current.EnableNonSequentialSplits)
+            {
+                IsNonSequentialCheck = true;
+                btnNonSequentialCheck.Checked = true;
+            }
         }
 
         private void SaveNonSequentialCheck()

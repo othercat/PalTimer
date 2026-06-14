@@ -11,7 +11,9 @@ def _program_parses_automation_flags() -> bool:
         in text
         and '"--automation-snapshot-export"' in text
         and '"--automation-snapshot-run-id"' in text
+        and '"--automation-non-sequential-splits"' in text
         and "public bool Enabled" in text
+        and "public bool EnableNonSequentialSplits" in text
     )
 
 
@@ -40,6 +42,8 @@ def _gform_writes_snapshot_only_when_enabled() -> bool:
         and "StreamWriter(fileStream, Encoding.UTF8)" not in body
         and 'WriteAutomationSnapshot("checkpoint");' in text
         and 'WriteAutomationSnapshot("core_loaded");' in text
+        and "ApplyAutomationOptions();" in text
+        and "AutomationArgs.Current.EnableNonSequentialSplits" in text
         and "Automation export must not affect normal timer behavior." in body
     )
 
@@ -53,6 +57,10 @@ def _timer_core_builds_autotest_snapshot_envelope() -> bool:
         and 'snapshot["source"] = "paltimer_automation_export";' in text
         and 'snapshot["export_trigger"] = trigger;' in text
         and 'snapshot["autotest_run_id"] = runId;' in text
+        and 'snapshot["non_sequential_check_enabled"] = form != null && form.IsNonSequentialCheck;'
+        in text
+        and 'snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;'
+        in text
         and 'snapshot["paltimer_internal"] = new HObj(GetTimerJson());' in text
         and 'form?.WriteAutomationSnapshot("run_end");' in text
         and "public bool IsRunning" in text

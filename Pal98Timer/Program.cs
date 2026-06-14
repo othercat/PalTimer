@@ -96,10 +96,16 @@ namespace Pal98Timer
 
         public string SnapshotExportPath = "";
         public string SnapshotRunId = "";
+        public bool NonSequentialSplits = false;
 
         public bool Enabled
         {
             get { return SnapshotExportPath != ""; }
+        }
+
+        public bool EnableNonSequentialSplits
+        {
+            get { return Enabled && NonSequentialSplits; }
         }
 
         public static AutomationArgs Parse(string[] args)
@@ -115,6 +121,10 @@ namespace Pal98Timer
                 else if (arg == "--automation-snapshot-run-id" && i + 1 < args.Length)
                 {
                     parsed.SnapshotRunId = args[++i];
+                }
+                else if (arg == "--automation-non-sequential-splits")
+                {
+                    parsed.NonSequentialSplits = true;
                 }
             }
             return parsed;
