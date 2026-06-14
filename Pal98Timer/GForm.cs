@@ -376,6 +376,10 @@ namespace Pal98Timer
                 {
                     rr?.SetBL(MConfig.ins.Luck(true));
                 }
+                if (curidx > 0)
+                {
+                    WriteAutomationSnapshot("checkpoint");
+                }
             };
             _ResetAll();
             if (rr != null)
@@ -383,7 +387,39 @@ namespace Pal98Timer
                 rr.IsForceRefreshAll = true;
             }
             core.Start();
+            WriteAutomationSnapshot("core_loaded");
         }
+
+        public void WriteAutomationSnapshot(string trigger)
+        {
+            if (!AutomationArgs.Current.Enabled || core == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string exportPath = AutomationArgs.Current.SnapshotExportPath;
+                string dir = Path.GetDirectoryName(exportPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                using (FileStream fileStream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
+                    {
+                        streamWriter.Write(core.BuildAutomationSnapshotJson(trigger, AutomationArgs.Current.SnapshotRunId));
+                        streamWriter.Flush();
+                    }
+                }
+            }
+            catch
+            {
+                // Automation export must not affect normal timer behavior.
+            }
+        }
+
         public void _ResetAll()
         {
             core.UnloadPlugins();

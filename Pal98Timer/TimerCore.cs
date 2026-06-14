@@ -668,6 +668,7 @@ namespace Pal98Timer
         protected virtual void OnCheckPointEnd()
         {
             MT.Stop();
+            form?.WriteAutomationSnapshot("run_end");
             if (!_hasCallPointEnd)
             {
                 _hasCallPointEnd = true;
@@ -1109,6 +1110,99 @@ namespace Pal98Timer
             return GetTimerJson();
         }
 
+        public string BuildAutomationSnapshotJson(string trigger, string runId)
+        {
+            CheckPoint split = GetAutomationCompletedSplit();
+            string currentSplit = GetAutomationCurrentSplit(split);
+            string splitName = split != null ? split.Name : currentSplit;
+            if (string.IsNullOrEmpty(splitName))
+            {
+                splitName = CoreName;
+            }
+            if (string.IsNullOrEmpty(splitName))
+            {
+                splitName = GetType().Name;
+            }
+
+            HObj snapshot = new HObj();
+            snapshot["schema_version"] = 1;
+            snapshot["kind"] = "pal98.paltimer.snapshot";
+            snapshot["timer_core"] = GetType().Name;
+            snapshot["split_name"] = splitName;
+            snapshot["timer_status"] = GetAutomationTimerStatus(split);
+            snapshot["current_split"] = currentSplit;
+            snapshot["split_reached"] = split != null;
+            snapshot["timer_time"] = TItem.TimeSpanToFullString(GetMainWatch());
+            snapshot["source"] = "paltimer_automation_export";
+            snapshot["snapshot_time"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffK");
+            snapshot["export_trigger"] = trigger;
+            if (!string.IsNullOrEmpty(runId))
+            {
+                snapshot["autotest_run_id"] = runId;
+            }
+            try
+            {
+                snapshot["paltimer_internal"] = new HObj(GetTimerJson());
+            }
+            catch
+            {
+                snapshot["paltimer_internal_json"] = GetTimerJson();
+            }
+            return snapshot.ToJson();
+        }
+
+        private CheckPoint GetAutomationCompletedSplit()
+        {
+            if (CheckPoints == null || CheckPoints.Count == 0)
+            {
+                return null;
+            }
+            int completedIndex = CurrentStep - 1;
+            if (completedIndex < 0)
+            {
+                return null;
+            }
+            if (completedIndex >= CheckPoints.Count)
+            {
+                completedIndex = CheckPoints.Count - 1;
+            }
+            CheckPoint split = CheckPoints[completedIndex];
+            if (split.IsEnd ||
+                split.Status == CheckPointStatus.Completed ||
+                split.Status == CheckPointStatus.AutoSkipped ||
+                split.Status == CheckPointStatus.ManualSkipped)
+            {
+                return split;
+            }
+            return null;
+        }
+
+        private string GetAutomationCurrentSplit(CheckPoint completedSplit)
+        {
+            if (completedSplit != null)
+            {
+                return completedSplit.Name;
+            }
+            if (CheckPoints != null && CurrentStep >= 0 && CurrentStep < CheckPoints.Count)
+            {
+                return CheckPoints[CurrentStep].Name;
+            }
+            return null;
+        }
+
+        private string GetAutomationTimerStatus(CheckPoint completedSplit)
+        {
+            if (MT.IsRunning)
+            {
+                return "running";
+            }
+            if (completedSplit != null || GetMainWatch().Ticks > 0)
+            {
+                return "stopped";
+            }
+            return "not_started";
+        }
+
         protected Dictionary<TimerPlugin.EPluginPosition, TimerPlugin> Plugins = new Dictionary<TimerPlugin.EPluginPosition, TimerPlugin>();
         /// <summary>
         /// 加载此内核能用的所有插件
@@ -1368,6 +1462,13 @@ namespace Pal98Timer
             get
             {
                 return _CurrentTS;
+            }
+        }
+        public bool IsRunning
+        {
+            get
+            {
+                return sw != null && sw.IsRunning;
             }
         }
         public void SetTS(TimeSpan ts)

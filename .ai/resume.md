@@ -43,7 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-uac-asinvoker`。
+当前维护分支：`codex/paltimer-automation-snapshot-export`。
+
+task-114 正在本分支推进：为 pal98autotest / route-bootstrap gate 增加显式 gated automation snapshot file export。当前代码层实现已完成：只有传入 `--automation-snapshot-export <path>` 时才写 `pal98.paltimer.snapshot` JSON；默认普通用户路径不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket。还需要 Kimi/Codex 复核 PR、并在 AutoTest 侧同步 source whitelist 后再做真实同跑验证。
 
 task-113 已在当前分支继续推进：主程序 manifest 已从 `requireAdministrator` 改为 `asInvoker` 并推送；随后新增 PAL98/PAL98DX9/PAL98UNHAPPY 三内核 `OpenProcess` 失败时的权限处理。当前语义是：只有 PAL.exe 以管理员权限运行、而 PalTimer 非管理员导致错误码 5 时，弹出短提示“PAL.exe是管理员权限运行，计时器需要重启用管理员权限才能运行”，用户确认后 PalTimer 直接关闭；PAL.exe 和 PalTimer 同为管理员、或 PAL.exe 普通而 PalTimer 管理员时不额外提示。
 
@@ -96,6 +98,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ## 4. 未完成内容
 
 ### 高优先级 - 已修复，待实机验证
+
+- **task-114：PalTimer automation snapshot file export v0 — 已完成代码层和构建验证，待 AutoTest 联调**
+  - 背景：Pal98AutoTest `route-bootstrap-paltimer-snapshot-gate` 已能消费结构化 `pal98.paltimer.snapshot`，但 PalTimer 没有稳定外部导出接口；fixture snapshot 已被 AutoTest block，不能再作为 same-run evidence。
+  - 修复内容：`Program.cs` 解析 `--automation-snapshot-export <path>` 与 `--automation-snapshot-run-id <RUN_ID>`；`GForm.cs` 在 flag 启用时写 automation snapshot；`TimerCore.cs` 新增 `BuildAutomationSnapshotJson()` 输出 AutoTest envelope，并保留 `GetTimerJson()` 为 `paltimer_internal`。
+  - 触发点：flag 启用后，加载 core 写 `core_loaded` snapshot；节点推进写 `checkpoint` snapshot；最终通关写 `run_end` snapshot。无 flag 时不写文件。
+  - 输出边界：`source=paltimer_automation_export`；不读/写 cloud ID，不接 OBS socket，不开 HTTP listener，不修改云上传逻辑，不改变 `ReadProcessMemory` / `WriteProcessMemory` / OpenProcess / 节点判定。
+  - 验证：`Release|x64` 构建通过；`git diff --check`；`.ai/automation_snapshot_export_regression_check.py`、`.ai/banana_pause_resume_regression_check.py`、`.ai/cloud_save_load_pause_regression_check.py`、`.ai/pal_open_process_permission_regression_check.py` 均通过。
+  - 待验证：AutoTest 侧 source whitelist 接受 `paltimer_automation_export`；真实同跑时确认导出的 split 名称、timer_status、timer_time 与 route-bootstrap gate 对齐。
 
 - **task-113：取消 PalTimer 主程序默认 UAC 提权并提示权限不匹配 — 已完成代码层和构建验证**
   - 背景：`pal98autotest` 从普通进程启动部署版 `Pal98Timer.exe` 时遇到 `WinError 740`，说明当前主程序要求提升权限。
@@ -163,14 +173,15 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
-2. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
-3. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
-4. task-014 和 task-015 代码层修复已完成，仍需实机验证。
-5. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
-6. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
-7. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
-8. 如需发布版本，再决定是否更新 README.md 版本记录。
+1. task-114：让 Kimi/Codex 复核 automation snapshot export PR；AutoTest 侧同步 source whitelist；之后用真实 route-bootstrap + PalTimer 导出文件跑 same-run snapshot gate。
+2. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
+3. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
+4. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
+5. task-014 和 task-015 代码层修复已完成，仍需实机验证。
+6. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
+7. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
+8. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
+9. 如需发布版本，再决定是否更新 README.md 版本记录。
 
 ---
 
@@ -197,6 +208,17 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-14 会话（task-114 automation snapshot export v0）
+
+- 新建并切换到 `codex/paltimer-automation-snapshot-export`
+- 修改 `Pal98Timer/Program.cs`：解析 `--automation-snapshot-export <path>` 与 `--automation-snapshot-run-id <RUN_ID>`；无 export path 时 automation export 关闭
+- 修改 `Pal98Timer/GForm.cs`：新增 `WriteAutomationSnapshot(trigger)`；只在 automation flag 启用时写文件；加载 core、节点推进、最终通关时分别写 `core_loaded`、`checkpoint`、`run_end`
+- 修改 `Pal98Timer/TimerCore.cs`：新增 `BuildAutomationSnapshotJson()`，输出 AutoTest `pal98.paltimer.snapshot` envelope，`source=paltimer_automation_export`，保留 `GetTimerJson()` 为 `paltimer_internal`
+- 修改 `PTimer`：新增只读 `IsRunning` 属性，用于 snapshot 的 `timer_status`
+- 新增 `.ai/automation_snapshot_export_regression_check.py`：结构性检查 automation args、gated writer 和 AutoTest envelope
+- 验证：`Release|x64` 构建通过；`git diff --check`；automation snapshot / banana pause / cloud pause / OpenProcess permission 四个结构性回归脚本均通过
+- 未做：未启动 PalTimer、PAL.exe、Speedrun-Bot；未连接 OBS socket；未读取或输出 cloud ID；未做真实同跑 gate
 
 ### 2026-06-12 会话（task-113 权限提示后续）
 
@@ -309,12 +331,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ```bash
 git diff --check
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\automation_snapshot_export_regression_check.py
 C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\banana_pause_resume_regression_check.py
 C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\cloud_save_load_pause_regression_check.py
 C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_permission_regression_check.py
 ```
 
 ```text
+PASS: PalTimer automation snapshot export is gated and emits the AutoTest envelope.
 PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
 PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
 PASS: PAL98 kernels show the short elevated Pal.exe message and close PalTimer after acknowledgement.
