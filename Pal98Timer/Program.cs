@@ -98,6 +98,8 @@ namespace Pal98Timer
         public string SnapshotRunId = "";
         public bool NonSequentialSplits = false;
         public bool AcceptPal98BaseTitle = false;
+        public int SnapshotIntervalMilliseconds = 500;
+        public bool RoomExitSplit = false;
 
         public bool Enabled
         {
@@ -112,6 +114,11 @@ namespace Pal98Timer
         public bool EnablePal98BaseTitleFallback
         {
             get { return Enabled && AcceptPal98BaseTitle; }
+        }
+
+        public bool EnableRoomExitSplit
+        {
+            get { return Enabled && RoomExitSplit; }
         }
 
         public static AutomationArgs Parse(string[] args)
@@ -135,6 +142,18 @@ namespace Pal98Timer
                 else if (arg == "--automation-accept-pal98-base-title")
                 {
                     parsed.AcceptPal98BaseTitle = true;
+                }
+                else if (arg == "--automation-room-exit-split")
+                {
+                    parsed.RoomExitSplit = true;
+                }
+                else if (arg == "--automation-snapshot-interval-ms" && i + 1 < args.Length)
+                {
+                    int interval;
+                    if (int.TryParse(args[++i], out interval))
+                    {
+                        parsed.SnapshotIntervalMilliseconds = Math.Max(10, interval);
+                    }
                 }
             }
             return parsed;

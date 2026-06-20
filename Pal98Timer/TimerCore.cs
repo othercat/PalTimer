@@ -832,7 +832,6 @@ namespace Pal98Timer
         /// <summary>
         /// 自动化快照刷新间隔（毫秒），仅在 automation snapshot export 启用时生效
         /// </summary>
-        private const int AutomationTickSnapshotIntervalMilliseconds = 500;
         private DateTime LastAutomationTickSnapshotTime = DateTime.MinValue;
 
         /// <summary>
@@ -870,8 +869,9 @@ namespace Pal98Timer
             }
 
             DateTime now = DateTime.Now;
+            int intervalMs = Math.Max(10, AutomationArgs.Current.SnapshotIntervalMilliseconds);
             if (LastAutomationTickSnapshotTime != DateTime.MinValue &&
-                (now - LastAutomationTickSnapshotTime).TotalMilliseconds < AutomationTickSnapshotIntervalMilliseconds)
+                (now - LastAutomationTickSnapshotTime).TotalMilliseconds < intervalMs)
             {
                 return;
             }
@@ -1159,7 +1159,8 @@ namespace Pal98Timer
             snapshot["non_sequential_check_enabled"] = form != null && form.IsNonSequentialCheck;
             snapshot["automation_non_sequential_splits"] = AutomationArgs.Current.EnableNonSequentialSplits;
             snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;
-            snapshot["automation_tick_snapshot_interval_ms"] = AutomationTickSnapshotIntervalMilliseconds;
+            snapshot["automation_room_exit_split"] = AutomationArgs.Current.EnableRoomExitSplit;
+            snapshot["automation_tick_snapshot_interval_ms"] = Math.Max(10, AutomationArgs.Current.SnapshotIntervalMilliseconds);
             snapshot["source"] = "paltimer_automation_export";
             snapshot["snapshot_time"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffK");
             snapshot["export_trigger"] = trigger;

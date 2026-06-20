@@ -79,6 +79,8 @@ namespace Pal98Timer
 
         private float MoveSpeed = 0;
         private DateTime LastFlushTime = DateTime.Now;
+        private const string AutomationRoomExitSplitName = "出小李子房间";
+        private bool AutomationRoomExitSawOpeningRoom = false;
         private BattleItemWatch biw = new BattleItemWatch();
         private string CurrentNamedBattle = "";
         private string WillAppendNamedBattle = "";
@@ -124,6 +126,7 @@ namespace Pal98Timer
             Data = new HObj();
             Data["caiyi"] = false;
             CheckPoints = new List<CheckPoint>();
+            AddAutomationRoomExitSplitIfRequested();
             CheckPoints.Add(new CheckPoint(CheckPoints.Count, GetBest("见石碑", new TimeSpan(0, 6, 5)))
             {
                 Check = delegate ()
@@ -420,6 +423,35 @@ namespace Pal98Timer
                 }
             }
             return false;
+        }
+
+        private void AddAutomationRoomExitSplitIfRequested()
+        {
+            if (!AutomationArgs.Current.EnableRoomExitSplit)
+            {
+                return;
+            }
+
+            AutomationRoomExitSawOpeningRoom = false;
+            CheckPoints.Add(new CheckPoint(
+                CheckPoints.Count,
+                GetBest(AutomationRoomExitSplitName, new TimeSpan(0, 0, 0, 16, 800)))
+            {
+                Check = delegate ()
+                {
+                    if (PositionAroundCheck(2, 1184, 176, 1))
+                    {
+                        AutomationRoomExitSawOpeningRoom = true;
+                    }
+
+                    if (!AutomationRoomExitSawOpeningRoom)
+                    {
+                        return false;
+                    }
+
+                    return PositionAroundCheck(4, 1408, 1392, 1);
+                }
+            });
         }
 
         public override string GetGameVersion()
