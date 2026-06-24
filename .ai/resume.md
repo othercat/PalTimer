@@ -43,7 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.36.5**（2026-05-15）
 
-当前维护分支：`codex/paltimer-automation-tick-snapshot`。
+当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
+
+2026-06-23 本轮未发布改动：节点音效配置支持每条音频独立音量，`sound_config.txt` 旧 `启用|文件路径` 格式保持可读，保存后升级为 `启用|音量|文件路径`；另在 `agent-setting` 新增 `pal98-paltimer-plugin-development` Skill，用于沉淀 PalTimer `.tpg` 插件/API/包格式知识。
 
 task-114 继续推进：gated automation snapshot file export、no-BOM fix、automation-only `--automation-non-sequential-splits` 与 `--automation-accept-pal98-base-title` 已合并到 `master`。真实 same-run gate v4 证明 route outcome / real 1x validation / same-run provenance / source gate 均通过，且两个 automation flag 已到达 PalTimer，但最后写出的 snapshot 仍停在 `core_loaded`，没有后续 `checkpoint` / `run_end` 证据。当前分支新增 automation-only 低频 tick snapshot：后台 tick 后每 500ms 最多刷新一次 automation snapshot，用于区分“线程未启动 / tick 未执行”和“tick 执行但 attach 或 split 未达成”；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket，不改变 `OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory` / 节点判定。
 
@@ -59,6 +61,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 3. 已完成内容
+
+### 未发布（2026-06-23）
+- 节点音效配置支持每条音频独立音量：5 类节点/通关提示音和音效开关的打开/关闭提示音均可设置 0-100 音量
+- `SoundConfig` 播放路径在 MCI alias 打开后通过 `setaudio ... volume` 设置音量；MP3 的 WMP COM 回退路径同步设置 `settings.volume`
+- 配置文件向后兼容：旧 `启用|文件路径` 读取为 100 音量，新保存格式为 `启用|音量|文件路径`
+- 新增结构性回归脚本 `.ai/sound_config_volume_regression_check.py`
+- 在 `D:\Workspace\agent-setting` 新增 `pal98-paltimer-plugin-development` Skill，记录 PalTimer 插件 API、`.tpg` 包格式、加载规则和两个 PAL98 插件样例
 
 ### v3.36.5 (2026-05-15)
 - 修复 PAL98 / PAL98DX9 / PAL98UNHAPPY 香蕉树反作弊暂停叠加 F9 手动暂停后，拿到香蕉仍无法恢复计时的问题
@@ -98,6 +107,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ## 4. 未完成内容
 
 ### 高优先级 - 已修复，待实机验证
+
+- **节点音效每条音频独立音量 — 已完成代码层和构建验证，待 Human 听音确认**
+  - 修复内容：`SoundConfig.cs` 为每个 `SoundTriggerType` 和开关提示音保存 0-100 音量，MCI/WMP COM 播放和试听均使用对应音量。
+  - 配置兼容：旧 `sound_config.txt` 的 `启用|文件路径` 和无分隔旧路径格式仍可读取，默认音量 100；保存后写为 `启用|音量|文件路径`。
+  - UI：`SoundConfigForm.cs` 增加每行音量数字框，窗口加宽避免路径、音量、浏览、试听控件重叠。
+  - 安全边界：未修改节点判定、计时开始/停止、暂停、反作弊、保存/读档、云存读档、路线节点推进、`OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`。
+  - 验证：`.ai/sound_config_volume_regression_check.py`、`git diff --check`、`Release|x64` 构建通过。
+  - 待实机：分别用 wav/mp3 验证节点提示音和开关提示音在音量 0、30、100 时试听和运行中播放音量符合预期。
 
 - **task-114：PalTimer automation snapshot file export v0 — 已完成代码层和构建验证，待 AutoTest 联调**
   - 背景：Pal98AutoTest `route-bootstrap-paltimer-snapshot-gate` 已能消费结构化 `pal98.paltimer.snapshot`，但 PalTimer 没有稳定外部导出接口；fixture snapshot 已被 AutoTest block，不能再作为 same-run evidence。
@@ -175,6 +192,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
+1. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
+2. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
 1. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
 2. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
 3. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
@@ -210,6 +229,17 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-06-23 会话（节点音效独立音量 + PalTimer 插件 Skill）
+
+- 修改 `Pal98Timer/SoundConfig.cs`：新增每个节点音效触发类型的音量配置，打开/关闭提示音也各自有音量；MCI 播放调用 `setaudio` 设置 0-1000 音量，WMP COM 回退设置 `settings.volume`
+- 修改 `Pal98Timer/SoundConfigForm.cs`：每条音频行新增 0-100 音量数字框；试听使用当前行音量；窗口加宽，避免路径、音量、浏览、试听控件重叠
+- 新增 `.ai/sound_config_volume_regression_check.py`，检查配置解析、保存格式、MCI/WMP 音量路径和 UI 音量控件
+- 更新 `README.md` 与 `docs/TODO-pal98-dx9-updates.md`，记录未发布音效音量功能和手动听音验证点
+- 新增 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development`，包含 `SKILL.md`、`agents/openai.yaml` 和 `references/paltimer-plugin-api.md`
+- 插件调查结论：实机 `PAL98.FujiaShouji.tpg` 启用，类名 `PAL98.FujiaCaishen`，右下角显示钱和道具；`PAL98.BestResShow.tpg` 禁用；两者都占 `BR`，同位置只会加载最先成功的插件
+- 安全边界：未修改节点判定、计时/暂停、云存读档、OBS、`OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`，未修改真实游戏目录 `.tpg` 包
+- 验证：`.ai/sound_config_volume_regression_check.py`、Skill `quick_validate.py`、PalTimer `git diff --check`、agent-setting `git diff --check`、`Pal98Timer.sln Release|x64` 构建通过；构建仅有既有 warning
 
 ### 2026-06-14 会话（task-114 automation tick snapshot）
 
@@ -348,6 +378,24 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-06-23 本轮补充验证：
+
+```bash
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\sound_config_volume_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe C:\Users\other\.codex\skills\.system\skill-creator\scripts\quick_validate.py D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development
+git diff --check
+git -C D:\Workspace\agent-setting diff --check
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
+```
+
+```text
+PASS: PalTimer sound config supports per-audio volume with backward-compatible config parsing.
+Skill is valid.
+PalTimer git diff --check passed.
+agent-setting git diff --check passed with one existing CRLF/LF warning for pal98-dx9-hooking/SKILL.md.
+Release|x64 build succeeded; warnings are existing unused-variable / obsolete API warnings.
+```
 
 本轮编译命令：
 

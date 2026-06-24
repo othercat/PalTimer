@@ -13,16 +13,19 @@ namespace Pal98Timer
         private CheckBox chkGlobalEnabled;
         private CheckBox[] chkEnabled;
         private TextBox[] txtPaths;
+        private NumericUpDown[] numVolumes;
         private Button[] btnBrowses;
         private Button[] btnTests;
         private TextBox txtToggleHotkey;
         private Keys _hotkeyValue = Keys.None;
         private CheckBox chkSoundOnEnabled;
         private TextBox txtSoundOnPath;
+        private NumericUpDown numSoundOnVolume;
         private Button btnSoundOnBrowse;
         private Button btnSoundOnTest;
         private CheckBox chkSoundOffEnabled;
         private TextBox txtSoundOffPath;
+        private NumericUpDown numSoundOffVolume;
         private Button btnSoundOffBrowse;
         private Button btnSoundOffTest;
         private Button btnOK;
@@ -37,7 +40,7 @@ namespace Pal98Timer
         private void InitializeComponent()
         {
             this.Text = "节点音效配置";
-            this.Size = new Size(600, 492);
+            this.Size = new Size(700, 492);
             this.StartPosition = FormStartPosition.CenterParent;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -56,9 +59,9 @@ namespace Pal98Timer
 
             // 说明标签
             Label lblHint = new Label();
-            lblHint.Text = "支持格式: wav, mp3。未配置时自动跳过。";
+            lblHint.Text = "支持格式: wav, mp3。音量 0-100，未配置时自动跳过。";
             lblHint.Location = new Point(220, 15);
-            lblHint.Size = new Size(350, 18);
+            lblHint.Size = new Size(440, 18);
             lblHint.ForeColor = SystemColors.GrayText;
             this.Controls.Add(lblHint);
 
@@ -66,12 +69,13 @@ namespace Pal98Timer
             Label line = new Label();
             line.BorderStyle = BorderStyle.Fixed3D;
             line.Location = new Point(15, 38);
-            line.Size = new Size(555, 2);
+            line.Size = new Size(655, 2);
             this.Controls.Add(line);
 
             // 每行配置
             chkEnabled = new CheckBox[rowCount];
             txtPaths = new TextBox[rowCount];
+            numVolumes = new NumericUpDown[rowCount];
             btnBrowses = new Button[rowCount];
             btnTests = new Button[rowCount];
 
@@ -97,14 +101,25 @@ namespace Pal98Timer
                 // 文件路径
                 txtPaths[i] = new TextBox();
                 txtPaths[i].Location = new Point(160, y);
-                txtPaths[i].Size = new Size(280, 22);
+                txtPaths[i].Size = new Size(300, 22);
                 txtPaths[i].ReadOnly = true;
                 this.Controls.Add(txtPaths[i]);
+
+                // 音量
+                numVolumes[i] = new NumericUpDown();
+                numVolumes[i].Location = new Point(465, y);
+                numVolumes[i].Size = new Size(55, 22);
+                numVolumes[i].Minimum = 0;
+                numVolumes[i].Maximum = 100;
+                numVolumes[i].Increment = 5;
+                numVolumes[i].Value = 100;
+                numVolumes[i].TextAlign = HorizontalAlignment.Right;
+                this.Controls.Add(numVolumes[i]);
 
                 // 浏览按钮
                 btnBrowses[i] = new Button();
                 btnBrowses[i].Text = "浏览";
-                btnBrowses[i].Location = new Point(445, y - 1);
+                btnBrowses[i].Location = new Point(525, y - 1);
                 btnBrowses[i].Size = new Size(55, 24);
                 int idx = i;
                 btnBrowses[i].Click += (s, e) => BrowseSoundFile(idx);
@@ -113,7 +128,7 @@ namespace Pal98Timer
                 // 试听按钮
                 btnTests[i] = new Button();
                 btnTests[i].Text = "试听";
-                btnTests[i].Location = new Point(505, y - 1);
+                btnTests[i].Location = new Point(585, y - 1);
                 btnTests[i].Size = new Size(55, 24);
                 btnTests[i].Click += (s, e) => TestPlaySound(idx);
                 this.Controls.Add(btnTests[i]);
@@ -126,7 +141,7 @@ namespace Pal98Timer
             Label line2 = new Label();
             line2.BorderStyle = BorderStyle.Fixed3D;
             line2.Location = new Point(15, y);
-            line2.Size = new Size(555, 2);
+            line2.Size = new Size(655, 2);
             this.Controls.Add(line2);
             y += 10;
 
@@ -181,20 +196,30 @@ namespace Pal98Timer
 
             txtSoundOnPath = new TextBox();
             txtSoundOnPath.Location = new Point(160, y);
-            txtSoundOnPath.Size = new Size(280, 22);
+            txtSoundOnPath.Size = new Size(300, 22);
             txtSoundOnPath.ReadOnly = true;
             this.Controls.Add(txtSoundOnPath);
 
+            numSoundOnVolume = new NumericUpDown();
+            numSoundOnVolume.Location = new Point(465, y);
+            numSoundOnVolume.Size = new Size(55, 22);
+            numSoundOnVolume.Minimum = 0;
+            numSoundOnVolume.Maximum = 100;
+            numSoundOnVolume.Increment = 5;
+            numSoundOnVolume.Value = 100;
+            numSoundOnVolume.TextAlign = HorizontalAlignment.Right;
+            this.Controls.Add(numSoundOnVolume);
+
             btnSoundOnBrowse = new Button();
             btnSoundOnBrowse.Text = "浏览";
-            btnSoundOnBrowse.Location = new Point(445, y - 1);
+            btnSoundOnBrowse.Location = new Point(525, y - 1);
             btnSoundOnBrowse.Size = new Size(55, 24);
             btnSoundOnBrowse.Click += (s, e) => BrowseToggleSoundFile(txtSoundOnPath, chkSoundOnEnabled);
             this.Controls.Add(btnSoundOnBrowse);
 
             btnSoundOnTest = new Button();
             btnSoundOnTest.Text = "试听";
-            btnSoundOnTest.Location = new Point(505, y - 1);
+            btnSoundOnTest.Location = new Point(585, y - 1);
             btnSoundOnTest.Size = new Size(55, 24);
             btnSoundOnTest.Click += (s, e) => TestPlayToggleSound(txtSoundOnPath);
             this.Controls.Add(btnSoundOnTest);
@@ -216,20 +241,30 @@ namespace Pal98Timer
 
             txtSoundOffPath = new TextBox();
             txtSoundOffPath.Location = new Point(160, y);
-            txtSoundOffPath.Size = new Size(280, 22);
+            txtSoundOffPath.Size = new Size(300, 22);
             txtSoundOffPath.ReadOnly = true;
             this.Controls.Add(txtSoundOffPath);
 
+            numSoundOffVolume = new NumericUpDown();
+            numSoundOffVolume.Location = new Point(465, y);
+            numSoundOffVolume.Size = new Size(55, 22);
+            numSoundOffVolume.Minimum = 0;
+            numSoundOffVolume.Maximum = 100;
+            numSoundOffVolume.Increment = 5;
+            numSoundOffVolume.Value = 100;
+            numSoundOffVolume.TextAlign = HorizontalAlignment.Right;
+            this.Controls.Add(numSoundOffVolume);
+
             btnSoundOffBrowse = new Button();
             btnSoundOffBrowse.Text = "浏览";
-            btnSoundOffBrowse.Location = new Point(445, y - 1);
+            btnSoundOffBrowse.Location = new Point(525, y - 1);
             btnSoundOffBrowse.Size = new Size(55, 24);
             btnSoundOffBrowse.Click += (s, e) => BrowseToggleSoundFile(txtSoundOffPath, chkSoundOffEnabled);
             this.Controls.Add(btnSoundOffBrowse);
 
             btnSoundOffTest = new Button();
             btnSoundOffTest.Text = "试听";
-            btnSoundOffTest.Location = new Point(505, y - 1);
+            btnSoundOffTest.Location = new Point(585, y - 1);
             btnSoundOffTest.Size = new Size(55, 24);
             btnSoundOffTest.Click += (s, e) => TestPlayToggleSound(txtSoundOffPath);
             this.Controls.Add(btnSoundOffTest);
@@ -240,14 +275,14 @@ namespace Pal98Timer
             y += 10;
             btnOK = new Button();
             btnOK.Text = "确定";
-            btnOK.Location = new Point(380, y);
+            btnOK.Location = new Point(500, y);
             btnOK.Size = new Size(75, 26);
             btnOK.Click += BtnOK_Click;
             this.Controls.Add(btnOK);
 
             btnCancel = new Button();
             btnCancel.Text = "取消";
-            btnCancel.Location = new Point(465, y);
+            btnCancel.Location = new Point(585, y);
             btnCancel.Size = new Size(75, 26);
             btnCancel.Click += (s, e) => this.DialogResult = DialogResult.Cancel;
             this.Controls.Add(btnCancel);
@@ -256,7 +291,7 @@ namespace Pal98Timer
             this.CancelButton = btnCancel;
 
             // 调整窗口高度
-            this.ClientSize = new Size(580, y + 40);
+            this.ClientSize = new Size(680, y + 40);
         }
 
         private void LoadCurrentConfig()
@@ -269,6 +304,7 @@ namespace Pal98Timer
             {
                 chkEnabled[i].Checked = sc.IsSoundEnabled(types[i]);
                 txtPaths[i].Text = sc.GetSoundPath(types[i]);
+                numVolumes[i].Value = sc.GetSoundVolume(types[i]);
             }
 
             // 加载快捷键
@@ -278,8 +314,10 @@ namespace Pal98Timer
             // 加载开关提示音
             chkSoundOnEnabled.Checked = sc.SoundEnabledOnEnabled;
             txtSoundOnPath.Text = sc.SoundEnabledOnPath;
+            numSoundOnVolume.Value = sc.SoundEnabledOnVolume;
             chkSoundOffEnabled.Checked = sc.SoundEnabledOffEnabled;
             txtSoundOffPath.Text = sc.SoundEnabledOffPath;
+            numSoundOffVolume.Value = sc.SoundEnabledOffVolume;
         }
 
         private void TxtToggleHotkey_KeyDown(object sender, KeyEventArgs e)
@@ -333,7 +371,7 @@ namespace Pal98Timer
                 MessageBox.Show("请先选择有效的音频文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            SoundConfig.ins.TestPlay(path);
+            SoundConfig.ins.TestPlay(path, (int)numVolumes[index].Value);
         }
 
         private void BrowseToggleSoundFile(TextBox txtPath, CheckBox chkEnable)
@@ -363,7 +401,8 @@ namespace Pal98Timer
                 MessageBox.Show("请先选择有效的音频文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            SoundConfig.ins.TestPlay(path);
+            int volume = txtPath == txtSoundOnPath ? (int)numSoundOnVolume.Value : (int)numSoundOffVolume.Value;
+            SoundConfig.ins.TestPlay(path, volume);
         }
 
         private void BtnOK_Click(object sender, EventArgs e)
@@ -374,16 +413,19 @@ namespace Pal98Timer
             SoundTriggerType[] types = (SoundTriggerType[])Enum.GetValues(typeof(SoundTriggerType));
             for (int i = 0; i < types.Length; i++)
             {
-                sc.SetSoundEnabled(types[i], chkEnabled[i].Checked);
                 sc.SetSoundPath(types[i], txtPaths[i].Text);
+                sc.SetSoundVolume(types[i], (int)numVolumes[i].Value);
+                sc.SetSoundEnabled(types[i], chkEnabled[i].Checked);
             }
 
             // 保存快捷键和开关提示音
             sc.ToggleHotkey = _hotkeyValue;
             sc.SoundEnabledOnEnabled = chkSoundOnEnabled.Checked;
             sc.SoundEnabledOnPath = txtSoundOnPath.Text;
+            sc.SoundEnabledOnVolume = (int)numSoundOnVolume.Value;
             sc.SoundEnabledOffEnabled = chkSoundOffEnabled.Checked;
             sc.SoundEnabledOffPath = txtSoundOffPath.Text;
+            sc.SoundEnabledOffVolume = (int)numSoundOffVolume.Value;
 
             sc.SaveConfig();
             this.DialogResult = DialogResult.OK;

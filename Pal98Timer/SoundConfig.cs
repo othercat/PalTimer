@@ -95,6 +95,7 @@ namespace Pal98Timer
 
         private Dictionary<SoundTriggerType, string> _soundPaths = new Dictionary<SoundTriggerType, string>();
         private Dictionary<SoundTriggerType, bool> _soundEnabled = new Dictionary<SoundTriggerType, bool>();
+        private Dictionary<SoundTriggerType, int> _soundVolumes = new Dictionary<SoundTriggerType, int>();
 
         public bool GlobalEnabled { get; set; } = true;
 
@@ -104,6 +105,10 @@ namespace Pal98Timer
         public string SoundEnabledOnPath { get; set; } = "";
         // 音效关闭提示音路径
         public string SoundEnabledOffPath { get; set; } = "";
+        // 音效打开提示音音量
+        public int SoundEnabledOnVolume { get; set; } = 100;
+        // 音效关闭提示音音量
+        public int SoundEnabledOffVolume { get; set; } = 100;
         // 是否播放打开提示音
         public bool SoundEnabledOnEnabled { get; set; } = false;
         // 是否播放关闭提示音
@@ -116,6 +121,23 @@ namespace Pal98Timer
         private readonly object _playLock = new object();
         private int _currentPlayingPriority = 0;
         private string _currentPlayingAlias = null;
+
+        private static int ClampVolume(int volume)
+        {
+            if (volume < 0) return 0;
+            if (volume > 100) return 100;
+            return volume;
+        }
+
+        private static int ParseVolume(string value, int fallback)
+        {
+            int volume;
+            if (int.TryParse(value, out volume))
+            {
+                return ClampVolume(volume);
+            }
+            return ClampVolume(fallback);
+        }
 
         /// <summary>
         /// 尝试用多种方式打开音频文件，返回成功的 alias，失败返回 null
@@ -156,10 +178,20 @@ namespace Pal98Timer
             return null;
         }
 
+        private void ApplyMciVolume(string alias, int volumePercent)
+        {
+            int mciVolume = ClampVolume(volumePercent) * 10;
+            int err = mciSendString("setaudio " + alias + " volume to " + mciVolume, null, 0, IntPtr.Zero);
+            if (err != 0)
+            {
+                System.Diagnostics.Debug.WriteLine("MCI setaudio volume failed: " + err);
+            }
+        }
+
         /// <summary>
         /// 使用 Windows Media Player COM 播放 MP3（MCI 不可用时的备用方案）
         /// </summary>
-        private bool PlayMp3WithWmp(string filePath)
+        private bool PlayMp3WithWmp(string filePath, int volumePercent)
         {
             try
             {
@@ -171,6 +203,8 @@ namespace Pal98Timer
                 }
 
                 object wmp = Activator.CreateInstance(wmpType);
+                object settings = null;
+                object controls = null;
                 try
                 {
                     // 设置 URL 属性
@@ -178,8 +212,15 @@ namespace Pal98Timer
                         System.Reflection.BindingFlags.SetProperty, null, wmp,
                         new object[] { filePath });
 
+                    // 设置音量（0-100）
+                    settings = wmpType.InvokeMember("settings",
+                        System.Reflection.BindingFlags.GetProperty, null, wmp, null);
+                    settings.GetType().InvokeMember("volume",
+                        System.Reflection.BindingFlags.SetProperty, null, settings,
+                        new object[] { ClampVolume(volumePercent) });
+
                     // 获取 controls 对象并调用 play
-                    object controls = wmpType.InvokeMember("controls",
+                    controls = wmpType.InvokeMember("controls",
                         System.Reflection.BindingFlags.GetProperty, null, wmp, null);
 
                     controls.GetType().InvokeMember("play",
@@ -199,11 +240,18 @@ namespace Pal98Timer
                         Thread.Sleep(100);
                     }
 
-                    Marshal.ReleaseComObject(controls);
                     return true;
                 }
                 finally
                 {
+                    if (controls != null)
+                    {
+                        Marshal.ReleaseComObject(controls);
+                    }
+                    if (settings != null)
+                    {
+                        Marshal.ReleaseComObject(settings);
+                    }
                     Marshal.ReleaseComObject(wmp);
                 }
             }
@@ -220,6 +268,7 @@ namespace Pal98Timer
             {
                 _soundPaths[type] = "";
                 _soundEnabled[type] = false;
+                _soundVolumes[type] = 100;
             }
             LoadConfig();
         }
@@ -287,13 +336,23 @@ namespace Pal98Timer
         {
             if (value.Contains("|"))
             {
-                string[] parts = value.Split(new char[] { '|' }, 2);
+                string[] parts = value.Split(new char[] { '|' }, 3);
                 _soundEnabled[type] = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
-                _soundPaths[type] = parts.Length > 1 ? parts[1] : "";
+                if (parts.Length >= 3)
+                {
+                    _soundVolumes[type] = ParseVolume(parts[1], 100);
+                    _soundPaths[type] = parts[2];
+                }
+                else
+                {
+                    _soundVolumes[type] = 100;
+                    _soundPaths[type] = parts.Length > 1 ? parts[1] : "";
+                }
             }
             else
             {
                 _soundEnabled[type] = !string.IsNullOrEmpty(value);
+                _soundVolumes[type] = 100;
                 _soundPaths[type] = value;
             }
         }
@@ -302,16 +361,26 @@ namespace Pal98Timer
         {
             if (value.Contains("|"))
             {
-                string[] parts = value.Split(new char[] { '|' }, 2);
+                string[] parts = value.Split(new char[] { '|' }, 3);
+                bool enabled = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
+                int volume = 100;
+                string path = parts.Length > 1 ? parts[1] : "";
+                if (parts.Length >= 3)
+                {
+                    volume = ParseVolume(parts[1], 100);
+                    path = parts[2];
+                }
                 if (isOn)
                 {
-                    SoundEnabledOnEnabled = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
-                    SoundEnabledOnPath = parts.Length > 1 ? parts[1] : "";
+                    SoundEnabledOnEnabled = enabled;
+                    SoundEnabledOnVolume = volume;
+                    SoundEnabledOnPath = path;
                 }
                 else
                 {
-                    SoundEnabledOffEnabled = parts[0].Equals("true", StringComparison.OrdinalIgnoreCase);
-                    SoundEnabledOffPath = parts.Length > 1 ? parts[1] : "";
+                    SoundEnabledOffEnabled = enabled;
+                    SoundEnabledOffVolume = volume;
+                    SoundEnabledOffPath = path;
                 }
             }
             else
@@ -319,11 +388,13 @@ namespace Pal98Timer
                 if (isOn)
                 {
                     SoundEnabledOnEnabled = !string.IsNullOrEmpty(value);
+                    SoundEnabledOnVolume = 100;
                     SoundEnabledOnPath = value;
                 }
                 else
                 {
                     SoundEnabledOffEnabled = !string.IsNullOrEmpty(value);
+                    SoundEnabledOffVolume = 100;
                     SoundEnabledOffPath = value;
                 }
             }
@@ -337,20 +408,21 @@ namespace Pal98Timer
                 using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
                 {
                     sw.WriteLine("# PalTimer 音效配置");
-                    sw.WriteLine("# 格式: 触发类型=启用|文件路径");
+                    sw.WriteLine("# 格式: 触发类型=启用|音量(0-100)|文件路径");
                     sw.WriteLine("# 支持格式: wav, mp3");
                     sw.WriteLine("# 启用: true/false");
                     sw.WriteLine();
                     sw.WriteLine("GlobalEnabled=" + (GlobalEnabled ? "true" : "false"));
                     sw.WriteLine("ToggleHotkey=" + ((int)ToggleHotkey));
-                    sw.WriteLine("SoundEnabledOn=" + (SoundEnabledOnEnabled ? "true" : "false") + "|" + (SoundEnabledOnPath ?? ""));
-                    sw.WriteLine("SoundEnabledOff=" + (SoundEnabledOffEnabled ? "true" : "false") + "|" + (SoundEnabledOffPath ?? ""));
+                    sw.WriteLine("SoundEnabledOn=" + (SoundEnabledOnEnabled ? "true" : "false") + "|" + ClampVolume(SoundEnabledOnVolume) + "|" + (SoundEnabledOnPath ?? ""));
+                    sw.WriteLine("SoundEnabledOff=" + (SoundEnabledOffEnabled ? "true" : "false") + "|" + ClampVolume(SoundEnabledOffVolume) + "|" + (SoundEnabledOffPath ?? ""));
                     sw.WriteLine();
                     foreach (SoundTriggerType type in Enum.GetValues(typeof(SoundTriggerType)))
                     {
                         string enabled = _soundEnabled[type] ? "true" : "false";
+                        string volume = ClampVolume(_soundVolumes[type]).ToString();
                         string path = _soundPaths[type] ?? "";
-                        sw.WriteLine(type.ToString() + "=" + enabled + "|" + path);
+                        sw.WriteLine(type.ToString() + "=" + enabled + "|" + volume + "|" + path);
                     }
                 }
             }
@@ -363,14 +435,18 @@ namespace Pal98Timer
         public void SetSoundPath(SoundTriggerType type, string path)
         {
             _soundPaths[type] = path;
-            if (!string.IsNullOrEmpty(path))
-                _soundEnabled[type] = true;
             SaveConfig();
         }
 
         public void SetSoundEnabled(SoundTriggerType type, bool enabled)
         {
             _soundEnabled[type] = enabled;
+            SaveConfig();
+        }
+
+        public void SetSoundVolume(SoundTriggerType type, int volume)
+        {
+            _soundVolumes[type] = ClampVolume(volume);
             SaveConfig();
         }
 
@@ -382,6 +458,11 @@ namespace Pal98Timer
         public bool IsSoundEnabled(SoundTriggerType type)
         {
             return _soundEnabled.ContainsKey(type) && _soundEnabled[type];
+        }
+
+        public int GetSoundVolume(SoundTriggerType type)
+        {
+            return _soundVolumes.ContainsKey(type) ? ClampVolume(_soundVolumes[type]) : 100;
         }
 
         /// <summary>
@@ -418,6 +499,7 @@ namespace Pal98Timer
 
             string path = GetSoundPath(type);
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            int volume = GetSoundVolume(type);
 
             // 优先级检查：中断低优先级音效
             lock (_playLock)
@@ -434,6 +516,7 @@ namespace Pal98Timer
                     alias = MciOpenFile(path);
                     if (alias != null)
                     {
+                        ApplyMciVolume(alias, volume);
                         lock (_playLock)
                         {
                             _currentPlayingAlias = alias;
@@ -486,7 +569,7 @@ namespace Pal98Timer
                     else if (Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                     {
                         // MCI 不可用时，尝试 WMP COM 播放 MP3
-                        PlayMp3WithWmp(path);
+                        PlayMp3WithWmp(path, volume);
                     }
                 }
                 catch (Exception ex)
@@ -510,9 +593,10 @@ namespace Pal98Timer
         /// <summary>
         /// 测试播放指定文件（用于配置窗口预览）
         /// </summary>
-        public void TestPlay(string filePath)
+        public void TestPlay(string filePath, int volumePercent = 100)
         {
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
+            volumePercent = ClampVolume(volumePercent);
 
             Thread playThread = new Thread(() =>
             {
@@ -522,6 +606,7 @@ namespace Pal98Timer
                     alias = MciOpenFile(filePath);
                     if (alias != null)
                     {
+                        ApplyMciVolume(alias, volumePercent);
                         int err = mciSendString("play " + alias, null, 0, IntPtr.Zero);
                         if (err != 0)
                         {
@@ -546,7 +631,7 @@ namespace Pal98Timer
                     else if (Path.GetExtension(filePath).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                     {
                         // MCI 不可用时，尝试 WMP COM 播放 MP3
-                        if (!PlayMp3WithWmp(filePath))
+                        if (!PlayMp3WithWmp(filePath, volumePercent))
                         {
                             MessageBox.Show("无法播放音频，请确认系统已安装 Windows Media Player 或相关解码器。\n路径: " + filePath,
                                 "播放失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -601,18 +686,22 @@ namespace Pal98Timer
             {
                 string path;
                 bool shouldPlay;
+                int volume;
                 if (enabled)
                 {
                     path = SoundEnabledOnPath;
                     shouldPlay = SoundEnabledOnEnabled;
+                    volume = SoundEnabledOnVolume;
                 }
                 else
                 {
                     path = SoundEnabledOffPath;
                     shouldPlay = SoundEnabledOffEnabled;
+                    volume = SoundEnabledOffVolume;
                 }
 
                 if (!shouldPlay || string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+                volume = ClampVolume(volume);
 
                 Thread playThread = new Thread(() =>
                 {
@@ -622,6 +711,7 @@ namespace Pal98Timer
                         alias = MciOpenFile(path);
                         if (alias != null)
                         {
+                            ApplyMciVolume(alias, volume);
                             mciSendString("play " + alias, null, 0, IntPtr.Zero);
                             Thread.Sleep(500);
                             StringBuilder status = new StringBuilder(128);
@@ -635,7 +725,7 @@ namespace Pal98Timer
                         }
                         else if (Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
                         {
-                            PlayMp3WithWmp(path);
+                            PlayMp3WithWmp(path, volume);
                         }
                     }
                     catch (Exception ex)
