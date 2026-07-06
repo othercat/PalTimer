@@ -816,6 +816,7 @@ namespace Pal98Timer
         public virtual void Reset()
         {
             AAction = "";
+            IsUIPause = false;
             MT.Reset();
             _hasCallPointEnd = false;
             PointSpanName = "";
@@ -1267,7 +1268,7 @@ namespace Pal98Timer
         private void _loadOnePlugin(string tpgPath)
         {
             TimerPluginPackageInfo ti = new TimerPluginPackageInfo(tpgPath);
-            if (!ti.Enable || !ti.IsOK || ti.Version!=TimerPlugin.Version.ToString()) return;
+            if (!ti.Enable || (!ti.IsOK && !TimerPluginPackageInfo.IsPluginAuthorizationDisabled()) || ti.Version!=TimerPlugin.Version.ToString()) return;
             //string dllpath = tpgPath + ".dll";
             //ti.SaveDll(dllpath);
             //System.Reflection.Assembly asm = System.Reflection.Assembly.LoadFrom(dllpath);
@@ -1550,6 +1551,7 @@ namespace Pal98Timer
         }
         public void Reset()
         {
+            _Status = 0;
             _CurrentTS = new TimeSpan(0);
             sw.Reset();
         }
@@ -1699,6 +1701,29 @@ namespace Pal98Timer
         public static string GetPluginDir()
         {
             return Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName) + "\\plugins\\";
+        }
+        public static string GetPluginAuthConfigPath()
+        {
+            return Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName) + "\\plugin_auth";
+        }
+        public static bool IsPluginAuthorizationDisabled()
+        {
+            try
+            {
+                string path = GetPluginAuthConfigPath();
+                if (!File.Exists(path)) return false;
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                foreach (string line in lines)
+                {
+                    string value = line.Trim();
+                    if (value == "allow_unsigned_plugins=1")
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
         public string FileName;
         public bool Enable

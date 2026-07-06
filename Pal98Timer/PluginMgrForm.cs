@@ -63,7 +63,7 @@ namespace Pal98Timer
             dr.Cells[1].Value = ti.Des;
             dr.Cells[2].Value = ti.Core;
             dr.Cells[3].Value = ti.Version;
-            dr.Cells[4].Value = (ti.IsOK ? "是" : "否");
+            dr.Cells[4].Value = (ti.IsOK ? "是" : (TimerPluginPackageInfo.IsPluginAuthorizationDisabled() ? "调试放行" : "否"));
 
             SetRowColor(dr, ti);
 
@@ -97,7 +97,7 @@ namespace Pal98Timer
             }
             else if (!ti.IsOK)
             {
-                fc = Color.Red;
+                fc = TimerPluginPackageInfo.IsPluginAuthorizationDisabled() ? Color.Green : Color.Red;
             }
             else if (ti.Enable)
             {

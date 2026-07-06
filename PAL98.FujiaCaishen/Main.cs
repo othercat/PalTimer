@@ -12,14 +12,17 @@ namespace PAL98.FujiaCaishen
         }
         private int money=0;
         private int ic = 0;
+        private bool hasYuhangArtifacts = false;
+        private bool isYuhangArtifactsFrozen = false;
         public override string GetResult()
         {
-            return "钱：" + money + "  道具：" + ic;
+            return "神器:" + (hasYuhangArtifacts ? "已收集" : "未收集") + " 钱" + money + " 道具" + ic + "　　";
         }
 
         private Dictionary<int, PlayerObject> Players = new Dictionary<int, PlayerObject>();
         public override void OnLoad()
         {
+            ResetYuhangArtifacts();
             Players.Add(PlayerObject.LiXY, new PlayerObject());
             Players.Add(PlayerObject.ZhaoLE, new PlayerObject());
             Players.Add(PlayerObject.LinYR, new PlayerObject());
@@ -32,19 +35,38 @@ namespace PAL98.FujiaCaishen
         {
         }
 
+        public override void OnEvent(string name, object data)
+        {
+            if (name == "Start" || name == "InitCheckPoints")
+            {
+                ResetYuhangArtifacts();
+            }
+        }
+
 
         private const int BaseAddrPTR = 0x428000;
         private const int MoneyOffset = 0x2B4;
+        private const int XOffset = 0x262;
+        private const int YOffset = 0x264;
+        private const int AreaOffset = 0x26A;
         private const int ItemSlotOffsetPTR = 0x768;
         private const int MemberCountOffset = 0x266;
         private const int AttrHeadOffsetPTR = 0x7a8;
         private const int TeamOffsetPTR = 0x4b8;
+        private const short ZijinDan = 0x111;
+        private const short EarthBall = 0x10B;
+        private const short LiushenDan = 0x11E;
+        private const short ClothBag = 0x10F;
         private short[] EUItems = new short[] { 0x104, 0x107, 0x108, 0x109, 0x10A, 0x10B };
+        private short[] YuhangArtifactItems = new short[] { ZijinDan, EarthBall, LiushenDan, ClothBag };
         public override void Flush(IntPtr handle, int PID, int BaseAddr32, long BaseAddr64)
         {
 
             int BaseAddr = Readm<int>(handle, BaseAddrPTR);
             money = Readm<int>(handle, BaseAddr + MoneyOffset);
+            short x = Readm<short>(handle, BaseAddr + XOffset);
+            short y = Readm<short>(handle, BaseAddr + YOffset);
+            short area = Readm<short>(handle, BaseAddr + AreaOffset);
             ///item
             int ItemSlotAddr= Readm<int>(handle, BaseAddr + ItemSlotOffsetPTR);
             Dictionary<short, short> Items = new Dictionary<short, short>();
@@ -79,7 +101,19 @@ namespace PAL98.FujiaCaishen
             for (int i = 0; i < MemberCount; ++i)
             {
                 short id = Readm<short>(handle, TeamAddr + 10 * i);
-                TeamMembers.Add(Players[id]);
+                PlayerObject player;
+                if (Players.TryGetValue(id, out player))
+                {
+                    TeamMembers.Add(player);
+                }
+            }
+            if (!isYuhangArtifactsFrozen)
+            {
+                UpdateYuhangArtifacts(Items, TeamMembers);
+                if (IsBeforeBoatPoint(area, x, y))
+                {
+                    isYuhangArtifactsFrozen = true;
+                }
             }
             int count = 0;
             if (TeamMembers != null && Items != null)
@@ -97,6 +131,45 @@ namespace PAL98.FujiaCaishen
                 }
             }
             ic = count;
+        }
+
+        private void UpdateYuhangArtifacts(Dictionary<short, short> items, List<PlayerObject> teamMembers)
+        {
+            foreach (short id in YuhangArtifactItems)
+            {
+                if (items.ContainsKey(id))
+                {
+                    hasYuhangArtifacts = true;
+                    return;
+                }
+            }
+
+            foreach (var mem in teamMembers)
+            {
+                foreach (short id in YuhangArtifactItems)
+                {
+                    if (mem.Equip_Ball == id)
+                    {
+                        hasYuhangArtifacts = true;
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void ResetYuhangArtifacts()
+        {
+            hasYuhangArtifacts = false;
+            isYuhangArtifactsFrozen = false;
+        }
+
+        private bool IsBeforeBoatPoint(short area, short x, short y)
+        {
+            return area == 6
+                && x >= 1072 - 16 * 2
+                && x <= 1072 + 16 * 2
+                && y >= 1080 - 8 * 2
+                && y <= 1080 + 8 * 2;
         }
 
 

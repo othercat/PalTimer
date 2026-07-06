@@ -45,6 +45,18 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
 
+2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
+
+2026-07-03 本轮未发布改动：最新计时器新增隐藏插件授权调试开关。默认仍要求 `.tpg` 签名有效；仅当 `Pal98Timer.exe` 同目录存在 `plugin_auth` 文件且包含精确行 `allow_unsigned_plugins=1` 时，加载器允许未签名插件，插件管理器签名列显示“调试放行”。新增 `.ai/plugin_authorization_bypass_regression_check.py`。该开关只用于本地调试/验证，不等同于 3.36.4 公开包可只换未签名插件发布。
+
+2026-07-03 本轮测试部署：已部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5`。覆盖 `Pal98Timer.exe` 与 `plugins\PAL98.FujiaShouji.tpg`，新增隐藏文件 `plugin_auth`。覆盖前备份到 `backup-before-yuhang-plugin-auth-20260703-135000`。新 `.tpg` 为本地调试未签名包，内嵌 DLL MD5 `2D5744D39ACA9E1490FB2E7860CC77CC`。
+
+2026-07-03 本轮测试部署补丁：为避免右下角换行，富甲插件输出从“余杭四大神器：状态  钱：N  道具：N”压缩为“四大神器：状态 钱：N 道具：N”。已重新部署 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5\plugins\PAL98.FujiaShouji.tpg`，覆盖前备份到 `backup-before-fujia-layout-fix-20260703-142010`。新 `.tpg` MD5 `4238F9E555614370C14168832736E2EB`，内嵌 DLL MD5 `1F4E6DC002A309E941583E239A6E39B9`。
+
+2026-07-03 本轮测试部署补丁：用户明确不能更新 exe 布局后，已回滚测试目录 `Pal98Timer.exe` 到 MD5 `F373BAE2D9FF2B8BFC99C4C1893A3ABD`，并撤销源码 `GEX.cs` 布局/no-wrap 改动。仅保留插件包文本紧凑方案，输出为“神器:状态 钱N 道具N”并在末尾加全角空格尝试把右对齐文本视觉上向中间移动。已重新部署 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5\plugins\PAL98.FujiaShouji.tpg`，覆盖前备份到 `backup-before-fujia-compact-text-20260703-144502`。新 `.tpg` MD5 `34DEC6BFD3561E6B1FF802965F83A849`，内嵌 DLL MD5 `930A9F19F9F863E7AF4779AC1923A67D`。
+
+2026-06-24 本轮未发布改动：修复暂停状态下重置计时器后，重开游戏仍默认暂停的问题；`TimerCore.Reset()` 现在清除 `IsUIPause`，`PTimer.Reset()` 同步把内部 `_Status` 复位为 stopped，确保 reset 后下一次 `MT.Start()` 可重新启动。新增 `.ai/reset_clears_ui_pause_regression_check.py` 覆盖该语义。
+
 2026-06-23 本轮未发布改动：节点音效配置支持每条音频独立音量，`sound_config.txt` 旧 `启用|文件路径` 格式保持可读，保存后升级为 `启用|音量|文件路径`；另在 `agent-setting` 新增 `pal98-paltimer-plugin-development` Skill，用于沉淀 PalTimer `.tpg` 插件/API/包格式知识。
 
 task-114 继续推进：gated automation snapshot file export、no-BOM fix、automation-only `--automation-non-sequential-splits` 与 `--automation-accept-pal98-base-title` 已合并到 `master`。真实 same-run gate v4 证明 route outcome / real 1x validation / same-run provenance / source gate 均通过，且两个 automation flag 已到达 PalTimer，但最后写出的 snapshot 仍停在 `core_loaded`，没有后续 `checkpoint` / `run_end` 证据。当前分支新增 automation-only 低频 tick snapshot：后台 tick 后每 500ms 最多刷新一次 automation snapshot，用于区分“线程未启动 / tick 未执行”和“tick 执行但 attach 或 split 未达成”；默认普通用户路径仍不变，不启动 HTTP/socket，不读取或输出 cloud ID，不使用 OBS socket，不改变 `OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory` / 节点判定。
@@ -61,6 +73,20 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 3. 已完成内容
+
+### 未发布（2026-07-03）
+- 富甲插件右下角显示新增“四大神器/神器”状态，测试包当前紧凑输出顺序为“神器:状态 钱N 道具N”
+- 计时开始、节点初始化和重置后清空四大神器观察状态；上船节点坐标触发时冻结为已收集或未收集
+- 目标物品 ID：紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`
+- 新增结构性回归脚本 `.ai/fujia_yuhang_artifacts_regression_check.py`
+- 最新计时器新增隐藏本地调试开关：exe 同目录 `plugin_auth` 文件包含 `allow_unsigned_plugins=1` 时允许未签名插件；默认无文件或内容不匹配时仍按原签名授权规则拒绝
+- 插件管理器对被隐藏开关放行的未签名插件显示“调试放行”，用于区分真实签名有效和本地调试放行
+- 新增结构性回归脚本 `.ai/plugin_authorization_bypass_regression_check.py`
+
+### 未发布（2026-06-24）
+- 修复暂停状态下重置计时器后，下一次游戏开始仍默认暂停的问题
+- `TimerCore.Reset()` 清除 `IsUIPause`，`PTimer.Reset()` 将 `_Status` 复位为 stopped，避免从暂停或运行状态 reset 后下一次 `Start()` 被旧状态阻挡
+- 新增结构性回归脚本 `.ai/reset_clears_ui_pause_regression_check.py`
 
 ### 未发布（2026-06-23）
 - 节点音效配置支持每条音频独立音量：5 类节点/通关提示音和音效开关的打开/关闭提示音均可设置 0-100 音量
@@ -230,6 +256,30 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ## 7. 最近改动
 
+### 2026-07-03 会话（富甲插件增加四大神器状态 + 插件授权本地调试开关）
+
+- 修改 `PAL98.FujiaCaishen/Main.cs`：`GetResult()` 在钱/道具前增加“四大神器：已收集/未收集”
+- 沿用富甲插件既有 `0x428000 -> BaseAddr + 0x768` 背包槽读取链路，检测紫金丹、土灵珠、六神丹、布包任意一个是否曾在上船前出现
+- 复刻 PAL98/PAL98DX9 的上船节点坐标条件：`Area=6`，`X=1072±32`，`Y=1080±16`，命中时冻结显示状态
+- 在 `OnLoad`、`Start`、`InitCheckPoints` 时清空状态；计时器重置路径会重载插件并重新初始化
+- 新增 `.ai/fujia_yuhang_artifacts_regression_check.py`，结构性检查输出前缀、目标物品 ID、上船冻结和重新统计语义
+- 修改 `Pal98Timer/TimerCore.cs`：`.tpg` 加载条件保留默认签名检查；仅当 exe 同目录隐藏文件 `plugin_auth` 包含 `allow_unsigned_plugins=1` 时，允许本地调试加载未签名插件
+- 修改 `Pal98Timer/PluginMgrForm.cs`：未签名插件被隐藏开关放行时，签名列显示“调试放行”，行色按可加载状态显示
+- 新增 `.ai/plugin_authorization_bypass_regression_check.py`，结构性检查隐藏文件名、精确开关行、默认拒绝和插件管理器提示
+- 测试部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5`：覆盖前备份 `Pal98Timer.exe` 和 `plugins\PAL98.FujiaShouji.tpg` 到 `backup-before-yuhang-plugin-auth-20260703-135000`，部署最新 `Pal98Timer.exe`、隐藏 `plugin_auth`、未签名调试版富甲 `.tpg`
+- 右下角排版补丁：输出文案压缩为“四大神器：状态 钱：N 道具：N”，重新部署前备份旧调试 `.tpg` 到 `backup-before-fujia-layout-fix-20260703-142010`
+- exe 布局改动已按用户要求回滚：不得改 `GEX.cs` 底部 `BL/BR` 布局；测试目录 exe 回滚为 MD5 `F373BAE2D9FF2B8BFC99C4C1893A3ABD`。当前只用插件输出“神器:状态 钱N 道具N”解决一行显示
+- 安全边界：未改 PAL98/PAL98DX9/PAL98UNHAPPY 节点判定、计时暂停语义、云/接力存读档或 OBS 展示；插件授权放行默认关闭，只对最新计时器 exe 生效，未修改 3.36.4 现有发布包
+
+### 2026-06-24 会话（reset 清除 UI 暂停状态）
+
+- 修改 `Pal98Timer/TimerCore.cs`：`TimerCore.Reset()` 清除 `IsUIPause`，避免 F9/UI 暂停后重置计时器仍把下一局判成 UI 暂停
+- 修改 `Pal98Timer/TimerCore.cs`：`PTimer.Reset()` 把 `_Status` 复位为 `0`，确保从运行或暂停状态 reset 后下一次 `Start()` 都能重新启动 stopwatch
+- 新增 `.ai/reset_clears_ui_pause_regression_check.py`，结构性检查 reset 会清 UI 暂停，并让秒表处于可重启状态
+- 更新 `README.md`，在未发布说明中记录 reset 暂停残留修复
+- 安全边界：未修改 PAL98/PAL98DX9/PAL98UNHAPPY 的内存地址、`OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`、节点判定、云/接力存读档后保持暂停语义或 OBS 展示
+- 验证：新增 reset 回归、云/接力暂停回归、香蕉树暂停回归、权限提示回归、`git diff --check`、`Pal98Timer.sln Release|x64` 构建通过；构建仅有既有 warning。`.ai/automation_snapshot_export_regression_check.py` 当前仍会因 automation tick interval 已改为可配置、脚本仍匹配旧固定 500ms 字符串而失败，本轮未改 automation 脚本。
+
 ### 2026-06-23 会话（节点音效独立音量 + PalTimer 插件 Skill）
 
 - 修改 `Pal98Timer/SoundConfig.cs`：新增每个节点音效触发类型的音量配置，打开/关闭提示音也各自有音量；MCI 播放调用 `setaudio` 设置 0-1000 音量，WMP COM 回退设置 `settings.volume`
@@ -378,6 +428,83 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-07-03 本轮补充验证：
+
+```bash
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\plugin_authorization_bypass_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\fujia_yuhang_artifacts_regression_check.py
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" PAL98.FujiaCaishen\PAL98.FujiaCaishen.csproj -p:Configuration=Release -p:Platform=AnyCPU -verbosity:minimal
+git diff --check
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
+```
+
+```text
+PASS: plugin authorization bypass remains hidden and explicit.
+PASS: Fujia plugin tracks and freezes Yuhang artifact collection.
+PAL98.FujiaCaishen Release|AnyCPU build succeeded.
+git diff --check passed.
+Pal98Timer.sln Release|x64 build succeeded; warnings are existing unused-variable / obsolete API warnings.
+```
+
+插件包签名状态：
+
+```text
+3.36.4 运行包原插件：D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.4\plugins\PAL98.FujiaShouji.tpg
+原包 ClassName=PAL98.FujiaCaishen, Version=1, EnableByte=100, SignatureValid=True, EmbeddedDllMD5=A02E941A38166DB7BFB9D7C7E236108A
+新 DLL：PAL98.FujiaCaishen\bin\Release\PAL98.FujiaCaishen.dll
+新 DLL MD5=2D5744D39ACA9E1490FB2E7860CC77CC
+结论：未修改的 3.36.4 要求签名有效 `.tpg`，不能直接用未签名 DLL 替换发布；需要原作者/授权签名工具重新生成同名 `PAL98.FujiaShouji.tpg`。
+```
+
+3.36.5 测试目录部署状态：
+
+```text
+部署目录：D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5
+备份目录：D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.5\backup-before-yuhang-plugin-auth-20260703-135000
+新 Pal98Timer.exe MD5=F373BAE2D9FF2B8BFC99C4C1893A3ABD
+首次调试 PAL98.FujiaShouji.tpg MD5=D14F41279DC152AFA76CBDF4EB25F8D4
+排版修正版 PAL98.FujiaShouji.tpg MD5=4238F9E555614370C14168832736E2EB
+紧凑插件文本修正版 PAL98.FujiaShouji.tpg MD5=34DEC6BFD3561E6B1FF802965F83A849
+原 Pal98Timer.exe 备份 MD5=272BD78B112C6A5E2C6A5F788C21130C
+原 PAL98.FujiaShouji.tpg 备份 MD5=0175E530188EA072DD19463269CC3300
+plugin_auth 已设为 Hidden，内容为 allow_unsigned_plugins=1
+首次调试 PAL98.FujiaShouji.tpg：EnableByte=100, ClassName=PAL98.FujiaCaishen, Version=1, Description=富甲收集规则-右下-四大神器调试, Sign=debug-unsigned, EmbeddedDllMD5=2D5744D39ACA9E1490FB2E7860CC77CC
+排版修正版 PAL98.FujiaShouji.tpg：EnableByte=100, ClassName=PAL98.FujiaCaishen, Version=1, Description=富甲收集规则-右下-四大神器调试, Sign=debug-unsigned, EmbeddedDllMD5=1F4E6DC002A309E941583E239A6E39B9
+紧凑插件文本修正版 PAL98.FujiaShouji.tpg：EnableByte=100, ClassName=PAL98.FujiaCaishen, Version=1, Description=富甲收集规则-右下-神器紧凑调试, Sign=debug-unsigned, EmbeddedDllMD5=930A9F19F9F863E7AF4779AC1923A67D
+```
+
+待补充实机验证：
+
+```text
+实机 PAL98DX9/PAL98 富甲插件显示：开局“四大神器：未收集 钱：0 道具：0”；上船前拿到目标物品后，上船冻结“已收集”；未拿到则冻结“未收集”；重置后重新显示未收集并重新统计。
+```
+
+2026-06-24 本轮补充验证：
+
+```bash
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\reset_clears_ui_pause_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\cloud_save_load_pause_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\banana_pause_resume_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal_open_process_permission_regression_check.py
+git diff --check
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
+```
+
+```text
+PASS: reset clears UI pause and leaves the timer restartable.
+PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
+PASS: all PAL98 kernels clear existing anti-cheat pause before HasStartGame.
+PASS: PAL98 kernels show the short elevated Pal.exe message and close PalTimer after acknowledgement.
+git diff --check passed.
+Release|x64 build succeeded; warnings are existing unused-variable / obsolete API warnings.
+```
+
+本轮未作为通过项的既有脚本：
+
+```text
+.ai/automation_snapshot_export_regression_check.py 当前失败在 TimerCore AutoTest envelope / gated tick snapshot 字符串匹配；源码已使用 AutomationArgs.Current.SnapshotIntervalMilliseconds 可配置 interval，而脚本仍匹配旧固定 500ms 形态。该失败与本轮 reset 修复无关，若继续 automation snapshot 工作应单独更新脚本。
+```
 
 2026-06-23 本轮补充验证：
 
