@@ -45,6 +45,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
 
+2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
+
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
 
 2026-07-03 本轮未发布改动：最新计时器新增隐藏插件授权调试开关。默认仍要求 `.tpg` 签名有效；仅当 `Pal98Timer.exe` 同目录存在 `plugin_auth` 文件且包含精确行 `allow_unsigned_plugins=1` 时，加载器允许未签名插件，插件管理器签名列显示“调试放行”。新增 `.ai/plugin_authorization_bypass_regression_check.py`。该开关只用于本地调试/验证，不等同于 3.36.4 公开包可只换未签名插件发布。

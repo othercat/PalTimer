@@ -1300,16 +1300,10 @@ namespace Pal98Timer
                     }
                     
                     // 检查是否包含DX9标识
-                    bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) ||
-                        (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("新补丁")) ||
-                        (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("(v")) ||
-                                       (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
+                    bool hasDX9Title = IsDx9WindowTitle(windowTitle);
                     
                     // 检查是否是基础游戏标题（PAL.DLL还未修改标题，或VB4初始窗口）
-                    bool isBaseGameTitle = windowTitle.Contains("仙剑奇侠传") || 
-                                          windowTitle.StartsWith("PAL98") || 
-                                          windowTitle.StartsWith("Pal98") ||
-                                          windowTitle.Equals("sdf", StringComparison.OrdinalIgnoreCase);  // VB4初始窗口
+                    bool isBaseGameTitle = IsBaseGameWindowTitle(windowTitle);
                     RecordTitleProbe("title_checked", res[0], windowTitle, hasDX9Title, isBaseGameTitle, false);
                     
                     if (hasDX9Title || ShouldAcceptAutomationBaseTitle(isBaseGameTitle))
@@ -1475,8 +1469,7 @@ namespace Pal98Timer
                             User32.GetWindowText(tempHandle, sb, sb.Capacity);
                             string windowTitle = sb.ToString();
 
-                            bool hasDX9Title = (windowTitle.Contains("仙剑奇侠传") && windowTitle.Contains("DX9移植版")) ||
-                                               (windowTitle.Contains("仙剑") && windowTitle.Contains("DX9"));
+                            bool hasDX9Title = IsDx9WindowTitle(windowTitle);
 
                             if (hasDX9Title)
                             {
@@ -1580,6 +1573,43 @@ namespace Pal98Timer
 
             string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
             return "无法打开 Pal.exe 进程" + errorText + "。普通速通和 pal98autotest 自动化测试建议让 PAL.exe 和 PalTimer 都用普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
+        }
+
+        private static bool ContainsPalChineseTitleIdentity(string windowTitle)
+        {
+            return !string.IsNullOrEmpty(windowTitle) &&
+                   (windowTitle.Contains("仙剑奇侠传") || windowTitle.Contains("仙劍奇俠傳"));
+        }
+
+        private static bool IsPalDx9EnglishTitle(string windowTitle)
+        {
+            if (string.IsNullOrWhiteSpace(windowTitle))
+            {
+                return false;
+            }
+
+            string normalizedTitle = windowTitle.TrimStart();
+            return normalizedTitle.StartsWith("PAL98DX9", StringComparison.OrdinalIgnoreCase) &&
+                   normalizedTitle.Contains("(v");
+        }
+
+        private static bool IsDx9WindowTitle(string windowTitle)
+        {
+            bool hasChineseIdentity = ContainsPalChineseTitleIdentity(windowTitle);
+            return (hasChineseIdentity &&
+                    (windowTitle.Contains("DX9移植版") ||
+                     windowTitle.Contains("新补丁") ||
+                     windowTitle.Contains("新補丁") ||
+                     windowTitle.Contains("(v"))) ||
+                   IsPalDx9EnglishTitle(windowTitle);
+        }
+
+        private static bool IsBaseGameWindowTitle(string windowTitle)
+        {
+            return ContainsPalChineseTitleIdentity(windowTitle) ||
+                   (!string.IsNullOrEmpty(windowTitle) &&
+                    (windowTitle.StartsWith("PAL98", StringComparison.OrdinalIgnoreCase) ||
+                     windowTitle.Equals("sdf", StringComparison.OrdinalIgnoreCase)));  // VB4初始窗口
         }
 
         private bool ShouldAcceptAutomationBaseTitle(bool isBaseGameTitle)
