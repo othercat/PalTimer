@@ -1,0 +1,1 @@
+../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_DX9_PRIVATE_MOD_RUNTIME_V4/SUPERSEDED_GOALS.md
