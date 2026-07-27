@@ -39,10 +39,10 @@ foreach ($needle in @(
     'internal const int DaliReturnArea = 204;',
     'internal const int DaliReturnX = 1168;',
     'internal const int DaliReturnY = 760;',
-    'internal const int DaliReturnCountThreshold = 1;',
+    'internal const int DaliReturnRequiredCount = 1;',
     'IsManualTriggerPosition(',
     'waterSpiritPearlCount > NormalExchangeBaselineCount',
-    'waterSpiritPearlCount > DaliReturnCountThreshold'
+    'waterSpiritPearlCount >= DaliReturnRequiredCount'
 )) {
     Assert-Contains -Text $helper -Needle $needle -Area "Pal98WaterSpiritPearlSplit.cs"
 }
@@ -311,16 +311,25 @@ namespace Pal98Timer
                 Pal98WaterSpiritPearlGate.DaliReturnY,
                 0,
                 N + 1);
-            Assert(daliGate.CanComplete(), "fixed Dali return position plus count greater than one did not complete");
+            Assert(daliGate.CanComplete(), "fixed Dali return position plus a present pearl did not complete");
 
-            Pal98WaterSpiritPearlGate daliThresholdGate = new Pal98WaterSpiritPearlGate();
-            daliThresholdGate.ObserveGameState(
+            Pal98WaterSpiritPearlGate daliMissingItemGate = new Pal98WaterSpiritPearlGate();
+            daliMissingItemGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.DaliReturnArea,
                 Pal98WaterSpiritPearlGate.DaliReturnX,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
                 0,
-                Pal98WaterSpiritPearlGate.DaliReturnCountThreshold);
-            Assert(!daliThresholdGate.CanComplete(), "Dali return position completed with only one pearl");
+                Pal98WaterSpiritPearlGate.DaliReturnRequiredCount - 1);
+            Assert(!daliMissingItemGate.CanComplete(), "Dali return position completed without a pearl");
+
+            Pal98WaterSpiritPearlGate daliRestartGate = new Pal98WaterSpiritPearlGate();
+            daliRestartGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.DaliReturnArea,
+                Pal98WaterSpiritPearlGate.DaliReturnX,
+                Pal98WaterSpiritPearlGate.DaliReturnY,
+                0,
+                Pal98WaterSpiritPearlGate.DaliReturnRequiredCount);
+            Assert(daliRestartGate.CanComplete(), "restart-normalized count 1 did not complete at fixed Dali position");
 
             Pal98WaterSpiritPearlGate daliOutsideGate = new Pal98WaterSpiritPearlGate();
             daliOutsideGate.ObserveGameState(
@@ -328,14 +337,14 @@ namespace Pal98Timer
                 Pal98WaterSpiritPearlGate.DaliReturnX + 1,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
                 0,
-                Pal98WaterSpiritPearlGate.DaliReturnCountThreshold + 1);
+                Pal98WaterSpiritPearlGate.DaliReturnRequiredCount);
             Assert(!daliOutsideGate.CanComplete(), "Dali return gate accepted an adjacent actual-map position");
             daliOutsideGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.DaliReturnArea + 1,
                 Pal98WaterSpiritPearlGate.DaliReturnX,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
                 0,
-                Pal98WaterSpiritPearlGate.DaliReturnCountThreshold + 1);
+                Pal98WaterSpiritPearlGate.DaliReturnRequiredCount);
             Assert(!daliOutsideGate.CanComplete(), "Dali return coordinates completed in the wrong scene");
 
             Pal98WaterSpiritPearlGate daliViewportGate = new Pal98WaterSpiritPearlGate();
@@ -344,7 +353,7 @@ namespace Pal98Timer
                 Pal98WaterSpiritPearlGate.DaliReturnX - 160,
                 Pal98WaterSpiritPearlGate.DaliReturnY - 112,
                 0,
-                Pal98WaterSpiritPearlGate.DaliReturnCountThreshold + 1);
+                Pal98WaterSpiritPearlGate.DaliReturnRequiredCount);
             Assert(!daliViewportGate.CanComplete(), "viewport-relative Dali coordinates completed the split");
 
             daliGate.Reset();
@@ -354,7 +363,7 @@ namespace Pal98Timer
             {
                 ValidateRealPositionEvidence(File.ReadAllBytes(args[0]));
                 Console.WriteLine(
-                    "REAL: normal=area {0}/child ({1},{2})/trigger mode {3}, Dali=area {4}/fixed ({5},{6})/count > {7}",
+                    "REAL: normal=area {0}/child ({1},{2})/trigger mode {3}, Dali=area {4}/fixed ({5},{6})/count >= {7}",
                     Pal98WaterSpiritPearlGate.NormalExchangeArea,
                     Pal98WaterSpiritPearlGate.NormalExchangeObjectX,
                     Pal98WaterSpiritPearlGate.NormalExchangeObjectY,
@@ -362,10 +371,10 @@ namespace Pal98Timer
                     Pal98WaterSpiritPearlGate.DaliReturnArea,
                     Pal98WaterSpiritPearlGate.DaliReturnX,
                     Pal98WaterSpiritPearlGate.DaliReturnY,
-                    Pal98WaterSpiritPearlGate.DaliReturnCountThreshold);
+                    Pal98WaterSpiritPearlGate.DaliReturnRequiredCount);
             }
 
-            Console.WriteLine("PASS: arbitrary N, child-Li manual trigger points, trigger-mode-2 boundary, re-entry baseline, fixed Dali actual coordinate with count > 1, reset, and zero script/resource runtime dependency.");
+            Console.WriteLine("PASS: arbitrary N, child-Li manual trigger points, trigger-mode-2 boundary, re-entry baseline, fixed Dali actual coordinate with restart-normalized count 1, reset, and zero script/resource runtime dependency.");
             return 0;
         }
     }

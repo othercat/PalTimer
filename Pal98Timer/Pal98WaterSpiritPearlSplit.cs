@@ -14,7 +14,7 @@
         internal const int DaliReturnArea = 204;
         internal const int DaliReturnX = 1168;
         internal const int DaliReturnY = 760;
-        internal const int DaliReturnCountThreshold = 1;
+        internal const int DaliReturnRequiredCount = 1;
 
         private bool IsInNormalExchangeTriggerRange;
         private int NormalExchangeBaselineCount;
@@ -54,7 +54,7 @@
             if (area == DaliReturnArea &&
                 actualX == DaliReturnX &&
                 actualY == DaliReturnY &&
-                waterSpiritPearlCount > DaliReturnCountThreshold)
+                waterSpiritPearlCount >= DaliReturnRequiredCount)
             {
                 DaliReturnPositionSeen = true;
             }
