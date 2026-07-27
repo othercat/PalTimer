@@ -14,8 +14,7 @@
         internal const int DaliReturnArea = 204;
         internal const int DaliReturnX = 1168;
         internal const int DaliReturnY = 760;
-        internal const int DaliReturnXRadius = 96;
-        internal const int DaliReturnYRadius = 48;
+        internal const int DaliReturnCountThreshold = 1;
 
         private bool IsInNormalExchangeTriggerRange;
         private int NormalExchangeBaselineCount;
@@ -52,15 +51,10 @@
                 NormalExchangeIncreaseSeen = true;
             }
 
-            if (waterSpiritPearlCount > 0 && IsInsideRange(
-                area,
-                actualX,
-                actualY,
-                DaliReturnArea,
-                DaliReturnX,
-                DaliReturnY,
-                DaliReturnXRadius,
-                DaliReturnYRadius))
+            if (area == DaliReturnArea &&
+                actualX == DaliReturnX &&
+                actualY == DaliReturnY &&
+                waterSpiritPearlCount > DaliReturnCountThreshold)
             {
                 DaliReturnPositionSeen = true;
             }
@@ -161,22 +155,6 @@
                 (x1 % 32 == 0) == (x2 % 32 == 0);
         }
 
-        private static bool IsInsideRange(
-            int area,
-            int x,
-            int y,
-            int targetArea,
-            int targetX,
-            int targetY,
-            int xRadius,
-            int yRadius)
-        {
-            return area == targetArea &&
-                x >= targetX - xRadius &&
-                x <= targetX + xRadius &&
-                y >= targetY - yRadius &&
-                y <= targetY + yRadius;
-        }
     }
 
     internal sealed class Pal98WaterSpiritPearlSplit
