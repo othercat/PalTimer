@@ -47,6 +47,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮正式把界面当前版本、程序集版本和文件版本统一升级为 `3.36.6`，并把 README 中截至当前的未发布内容归档为 v3.36.6 更新说明。VS2026 / MSBuild 18 `Release|x64` 重建成功；生成的 `Pal98Timer.exe` 程序集版本为 `3.36.6.0`，文件版本与产品版本均为 `3.36.6`，SHA-256 为 `773B808E3153BBF299E44E3BEB18E9D33897B50E92AA29ADD9B85A89FA533CBF`。本轮只处理版本与发布文档，没有重新部署实机目录，也没有改变计时、节点、内存读取或存档语义。
 
+2026-07-27 v3.36.6 正式版本部署：已把上述 `Release|x64` 主程序部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe`。覆盖前目标版本为 `3.36.5`、SHA-256 为 `F505E6B092A99999C4B5527101D6B626D818439AD40B8E3C1DE99B401566142D`，备份位于 `backup-before-v3366-release-20260727-132018\Pal98Timer.exe` 且哈希一致；部署后程序集版本为 `3.36.6.0`，文件/产品版本为 `3.36.6`，目标 SHA-256 为 `773B808E3153BBF299E44E3BEB18E9D33897B50E92AA29ADD9B85A89FA533CBF`，与来源一致。仅覆盖主 EXE，未改配置、成绩、插件或存档；部署时 PAL.exe 和 Pal98Timer 均未运行，尚待玩家启动后完成大理水灵珠节点实机验证。
+
 2026-07-27 本轮改动已通过提交 `4727096` 推送到 `origin/master`：不欢乐模式 `CoreName` 从历史中文值统一为 README 已公开的 `PAL98UNHAPPY`，旧最佳线保留式迁移。PAL98DX9/PAL98UNHAPPY 新 SRPG 现在携带 `PalDrawCard.FlyingFlagAll.v1.bin` 完整快照与 SHA-256；明确记录源 sidecar 不存在，旧 SRPG 不处理目标 sidecar，导入前保留时间戳备份并要求重启 PAL.exe。服务器继续不透明存取 `.bin`，无需修改。新增两项回归脚本和规则文档。
 
 2026-07-27 本轮改动：PAL98、PAL98DX9、PAL98UNHAPPY 的接力/云 SRPG 改为恢复 `TimerStr.TotalMonsterCount` 完整快照；旧 SRPG 缺少字段时保留本地撞怪数。服务器和 `PALCloud.dll` 不变。新增 `.ai/srpg_monster_count_regression_check.ps1`，新/旧字段行为 harness、既有 sidecar 兼容检查和 VS2026 `Release|x64` 构建均通过。
