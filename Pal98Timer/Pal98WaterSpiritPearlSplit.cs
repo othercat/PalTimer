@@ -7,15 +7,12 @@ namespace Pal98Timer
 {
     internal sealed class Pal98DialogueMarkers
     {
-        internal ushort CanonicalWaterPearlDialogueId;
-        internal int CanonicalWaterPearlScriptIndex;
         internal ushort DaliReturnDialogueId;
         internal int DaliReturnScriptIndex;
     }
 
     internal static class Pal98DialogueMarkerResolver
     {
-        internal const string CanonicalWaterPearlText = "得到水灵珠";
         internal const string DaliReturnText = "糟．．希望灵儿不会有事才好";
 
         internal static Pal98DialogueMarkers Resolve(string sssPath, string messagePath)
@@ -87,13 +84,6 @@ namespace Pal98Timer
                 936,
                 EncoderFallback.ExceptionFallback,
                 DecoderFallback.ExceptionFallback);
-            ushort canonicalDialogueId = FindUniqueDialogueId(
-                sss,
-                messages,
-                dialogueOffsetsStart,
-                dialogueCount,
-                CanonicalWaterPearlText,
-                gbk);
             ushort daliReturnDialogueId = FindUniqueDialogueId(
                 sss,
                 messages,
@@ -101,20 +91,8 @@ namespace Pal98Timer
                 dialogueCount,
                 DaliReturnText,
                 gbk);
-            if (canonicalDialogueId == daliReturnDialogueId)
-            {
-                throw new InvalidDataException("水灵珠的两个剧情标记解析到了同一条对话。");
-            }
-
             return new Pal98DialogueMarkers
             {
-                CanonicalWaterPearlDialogueId = canonicalDialogueId,
-                CanonicalWaterPearlScriptIndex = FindUniqueScriptReference(
-                    sss,
-                    scriptStart,
-                    scriptLength,
-                    canonicalDialogueId,
-                    CanonicalWaterPearlText),
                 DaliReturnDialogueId = daliReturnDialogueId,
                 DaliReturnScriptIndex = FindUniqueScriptReference(
                     sss,
@@ -200,46 +178,92 @@ namespace Pal98Timer
 
     internal sealed class Pal98WaterSpiritPearlGate
     {
-        private readonly ushort CanonicalWaterPearlDialogueId;
+        // Traditional SSS.MKF: event 4663 runs auto script 0x87DE, which moves
+        // child Li to tile (32, 102, 1) => world coordinate (1040, 1640).
+        // Search-normal mode 2 is fully covered by PalTimer's existing r=4 bounds.
+        internal const int NormalExchangeArea = 267;
+        internal const int NormalExchangeX = 1040;
+        internal const int NormalExchangeY = 1640;
+        internal const int NormalExchangeXRadius = 64;
+        internal const int NormalExchangeYRadius = 32;
+
         private readonly ushort DaliReturnDialogueId;
-        private bool MarkerSeen;
-        private bool MarkerExited;
+        private readonly bool HasDaliReturnDialogue;
+        private bool IsInNormalExchangeRegion;
+        private int NormalExchangeBaselineCount;
+        private bool NormalExchangeIncreaseSeen;
+        private bool DaliMarkerSeen;
+        private bool DaliMarkerExited;
 
         internal Pal98WaterSpiritPearlGate(Pal98DialogueMarkers markers)
         {
-            if (markers == null)
+            if (markers != null)
             {
-                throw new ArgumentNullException("markers");
+                DaliReturnDialogueId = markers.DaliReturnDialogueId;
+                HasDaliReturnDialogue = true;
             }
-            CanonicalWaterPearlDialogueId = markers.CanonicalWaterPearlDialogueId;
-            DaliReturnDialogueId = markers.DaliReturnDialogueId;
+        }
+
+        internal void ObserveGameState(int area, int x, int y, int waterSpiritPearlCount)
+        {
+            bool inNormalExchangeRegion = area == NormalExchangeArea &&
+                x >= NormalExchangeX - NormalExchangeXRadius &&
+                x <= NormalExchangeX + NormalExchangeXRadius &&
+                y >= NormalExchangeY - NormalExchangeYRadius &&
+                y <= NormalExchangeY + NormalExchangeYRadius;
+
+            if (!inNormalExchangeRegion)
+            {
+                IsInNormalExchangeRegion = false;
+                return;
+            }
+
+            if (!IsInNormalExchangeRegion)
+            {
+                IsInNormalExchangeRegion = true;
+                NormalExchangeBaselineCount = waterSpiritPearlCount;
+                return;
+            }
+
+            if (waterSpiritPearlCount > NormalExchangeBaselineCount)
+            {
+                NormalExchangeIncreaseSeen = true;
+            }
         }
 
         internal void ObserveScriptState(ulong scriptState)
         {
+            if (!HasDaliReturnDialogue)
+            {
+                return;
+            }
+
             ushort lowWord = unchecked((ushort)(scriptState & 0xFFFF));
             ushort dialogueId = unchecked((ushort)((scriptState >> 16) & 0xFFFF));
-            bool isTargetMarker = lowWord == 0xFFFF &&
-                (dialogueId == CanonicalWaterPearlDialogueId || dialogueId == DaliReturnDialogueId);
-            if (isTargetMarker)
+            bool isDaliMarker = lowWord == 0xFFFF && dialogueId == DaliReturnDialogueId;
+            if (isDaliMarker)
             {
-                MarkerSeen = true;
+                DaliMarkerSeen = true;
             }
-            else if (MarkerSeen)
+            else if (DaliMarkerSeen)
             {
-                MarkerExited = true;
+                DaliMarkerExited = true;
             }
         }
 
         internal bool CanComplete(int waterSpiritPearlCount)
         {
-            return MarkerExited && waterSpiritPearlCount > 0;
+            return NormalExchangeIncreaseSeen ||
+                (DaliMarkerExited && waterSpiritPearlCount > 0);
         }
 
         internal void Reset()
         {
-            MarkerSeen = false;
-            MarkerExited = false;
+            IsInNormalExchangeRegion = false;
+            NormalExchangeBaselineCount = 0;
+            NormalExchangeIncreaseSeen = false;
+            DaliMarkerSeen = false;
+            DaliMarkerExited = false;
         }
     }
 
@@ -310,6 +334,7 @@ namespace Pal98Timer
 
             Detach();
             AttachedProcessId = processId;
+            Gate = new Pal98WaterSpiritPearlGate(null);
             try
             {
                 if (processId < 0 || string.IsNullOrEmpty(gameDirectory))
@@ -326,15 +351,26 @@ namespace Pal98Timer
             }
             catch (Exception ex)
             {
-                Gate = null;
                 ResourcesResolved = false;
                 ResolutionError = ex.Message;
             }
         }
 
-        internal void Observe(IntPtr processHandle, int baseAddress)
+        internal void Observe(
+            IntPtr processHandle,
+            int baseAddress,
+            int area,
+            int x,
+            int y,
+            int waterSpiritPearlCount)
         {
-            if (!ResourcesResolved || Gate == null)
+            if (Gate == null)
+            {
+                return;
+            }
+
+            Gate.ObserveGameState(area, x, y, waterSpiritPearlCount);
+            if (!ResourcesResolved)
             {
                 return;
             }
@@ -348,7 +384,7 @@ namespace Pal98Timer
 
         internal bool CanComplete(int waterSpiritPearlCount)
         {
-            return ResourcesResolved && Gate != null && Gate.CanComplete(waterSpiritPearlCount);
+            return Gate != null && Gate.CanComplete(waterSpiritPearlCount);
         }
 
         internal void ResetRouteState()

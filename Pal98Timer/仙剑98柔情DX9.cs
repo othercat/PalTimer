@@ -1083,7 +1083,13 @@ namespace Pal98Timer
                 try
                 {
                     FlushGameObject();
-                    WaterSpiritPearlSplit.Observe(PalHandle, GameObj.BaseAddr);
+                    WaterSpiritPearlSplit.Observe(
+                        PalHandle,
+                        GameObj.BaseAddr,
+                        GameObj.Area,
+                        GameObj.X,
+                        GameObj.Y,
+                        GameObj.GetItemCount(0x109));
                 }
                 catch (Exception ex)
                 {
@@ -1731,7 +1737,7 @@ namespace Pal98Timer
             WaterSpiritPearlSplit.Attach(PID, gameDirectory);
             if (!WaterSpiritPearlSplit.ResourcesResolved)
             {
-                cryerror = "无法解析水灵珠节点剧情标记，节点将保持未触发：" + WaterSpiritPearlSplit.ResolutionError;
+                cryerror = "无法解析水灵珠节点的大理祭坛剧情标记；正常十年前交换仍可按场景坐标检测，回梦无痕分支将保持未触发：" + WaterSpiritPearlSplit.ResolutionError;
             }
         }
 

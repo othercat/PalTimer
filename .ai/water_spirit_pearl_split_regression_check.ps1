@@ -33,13 +33,16 @@ function Assert-Contains {
 }
 
 foreach ($needle in @(
-    'internal const string CanonicalWaterPearlText = "得到水灵珠";',
     'internal const string DaliReturnText = "糟．．希望灵儿不会有事才好";',
     'File.ReadAllBytes(sssPath)',
     'File.ReadAllBytes(messagePath)',
     'CurrentScriptStatePointerOffset = 0x500;',
+    'internal const int NormalExchangeArea = 267;',
+    'internal const int NormalExchangeX = 1040;',
+    'internal const int NormalExchangeY = 1640;',
+    'internal void ObserveGameState(int area, int x, int y, int waterSpiritPearlCount)',
     'lowWord == 0xFFFF',
-    'return MarkerExited && waterSpiritPearlCount > 0;',
+    'return NormalExchangeIncreaseSeen ||',
     'if (processId == AttachedProcessId)',
     'Pal98CurrentScriptStateReader.TryRead(processHandle, baseAddress, out scriptState)'
 )) {
@@ -53,7 +56,10 @@ foreach ($entry in @(
     foreach ($needle in @(
         'private readonly Pal98WaterSpiritPearlSplit WaterSpiritPearlSplit',
         'WaterSpiritPearlSplit.CanComplete(GameObj.GetItemCount(0x109))',
-        'WaterSpiritPearlSplit.Observe(PalHandle, GameObj.BaseAddr);',
+        'WaterSpiritPearlSplit.Observe(',
+        'GameObj.Area,',
+        'GameObj.X,',
+        'GameObj.Y,',
         'WaterSpiritPearlSplit.ResetRouteState();',
         'WaterSpiritPearlSplit.Attach(PID, gameDirectory);',
         'WaterSpiritPearlSplit.Detach();'
@@ -69,7 +75,7 @@ if ($unhappy.Contains('WaterSpiritPearlSplit') -or $unhappy.Contains('GetItemCou
 Assert-Contains -Text $timerCore -Needle 'protected int CheckInterval = 70;' -Area "TimerCore.cs"
 Assert-Contains -Text $project -Needle '<Compile Include="Pal98WaterSpiritPearlSplit.cs" />' -Area "Pal98Timer.csproj"
 
-$observeStart = $helper.IndexOf('internal void Observe(IntPtr processHandle, int baseAddress)', [StringComparison]::Ordinal)
+$observeStart = $helper.IndexOf('internal void Observe(', [StringComparison]::Ordinal)
 $observeEnd = $helper.IndexOf('internal bool CanComplete', $observeStart, [StringComparison]::Ordinal)
 if ($observeStart -lt 0 -or $observeEnd -lt 0) {
     throw "water-spirit-pearl hot-loop Observe method could not be located"
@@ -186,6 +192,69 @@ namespace Pal98Timer
             Assert(rejected, message);
         }
 
+        private static void ValidateRealNormalExchange(byte[] sss)
+        {
+            const int sceneIndex = Pal98WaterSpiritPearlGate.NormalExchangeArea - 1;
+            int eventObjectStart = checked((int)BitConverter.ToUInt32(sss, 0));
+            int sceneStart = checked((int)BitConverter.ToUInt32(sss, 4));
+            int scriptStart = checked((int)BitConverter.ToUInt32(sss, 16));
+            int scriptEnd = checked((int)BitConverter.ToUInt32(sss, 20));
+            int scriptCount = (scriptEnd - scriptStart) / 8;
+            int sceneOffset = checked(sceneStart + sceneIndex * 8);
+            int nextSceneOffset = checked(sceneOffset + 8);
+            Assert(nextSceneOffset <= sss.Length - 8, "normal exchange scene record is outside SSS.MKF");
+
+            int firstEventIndex = BitConverter.ToUInt16(sss, sceneOffset + 6);
+            int nextEventIndex = BitConverter.ToUInt16(sss, nextSceneOffset + 6);
+            int pearlEventOffset = -1;
+            for (int eventIndex = firstEventIndex; eventIndex < nextEventIndex; ++eventIndex)
+            {
+                int eventOffset = checked(eventObjectStart + eventIndex * 32);
+                Assert(eventOffset >= eventObjectStart && eventOffset <= sceneStart - 32,
+                    "normal exchange event object is outside SSS.MKF record 0");
+                int triggerScript = BitConverter.ToUInt16(sss, eventOffset + 8);
+                bool grantsWaterPearl = false;
+                for (int i = 0; i < 64 && triggerScript + i < scriptCount; ++i)
+                {
+                    int instructionOffset = checked(scriptStart + (triggerScript + i) * 8);
+                    ushort opcode = BitConverter.ToUInt16(sss, instructionOffset);
+                    if (opcode == 0x001F && BitConverter.ToUInt16(sss, instructionOffset + 2) == 0x0109)
+                    {
+                        grantsWaterPearl = true;
+                        break;
+                    }
+                    if (opcode == 0x0000)
+                    {
+                        break;
+                    }
+                }
+
+                if (!grantsWaterPearl)
+                {
+                    continue;
+                }
+                Assert(pearlEventOffset < 0, "multiple scene-267 events grant item 0x0109");
+                pearlEventOffset = eventOffset;
+            }
+
+            Assert(pearlEventOffset >= 0, "scene 267 has no bounded trigger path that grants item 0x0109");
+            Assert(BitConverter.ToUInt16(sss, pearlEventOffset + 14) == 2,
+                "water-pearl exchange event no longer uses search-normal trigger mode 2");
+            int autoScript = BitConverter.ToUInt16(sss, pearlEventOffset + 10);
+            Assert(autoScript >= 0 && autoScript < scriptCount, "water-pearl exchange auto script is invalid");
+            int autoInstructionOffset = checked(scriptStart + autoScript * 8);
+            Assert(BitConverter.ToUInt16(sss, autoInstructionOffset) == 0x0010,
+                "water-pearl exchange auto script no longer begins with a walk-to instruction");
+            int tileX = BitConverter.ToUInt16(sss, autoInstructionOffset + 2);
+            int tileY = BitConverter.ToUInt16(sss, autoInstructionOffset + 4);
+            int halfTile = BitConverter.ToUInt16(sss, autoInstructionOffset + 6);
+            int worldX = tileX * 32 + halfTile * 16;
+            int worldY = tileY * 16 + halfTile * 8;
+            Assert(worldX == Pal98WaterSpiritPearlGate.NormalExchangeX &&
+                worldY == Pal98WaterSpiritPearlGate.NormalExchangeY,
+                "effective resource exchange coordinate no longer matches the timer constants");
+        }
+
         public static int Main(string[] args)
         {
             Fixture relocated = BuildFixture(
@@ -194,14 +263,11 @@ namespace Pal98Timer
                     "无关对话一",
                     Pal98DialogueMarkerResolver.DaliReturnText,
                     "无关对话二",
-                    "无关对话三",
-                    Pal98DialogueMarkerResolver.CanonicalWaterPearlText
+                    "无关对话三"
                 },
-                new ushort[] { 4, 0, 1 });
+                new ushort[] { 3, 0, 1 });
             Pal98DialogueMarkers markers = Pal98DialogueMarkerResolver.Resolve(relocated.Sss, relocated.Messages);
-            Assert(markers.CanonicalWaterPearlDialogueId == 4, "canonical dialogue ID was not resolved dynamically");
             Assert(markers.DaliReturnDialogueId == 1, "Dali-return dialogue ID was not resolved dynamically");
-            Assert(markers.CanonicalWaterPearlScriptIndex == 0, "canonical script reference is wrong");
             Assert(markers.DaliReturnScriptIndex == 2, "Dali-return script reference is wrong");
 
             string attachRoot = Path.Combine(Path.GetTempPath(), "paltimer-water-pearl-attach-" + Guid.NewGuid().ToString("N"));
@@ -219,26 +285,78 @@ namespace Pal98Timer
                 Assert(split.ResourcesResolved, "same-process attach re-read resources instead of using the cache");
                 split.Attach(124, attachRoot);
                 Assert(!split.ResourcesResolved, "new-process attach reused the previous process resource cache");
+                split.Observe(IntPtr.Zero, 0, Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                    Pal98WaterSpiritPearlGate.NormalExchangeX,
+                    Pal98WaterSpiritPearlGate.NormalExchangeY, 0);
+                split.Observe(IntPtr.Zero, 0, Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                    Pal98WaterSpiritPearlGate.NormalExchangeX,
+                    Pal98WaterSpiritPearlGate.NormalExchangeY, 1);
+                Assert(split.CanComplete(1), "normal coordinate route was disabled by missing Dali resources");
             }
             finally
             {
                 if (Directory.Exists(attachRoot)) Directory.Delete(attachRoot, true);
             }
 
-            Pal98WaterSpiritPearlGate normalGate = new Pal98WaterSpiritPearlGate(markers);
-            Assert(!normalGate.CanComplete(1), "an early/random pearl completed the split");
-            normalGate.ObserveScriptState(ScriptState(0xFFFF, markers.CanonicalWaterPearlDialogueId));
-            Assert(!normalGate.CanComplete(1), "the split completed before leaving the canonical dialogue");
-            normalGate.ObserveScriptState(ScriptState(0x001F, 0x0109));
-            Assert(normalGate.CanComplete(1), "canonical dialogue followed by the pearl did not complete the split");
-            normalGate.Reset();
-            Assert(!normalGate.CanComplete(1), "route reset retained the marker latch");
+            Pal98WaterSpiritPearlGate normalZeroToOneGate = new Pal98WaterSpiritPearlGate(markers);
+            normalZeroToOneGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX,
+                Pal98WaterSpiritPearlGate.NormalExchangeY, 0);
+            Assert(!normalZeroToOneGate.CanComplete(0), "region entry completed before an inventory increase");
+            normalZeroToOneGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX,
+                Pal98WaterSpiritPearlGate.NormalExchangeY, 1);
+            Assert(normalZeroToOneGate.CanComplete(1), "normal 0-to-1 exchange did not complete the split");
+
+            Pal98WaterSpiritPearlGate priorGrantThenExchangeGate = new Pal98WaterSpiritPearlGate(markers);
+            priorGrantThenExchangeGate.ObserveGameState(1, 0, 0, 0);
+            priorGrantThenExchangeGate.ObserveGameState(1, 0, 0, 1);
+            Assert(!priorGrantThenExchangeGate.CanComplete(1),
+                "a pre-exchange random/special 0-to-1 grant completed the split");
+            priorGrantThenExchangeGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX - Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
+                Pal98WaterSpiritPearlGate.NormalExchangeY - Pal98WaterSpiritPearlGate.NormalExchangeYRadius, 1);
+            Assert(!priorGrantThenExchangeGate.CanComplete(1),
+                "the pre-exchange pearl completed when its count was captured as the region baseline");
+            priorGrantThenExchangeGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX + Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
+                Pal98WaterSpiritPearlGate.NormalExchangeY + Pal98WaterSpiritPearlGate.NormalExchangeYRadius, 2);
+            Assert(priorGrantThenExchangeGate.CanComplete(2),
+                "the later normal 1-to-2 exchange did not complete the split");
+            priorGrantThenExchangeGate.Reset();
+            Assert(!priorGrantThenExchangeGate.CanComplete(2), "route reset retained the coordinate latch");
+
+            Pal98WaterSpiritPearlGate reentryGate = new Pal98WaterSpiritPearlGate(markers);
+            reentryGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX,
+                Pal98WaterSpiritPearlGate.NormalExchangeY, 0);
+            reentryGate.ObserveGameState(1, 0, 0, 1);
+            reentryGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX,
+                Pal98WaterSpiritPearlGate.NormalExchangeY, 1);
+            Assert(!reentryGate.CanComplete(1), "an out-of-region item gain survived region re-entry as a false split");
+            reentryGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                Pal98WaterSpiritPearlGate.NormalExchangeX,
+                Pal98WaterSpiritPearlGate.NormalExchangeY, 2);
+            Assert(reentryGate.CanComplete(2), "a later in-region increase after re-entry did not complete");
 
             Pal98WaterSpiritPearlGate skippedRouteGate = new Pal98WaterSpiritPearlGate(markers);
             skippedRouteGate.ObserveScriptState(ScriptState(0xFFFF, markers.DaliReturnDialogueId));
             Assert(!skippedRouteGate.CanComplete(1), "the split completed inside the Dali-return dialogue");
             skippedRouteGate.ObserveScriptState(ScriptState(0x0000, 0x0000));
             Assert(skippedRouteGate.CanComplete(1), "Dali-return dialogue plus an existing pearl did not complete the split");
+
+            Pal98WaterSpiritPearlGate missingItemGate = new Pal98WaterSpiritPearlGate(markers);
+            missingItemGate.ObserveScriptState(ScriptState(0xFFFF, markers.DaliReturnDialogueId));
+            missingItemGate.ObserveScriptState(ScriptState(0x0000, 0x0000));
+            Assert(!missingItemGate.CanComplete(0), "Dali-return dialogue completed without a water pearl");
 
             Pal98WaterSpiritPearlGate unrelatedGate = new Pal98WaterSpiritPearlGate(markers);
             unrelatedGate.ObserveScriptState(ScriptState(0xFFFF, 0));
@@ -248,29 +366,26 @@ namespace Pal98Timer
             Fixture duplicateDialogue = BuildFixture(
                 new string[]
                 {
-                    Pal98DialogueMarkerResolver.CanonicalWaterPearlText,
-                    Pal98DialogueMarkerResolver.CanonicalWaterPearlText,
+                    Pal98DialogueMarkerResolver.DaliReturnText,
                     Pal98DialogueMarkerResolver.DaliReturnText
                 },
-                new ushort[] { 0, 2 });
+                new ushort[] { 0 });
             AssertInvalid(duplicateDialogue, "duplicate dialogue text was accepted");
 
             Fixture duplicateScript = BuildFixture(
                 new string[]
                 {
-                    Pal98DialogueMarkerResolver.CanonicalWaterPearlText,
                     Pal98DialogueMarkerResolver.DaliReturnText
                 },
-                new ushort[] { 0, 0, 1 });
+                new ushort[] { 0, 0 });
             AssertInvalid(duplicateScript, "duplicate script reference was accepted");
 
             Fixture malformed = BuildFixture(
                 new string[]
                 {
-                    Pal98DialogueMarkerResolver.CanonicalWaterPearlText,
                     Pal98DialogueMarkerResolver.DaliReturnText
                 },
-                new ushort[] { 0, 1 });
+                new ushort[] { 0 });
             malformed.Sss[0] = 0;
             malformed.Sss[1] = 0;
             malformed.Sss[2] = 0;
@@ -279,16 +394,23 @@ namespace Pal98Timer
 
             if (args.Length == 2)
             {
-                Pal98DialogueMarkers realMarkers = Pal98DialogueMarkerResolver.Resolve(args[0], args[1]);
+                byte[] realSss = File.ReadAllBytes(args[0]);
+                ValidateRealNormalExchange(realSss);
+                Pal98DialogueMarkers realMarkers = Pal98DialogueMarkerResolver.Resolve(
+                    realSss,
+                    File.ReadAllBytes(args[1]));
                 Console.WriteLine(
-                    "REAL: canonical=0x{0:X4}/script=0x{1:X4}, Dali=0x{2:X4}/script=0x{3:X4}",
-                    realMarkers.CanonicalWaterPearlDialogueId,
-                    realMarkers.CanonicalWaterPearlScriptIndex,
+                    "REAL: normal=area {0}/center ({1},{2})/radius ({3},{4}), Dali=0x{5:X4}/script=0x{6:X4}",
+                    Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                    Pal98WaterSpiritPearlGate.NormalExchangeX,
+                    Pal98WaterSpiritPearlGate.NormalExchangeY,
+                    Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
+                    Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
                     realMarkers.DaliReturnDialogueId,
                     realMarkers.DaliReturnScriptIndex);
             }
 
-            Console.WriteLine("PASS: dynamic resource resolution, malformed/duplicate rejection, early-item guard, canonical route, skipped route, reset, and unrelated-dialogue guard.");
+            Console.WriteLine("PASS: dynamic Dali resolution, malformed/duplicate rejection, pre-exchange 0-to-1 guard, normal 0-to-1 and later 1-to-2 exchanges, re-entry reset, skipped route, route reset, and unrelated-dialogue guard.");
             return 0;
         }
     }
