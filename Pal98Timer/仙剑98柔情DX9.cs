@@ -371,7 +371,7 @@ namespace Pal98Timer
             {
                 Check = delegate ()
                 {
-                    if (WaterSpiritPearlSplit.CanComplete(GameObj.GetItemCount(0x109)))
+                    if (WaterSpiritPearlSplit.CanComplete())
                     {
                         return true;
                     }
@@ -1084,8 +1084,6 @@ namespace Pal98Timer
                 {
                     FlushGameObject();
                     WaterSpiritPearlSplit.Observe(
-                        PalHandle,
-                        GameObj.BaseAddr,
                         GameObj.Area,
                         GameObj.X,
                         GameObj.Y,
@@ -1401,7 +1399,6 @@ namespace Pal98Timer
                         PalProcess = res[0];
                         GameWindowHandle = res[0].MainWindowHandle;
                         PID = PalProcess.Id;
-                        AttachWaterSpiritPearlSplit();
                         CalcPalMD5();
                         HasConfirmedDX9 = true;
                         _GameWasRunning = true;  // 标记游戏曾经运行过
@@ -1722,23 +1719,6 @@ namespace Pal98Timer
             HasAlertPalOpenProcessError = false;
             // 注意：不重置 HasConfirmedDX9 和 _GameWasRunning
             // 这些状态用于区分首次检测和游戏关闭后重新检测
-        }
-
-        private void AttachWaterSpiritPearlSplit()
-        {
-            string gameDirectory = null;
-            try
-            {
-                gameDirectory = Path.GetDirectoryName(PalProcess.MainModule.FileName);
-            }
-            catch
-            {
-            }
-            WaterSpiritPearlSplit.Attach(PID, gameDirectory);
-            if (!WaterSpiritPearlSplit.ResourcesResolved)
-            {
-                cryerror = "无法解析水灵珠节点的大理祭坛剧情标记；正常十年前交换仍可按场景坐标检测，回梦无痕分支将保持未触发：" + WaterSpiritPearlSplit.ResolutionError;
-            }
         }
 
         private void CalcPalMD5()
