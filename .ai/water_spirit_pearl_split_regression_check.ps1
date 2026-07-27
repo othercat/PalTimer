@@ -33,15 +33,15 @@ function Assert-Contains {
 
 foreach ($needle in @(
     'internal const int NormalExchangeArea = 267;',
-    'internal const int NormalExchangeX = 1040;',
-    'internal const int NormalExchangeY = 1640;',
-    'internal const int NormalExchangeXRadius = 96;',
-    'internal const int NormalExchangeYRadius = 48;',
+    'internal const int NormalExchangeObjectX = 1088;',
+    'internal const int NormalExchangeObjectY = 1616;',
+    'internal const int NormalExchangeTriggerMode = 2;',
     'internal const int DaliReturnArea = 204;',
     'internal const int DaliReturnX = 1168;',
     'internal const int DaliReturnY = 760;',
     'internal const int DaliReturnXRadius = 96;',
     'internal const int DaliReturnYRadius = 48;',
+    'IsManualTriggerPosition(',
     'waterSpiritPearlCount > NormalExchangeBaselineCount',
     'waterSpiritPearlCount > 0 && IsInsideRange('
 )) {
@@ -72,8 +72,9 @@ foreach ($entry in @(
         'WaterSpiritPearlSplit.CanComplete()',
         'WaterSpiritPearlSplit.Observe(',
         'GameObj.Area,',
-        'GameObj.X,',
-        'GameObj.Y,',
+        'GameObj.rX,',
+        'GameObj.rY,',
+        'GameObj.PartyDirection,',
         'GameObj.GetItemCount(0x109));',
         'WaterSpiritPearlSplit.ResetRouteState();',
         'WaterSpiritPearlSplit.Detach();'
@@ -85,6 +86,17 @@ foreach ($entry in @(
             throw "$($entry.Name) still contains removed resource-attach path: $forbidden"
         }
     }
+}
+
+foreach ($needle in @(
+    'public const int PartyDirectionOffset = 0x26E;',
+    'public const int rXOffset = 0x274;',
+    'public const int rYOffset = 0x276;',
+    'PartyDirection = Readm<short>(this.handle, BaseAddr + PartyDirectionOffset);',
+    'rX = Readm<short>(this.handle, BaseAddr + rXOffset);',
+    'rY = Readm<short>(this.handle, BaseAddr + rYOffset);'
+)) {
+    Assert-Contains -Text $package -Needle $needle -Area "PAL98 shared GameObject"
 }
 
 if ($unhappy.Contains('WaterSpiritPearlSplit') -or $unhappy.Contains('GetItemCount(0x109)')) {
@@ -117,6 +129,29 @@ namespace Pal98Timer
         private static void Assert(bool condition, string message)
         {
             if (!condition) throw new Exception(message);
+        }
+
+        private static void AssertNormalTriggerPoint(
+            int partyX,
+            int partyY,
+            int partyDirection,
+            string pointName)
+        {
+            Pal98WaterSpiritPearlGate gate = new Pal98WaterSpiritPearlGate();
+            gate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                partyX,
+                partyY,
+                partyDirection,
+                3);
+            Assert(!gate.CanComplete(), pointName + " completed before the item-count increase");
+            gate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                partyX,
+                partyY,
+                partyDirection,
+                4);
+            Assert(gate.CanComplete(), pointName + " did not accept N-to-N+1");
         }
 
         private static int ReadUInt32(byte[] data, int offset)
@@ -164,16 +199,26 @@ namespace Pal98Timer
             }
 
             Assert(pearlEventOffset >= 0, "scene 267 has no bounded trigger path that grants item 0x0109");
-            int normalAutoScript = ReadUInt16(sss, pearlEventOffset + 10);
-            int normalAutoOffset = checked(scriptStart + normalAutoScript * 8);
-            Assert(ReadUInt16(sss, normalAutoOffset) == 0x0010,
-                "normal exchange auto script no longer begins with walk-to");
-            int normalHalfTile = ReadUInt16(sss, normalAutoOffset + 6);
-            int normalX = ReadUInt16(sss, normalAutoOffset + 2) * 32 + normalHalfTile * 16;
-            int normalY = ReadUInt16(sss, normalAutoOffset + 4) * 16 + normalHalfTile * 8;
-            Assert(normalX == Pal98WaterSpiritPearlGate.NormalExchangeX &&
-                normalY == Pal98WaterSpiritPearlGate.NormalExchangeY,
-                "effective normal exchange coordinate no longer matches timer constants");
+            Assert(ReadUInt16(sss, pearlEventOffset + 8) == 0x8861,
+                "normal exchange event trigger script is no longer 0x8861");
+            Assert(ReadUInt16(sss, pearlEventOffset + 10) == 0x87DE,
+                "normal exchange event initial auto script is no longer 0x87DE");
+            Assert(ReadUInt16(sss, pearlEventOffset + 14) ==
+                Pal98WaterSpiritPearlGate.NormalExchangeTriggerMode,
+                "normal exchange event trigger mode no longer matches timer constants");
+            Assert(ReadUInt16(sss, pearlEventOffset + 16) == 535,
+                "normal exchange event sprite is no longer child Li");
+
+            const int normalFinalPositionScript = 0x87E8;
+            int normalFinalPositionOffset = checked(scriptStart + normalFinalPositionScript * 8);
+            Assert(ReadUInt16(sss, normalFinalPositionOffset) == 0x0010,
+                "normal exchange final auto script no longer walks child Li into position");
+            int normalHalfTile = ReadUInt16(sss, normalFinalPositionOffset + 6);
+            int normalX = ReadUInt16(sss, normalFinalPositionOffset + 2) * 32 + normalHalfTile * 16;
+            int normalY = ReadUInt16(sss, normalFinalPositionOffset + 4) * 16 + normalHalfTile * 8;
+            Assert(normalX == Pal98WaterSpiritPearlGate.NormalExchangeObjectX &&
+                normalY == Pal98WaterSpiritPearlGate.NormalExchangeObjectY,
+                "effective child-Li exchange coordinate no longer matches timer constants");
 
             const int daliPartyPositionScript = 0x76F6;
             Assert(daliPartyPositionScript < scriptCount, "Dali return party-position script is outside SSS.MKF");
@@ -194,58 +239,78 @@ namespace Pal98Timer
             const int N = 3;
 
             Pal98WaterSpiritPearlGate earlyCountGate = new Pal98WaterSpiritPearlGate();
-            earlyCountGate.ObserveGameState(1, 0, 0, 0);
-            earlyCountGate.ObserveGameState(1, 0, 0, N);
+            earlyCountGate.ObserveGameState(1, 0, 0, 0, 0);
+            earlyCountGate.ObserveGameState(1, 0, 0, 0, N);
             Assert(!earlyCountGate.CanComplete(), "an arbitrary pre-ten-years count completed the split");
 
-            Pal98WaterSpiritPearlGate normalGate = new Pal98WaterSpiritPearlGate();
-            normalGate.ObserveGameState(
-                Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX - Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
-                Pal98WaterSpiritPearlGate.NormalExchangeY - Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
-                N);
-            Assert(!normalGate.CanComplete(), "normal range entry completed before an increase");
-            normalGate.ObserveGameState(
-                Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX + Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
-                Pal98WaterSpiritPearlGate.NormalExchangeY + Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
-                N + 1);
-            Assert(normalGate.CanComplete(), "expanded normal range did not accept N-to-N+1");
+            AssertNormalTriggerPoint(1104, 1608, 0, "south-facing first trigger point");
+            AssertNormalTriggerPoint(1104, 1624, 1, "west-facing first trigger point");
+            AssertNormalTriggerPoint(1072, 1624, 2, "live north-facing trigger point");
+            AssertNormalTriggerPoint(1072, 1608, 3, "east-facing first trigger point");
+            AssertNormalTriggerPoint(1056, 1648, 2, "trigger-mode-2 farthest accepted point");
+            AssertNormalTriggerPoint(1072, 1631, 2, "PAL map-cell equivalent trigger point");
 
             Pal98WaterSpiritPearlGate normalOutsideGate = new Pal98WaterSpiritPearlGate();
             normalOutsideGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX + Pal98WaterSpiritPearlGate.NormalExchangeXRadius + 1,
-                Pal98WaterSpiritPearlGate.NormalExchangeY,
+                1024,
+                1632,
+                2,
                 N);
             normalOutsideGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX + Pal98WaterSpiritPearlGate.NormalExchangeXRadius + 1,
-                Pal98WaterSpiritPearlGate.NormalExchangeY,
+                1024,
+                1632,
+                2,
                 N + 1);
-            Assert(!normalOutsideGate.CanComplete(), "normal range accepted a point outside its boundary");
+            Assert(!normalOutsideGate.CanComplete(), "trigger mode 2 accepted search point index 9");
+
+            Pal98WaterSpiritPearlGate oldViewportGate = new Pal98WaterSpiritPearlGate();
+            oldViewportGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                912,
+                1512,
+                2,
+                N);
+            oldViewportGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                912,
+                1512,
+                2,
+                N + 1);
+            Assert(!oldViewportGate.CanComplete(), "old viewport coordinates completed the normal split");
 
             Pal98WaterSpiritPearlGate reentryGate = new Pal98WaterSpiritPearlGate();
             reentryGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX,
-                Pal98WaterSpiritPearlGate.NormalExchangeY,
+                1072,
+                1624,
+                2,
                 0);
-            reentryGate.ObserveGameState(1, 0, 0, N);
+            reentryGate.ObserveGameState(1, 0, 0, 0, N);
             reentryGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                Pal98WaterSpiritPearlGate.NormalExchangeX,
-                Pal98WaterSpiritPearlGate.NormalExchangeY,
+                1072,
+                1624,
+                2,
                 N);
-            Assert(!reentryGate.CanComplete(), "out-of-range gain survived normal-region re-entry");
+            Assert(!reentryGate.CanComplete(), "out-of-range gain survived trigger-range re-entry");
+            reentryGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.NormalExchangeArea,
+                1072,
+                1624,
+                2,
+                N + 1);
+            Assert(reentryGate.CanComplete(), "re-entry baseline did not accept its later increase");
 
             Pal98WaterSpiritPearlGate daliGate = new Pal98WaterSpiritPearlGate();
-            daliGate.ObserveGameState(1, 0, 0, N + 1);
+            daliGate.ObserveGameState(1, 0, 0, 0, N + 1);
             Assert(!daliGate.CanComplete(), "回梦无痕 item count completed before reaching Dali");
             daliGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.DaliReturnArea,
                 Pal98WaterSpiritPearlGate.DaliReturnX - Pal98WaterSpiritPearlGate.DaliReturnXRadius,
                 Pal98WaterSpiritPearlGate.DaliReturnY - Pal98WaterSpiritPearlGate.DaliReturnYRadius,
+                0,
                 N + 1);
             Assert(daliGate.CanComplete(), "expanded Dali return range plus item did not complete");
 
@@ -254,6 +319,7 @@ namespace Pal98Timer
                 Pal98WaterSpiritPearlGate.DaliReturnArea,
                 Pal98WaterSpiritPearlGate.DaliReturnX,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
+                0,
                 0);
             Assert(!daliMissingItemGate.CanComplete(), "Dali return position completed without a pearl");
 
@@ -262,14 +328,25 @@ namespace Pal98Timer
                 Pal98WaterSpiritPearlGate.DaliReturnArea,
                 Pal98WaterSpiritPearlGate.DaliReturnX + Pal98WaterSpiritPearlGate.DaliReturnXRadius + 1,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
+                0,
                 N + 1);
             Assert(!daliOutsideGate.CanComplete(), "Dali return range accepted a point outside its boundary");
             daliOutsideGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.DaliReturnArea + 1,
                 Pal98WaterSpiritPearlGate.DaliReturnX,
                 Pal98WaterSpiritPearlGate.DaliReturnY,
+                0,
                 N + 1);
             Assert(!daliOutsideGate.CanComplete(), "Dali return coordinates completed in the wrong scene");
+
+            Pal98WaterSpiritPearlGate daliViewportGate = new Pal98WaterSpiritPearlGate();
+            daliViewportGate.ObserveGameState(
+                Pal98WaterSpiritPearlGate.DaliReturnArea,
+                Pal98WaterSpiritPearlGate.DaliReturnX - 160,
+                Pal98WaterSpiritPearlGate.DaliReturnY - 112,
+                0,
+                N + 1);
+            Assert(!daliViewportGate.CanComplete(), "viewport-relative Dali coordinates completed the split");
 
             daliGate.Reset();
             Assert(!daliGate.CanComplete(), "route reset retained the Dali position latch");
@@ -278,12 +355,11 @@ namespace Pal98Timer
             {
                 ValidateRealPositionEvidence(File.ReadAllBytes(args[0]));
                 Console.WriteLine(
-                    "REAL: normal=area {0}/center ({1},{2})/radius ({3},{4}), Dali=area {5}/center ({6},{7})/radius ({8},{9})",
+                    "REAL: normal=area {0}/child ({1},{2})/trigger mode {3}, Dali=area {4}/center ({5},{6})/radius ({7},{8})",
                     Pal98WaterSpiritPearlGate.NormalExchangeArea,
-                    Pal98WaterSpiritPearlGate.NormalExchangeX,
-                    Pal98WaterSpiritPearlGate.NormalExchangeY,
-                    Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
-                    Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
+                    Pal98WaterSpiritPearlGate.NormalExchangeObjectX,
+                    Pal98WaterSpiritPearlGate.NormalExchangeObjectY,
+                    Pal98WaterSpiritPearlGate.NormalExchangeTriggerMode,
                     Pal98WaterSpiritPearlGate.DaliReturnArea,
                     Pal98WaterSpiritPearlGate.DaliReturnX,
                     Pal98WaterSpiritPearlGate.DaliReturnY,
@@ -291,7 +367,7 @@ namespace Pal98Timer
                     Pal98WaterSpiritPearlGate.DaliReturnYRadius);
             }
 
-            Console.WriteLine("PASS: arbitrary N, expanded normal boundaries, re-entry baseline, expanded Dali position plus item, missing item, outside boundaries, reset, and zero script/resource runtime dependency.");
+            Console.WriteLine("PASS: arbitrary N, child-Li manual trigger points, trigger-mode-2 boundary, re-entry baseline, actual-coordinate Dali return, reset, and zero script/resource runtime dependency.");
             return 0;
         }
     }
@@ -323,4 +399,4 @@ finally {
     }
 }
 
-Write-Host "PASS: water-spirit-pearl source wiring uses only existing 70ms scene/coordinate/inventory snapshots and leaves PAL98UNHAPPY unchanged."
+Write-Host "PASS: water-spirit-pearl source wiring uses only existing 70ms scene/actual-coordinate/direction/inventory snapshots and leaves PAL98UNHAPPY unchanged."

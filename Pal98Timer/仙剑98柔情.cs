@@ -688,8 +688,9 @@ namespace Pal98Timer
                     FlushGameObject();
                     WaterSpiritPearlSplit.Observe(
                         GameObj.Area,
-                        GameObj.X,
-                        GameObj.Y,
+                        GameObj.rX,
+                        GameObj.rY,
+                        GameObj.PartyDirection,
                         GameObj.GetItemCount(0x109));
                 }
                 catch (Exception ex)
@@ -1807,6 +1808,9 @@ namespace Pal98Timer
         public const int MoneyOffset = 0x2B4;
         public const int XOffset = 0x262;
         public const int YOffset = 0x264;
+        public const int PartyDirectionOffset = 0x26E;
+        public const int rXOffset = 0x274;
+        public const int rYOffset = 0x276;
         public const int AreaOffset = 0x26A;
         public const int CurrentBGMOffset = 0x24A;
         public const int AreaBGMOffset = 0x27C;
@@ -1819,6 +1823,9 @@ namespace Pal98Timer
         public int Money = 0;
         public short X = 0;
         public short Y = 0;
+        public short PartyDirection = 0;
+        public short rX = 0;
+        public short rY = 0;
         public short Area = 0;
         public short CurrentBGM = 0;//0x3胜利 0x1失败 0x4葫芦界面
         public short AreaBGM = 0;
@@ -2284,6 +2291,9 @@ namespace Pal98Timer
             Money = Readm<int>(this.handle, BaseAddr + MoneyOffset);
             X = Readm<short>(this.handle, BaseAddr + XOffset);
             Y = Readm<short>(this.handle, BaseAddr + YOffset);
+            PartyDirection = Readm<short>(this.handle, BaseAddr + PartyDirectionOffset);
+            rX = Readm<short>(this.handle, BaseAddr + rXOffset);
+            rY = Readm<short>(this.handle, BaseAddr + rYOffset);
             Area = Readm<short>(this.handle, BaseAddr + AreaOffset);
             CurrentBGM = Readm<short>(this.handle, BaseAddr + CurrentBGMOffset);
             AreaBGM = Readm<short>(this.handle, BaseAddr + AreaBGMOffset);

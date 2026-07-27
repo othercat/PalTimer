@@ -1085,8 +1085,9 @@ namespace Pal98Timer
                     FlushGameObject();
                     WaterSpiritPearlSplit.Observe(
                         GameObj.Area,
-                        GameObj.X,
-                        GameObj.Y,
+                        GameObj.rX,
+                        GameObj.rY,
+                        GameObj.PartyDirection,
                         GameObj.GetItemCount(0x109));
                 }
                 catch (Exception ex)
