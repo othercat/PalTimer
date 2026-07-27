@@ -1,1 +1,1 @@
-../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_DX9_PRIVATE_MOD_RUNTIME_V4/GOAL_STATE.md
+../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_DX9_V142_RELEASE_STABILITY/GOAL_STATE.md
