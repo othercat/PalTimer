@@ -311,24 +311,28 @@ namespace Pal98Timer
             Assert(normalZeroToOneGate.CanComplete(1), "normal 0-to-1 exchange did not complete the split");
 
             Pal98WaterSpiritPearlGate priorGrantThenExchangeGate = new Pal98WaterSpiritPearlGate(markers);
+            const int PriorRandomOrSpecialCount = 3;
             priorGrantThenExchangeGate.ObserveGameState(1, 0, 0, 0);
-            priorGrantThenExchangeGate.ObserveGameState(1, 0, 0, 1);
-            Assert(!priorGrantThenExchangeGate.CanComplete(1),
-                "a pre-exchange random/special 0-to-1 grant completed the split");
+            priorGrantThenExchangeGate.ObserveGameState(1, 0, 0, PriorRandomOrSpecialCount);
+            Assert(!priorGrantThenExchangeGate.CanComplete(PriorRandomOrSpecialCount),
+                "an arbitrary pre-exchange random/special count completed the split");
             priorGrantThenExchangeGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
                 Pal98WaterSpiritPearlGate.NormalExchangeX - Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
-                Pal98WaterSpiritPearlGate.NormalExchangeY - Pal98WaterSpiritPearlGate.NormalExchangeYRadius, 1);
-            Assert(!priorGrantThenExchangeGate.CanComplete(1),
-                "the pre-exchange pearl completed when its count was captured as the region baseline");
+                Pal98WaterSpiritPearlGate.NormalExchangeY - Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
+                PriorRandomOrSpecialCount);
+            Assert(!priorGrantThenExchangeGate.CanComplete(PriorRandomOrSpecialCount),
+                "the arbitrary pre-exchange count completed when captured as the region baseline");
             priorGrantThenExchangeGate.ObserveGameState(
                 Pal98WaterSpiritPearlGate.NormalExchangeArea,
                 Pal98WaterSpiritPearlGate.NormalExchangeX + Pal98WaterSpiritPearlGate.NormalExchangeXRadius,
-                Pal98WaterSpiritPearlGate.NormalExchangeY + Pal98WaterSpiritPearlGate.NormalExchangeYRadius, 2);
-            Assert(priorGrantThenExchangeGate.CanComplete(2),
-                "the later normal 1-to-2 exchange did not complete the split");
+                Pal98WaterSpiritPearlGate.NormalExchangeY + Pal98WaterSpiritPearlGate.NormalExchangeYRadius,
+                PriorRandomOrSpecialCount + 1);
+            Assert(priorGrantThenExchangeGate.CanComplete(PriorRandomOrSpecialCount + 1),
+                "the later normal N-to-N+1 exchange did not complete the split");
             priorGrantThenExchangeGate.Reset();
-            Assert(!priorGrantThenExchangeGate.CanComplete(2), "route reset retained the coordinate latch");
+            Assert(!priorGrantThenExchangeGate.CanComplete(PriorRandomOrSpecialCount + 1),
+                "route reset retained the coordinate latch");
 
             Pal98WaterSpiritPearlGate reentryGate = new Pal98WaterSpiritPearlGate(markers);
             reentryGate.ObserveGameState(
@@ -348,10 +352,17 @@ namespace Pal98Timer
             Assert(reentryGate.CanComplete(2), "a later in-region increase after re-entry did not complete");
 
             Pal98WaterSpiritPearlGate skippedRouteGate = new Pal98WaterSpiritPearlGate(markers);
+            const int PearlCountBeforeDreamlessTrace = 3;
+            skippedRouteGate.ObserveGameState(1, 0, 0, PearlCountBeforeDreamlessTrace);
+            skippedRouteGate.ObserveGameState(1, 0, 0, PearlCountBeforeDreamlessTrace + 1);
+            Assert(!skippedRouteGate.CanComplete(PearlCountBeforeDreamlessTrace + 1),
+                "the 回梦无痕 N-to-N+1 grant completed before the Dali-return dialogue");
             skippedRouteGate.ObserveScriptState(ScriptState(0xFFFF, markers.DaliReturnDialogueId));
-            Assert(!skippedRouteGate.CanComplete(1), "the split completed inside the Dali-return dialogue");
+            Assert(!skippedRouteGate.CanComplete(PearlCountBeforeDreamlessTrace + 1),
+                "the split completed inside the Dali-return dialogue");
             skippedRouteGate.ObserveScriptState(ScriptState(0x0000, 0x0000));
-            Assert(skippedRouteGate.CanComplete(1), "Dali-return dialogue plus an existing pearl did not complete the split");
+            Assert(skippedRouteGate.CanComplete(PearlCountBeforeDreamlessTrace + 1),
+                "回梦无痕 N-to-N+1 plus the exited Dali-return dialogue did not complete the split");
 
             Pal98WaterSpiritPearlGate missingItemGate = new Pal98WaterSpiritPearlGate(markers);
             missingItemGate.ObserveScriptState(ScriptState(0xFFFF, markers.DaliReturnDialogueId));
@@ -410,7 +421,7 @@ namespace Pal98Timer
                     realMarkers.DaliReturnScriptIndex);
             }
 
-            Console.WriteLine("PASS: dynamic Dali resolution, malformed/duplicate rejection, pre-exchange 0-to-1 guard, normal 0-to-1 and later 1-to-2 exchanges, re-entry reset, skipped route, route reset, and unrelated-dialogue guard.");
+            Console.WriteLine("PASS: dynamic Dali resolution, malformed/duplicate rejection, arbitrary pre-exchange N guard, normal 0-to-1 and N-to-N+1 exchanges, 回梦无痕 N-to-N+1 plus Dali fallback, re-entry reset, route reset, and unrelated-dialogue guard.");
             return 0;
         }
     }
