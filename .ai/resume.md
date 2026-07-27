@@ -53,6 +53,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮测试部署：提交 `0893c0bf471c07f52b841580e061d3f93dbd5a86` 的 `Release|x64` 主程序已部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe`，只覆盖主 EXE，未覆盖目标目录中的配置、成绩、插件或其他用户数据。覆盖前备份到 `backup-before-water-pearl-position-20260727-114503\Pal98Timer.exe`；新 EXE SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`。目录名为3.36.6，但当前源码和 EXE 内部版本仍为3.36.5；本轮未启动程序、未执行 PAL98/PAL98DX9 实机路线验证。
 
+2026-07-27 坐标修正部署：提交 `4daf189e7e5e1ce86f9d652935a096357b48302d` 的 `Release|x64` 主程序已重新部署到同一计时器3.36.6目录。覆盖前把上一版主程序备份到 `backup-before-water-pearl-coordinate-frame-20260727-120149\Pal98Timer.exe`，旧 SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`，新 SHA-256 为 `B1D1CEE0F00818BDD6AABB9DDB832866EC8F02CEFEE91D92DCEC2136FFC19251`，来源与目标一致。只覆盖主 EXE，配置、成绩、插件、`plugin_auth` 和其他依赖均保留；部署时 PAL.exe 保持运行，Pal98Timer 未运行，部署后未自动启动计时器。
+
 2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
 
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
