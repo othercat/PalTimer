@@ -58,6 +58,7 @@ namespace Pal98Timer
 
         private bool IsDoMoreEndBattle = true;
         private string WillCopyRPG = "";
+        private bool LoadedSrpgRequiresGameRestart = false;
 
         private string cryerror = "";
         
@@ -736,6 +737,7 @@ namespace Pal98Timer
                 string FilePath = fn;
                 try
                 {
+                    SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
                     if (File.Exists(FilePath))
                     {
                         File.Delete(FilePath);
@@ -755,6 +757,7 @@ namespace Pal98Timer
                             cb(false, ex.Message);
                         });
                     }
+                    return;
                 }
                 if (cb != null)
                 {
@@ -768,6 +771,7 @@ namespace Pal98Timer
 
         private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")
         {
+            LoadedSrpgRequiresGameRestart = false;
             SRPGobj so = null;
             string FilePath = fn;
             try
@@ -787,6 +791,13 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                SRPGFlyingFlagSidecarSnapshot flyingFlagSnapshot =
+                    SRPGSidecarTransport.ReadFlyingFlagSnapshot(so);
+                if (flyingFlagSnapshot != null && !GetPalHandle())
+                {
+                    throw new Exception("此SRPG包含飞行旗完整快照，请先启动PAL.exe再导入");
+                }
+
                 string tmppath = rn;
                 try
                 {
@@ -812,8 +823,28 @@ namespace Pal98Timer
                 SetTimerFromString(so.TimerStr);
                 TotalMonsterCount = savedMonsterCount;
 
+                if (flyingFlagSnapshot != null)
+                {
+                    SRPGSidecarTransport.ApplyFlyingFlagSnapshot(GetPalFolder(), flyingFlagSnapshot);
+                    LoadedSrpgRequiresGameRestart = true;
+                }
+
                 WillCopyRPG = tmppath;
             }
+        }
+
+        private string GetLoadGameSuccessMessage()
+        {
+            if (LoadedSrpgRequiresGameRestart)
+            {
+                return "存档和飞行旗完整快照已导入，计时器已自动暂停。请保持计时器开启，只关闭并重新启动PAL.exe；重启后再读取游戏中的“进度一”。重启前不要使用飞行旗。";
+            }
+            return "存档导入成功，计时器已自动暂停，请读取游戏中“进度一”后关闭此窗口";
+        }
+
+        private string GetLoadGameSuccessButtonText()
+        {
+            return LoadedSrpgRequiresGameRestart ? "我会重启游戏" : "我已读档";
         }
 
         public void SetTimerFromString(string json)
@@ -889,8 +920,8 @@ namespace Pal98Timer
                             {
                                 isw.Dispose();
                             });
-                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
-                            isw.btnOK.Text = "我已读档";
+                            isw.lblInfo.Text = GetLoadGameSuccessMessage();
+                            isw.btnOK.Text = GetLoadGameSuccessButtonText();
                             isw.ShowDialog(f);
                         }
                         catch (Exception ee)
@@ -958,8 +989,8 @@ namespace Pal98Timer
                 {
                     isw.Dispose();
                 });
-                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中'进度一'后关闭此窗口";
-                isw.btnOK.Text = "我已读档";
+                isw.lblInfo.Text = GetLoadGameSuccessMessage();
+                isw.btnOK.Text = GetLoadGameSuccessButtonText();
                 isw.ShowDialog(form);
             };
 

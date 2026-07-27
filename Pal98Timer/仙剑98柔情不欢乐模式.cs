@@ -18,6 +18,9 @@ namespace Pal98Timer
 
     public class 仙剑98柔情不欢乐模式 : TimerCore
     {
+        private const string CanonicalCoreName = "PAL98UNHAPPY";
+        private const string LegacyCoreName = "仙剑98DX9不欢乐模式";
+
         public override bool IsShowC()
         {
             Process[] res = Process.GetProcessesByName("Pal98Robot");
@@ -58,6 +61,7 @@ namespace Pal98Timer
 
         private bool IsDoMoreEndBattle = true;
         private string WillCopyRPG = "";
+        private bool LoadedSrpgRequiresGameRestart = false;
 
         private string cryerror = "";
         
@@ -106,11 +110,18 @@ namespace Pal98Timer
 
         public 仙剑98柔情不欢乐模式(GForm form) : base(form)
         {
-            CoreName = "仙剑98DX9不欢乐模式";
+            CoreName = CanonicalCoreName;
         }
 
         protected override void InitCheckPoints()
         {
+            string sourceBestFile = "best" + LegacyCoreName + ".txt";
+            string targetBestFile = "best" + CanonicalCoreName + ".txt";
+            if (File.Exists(sourceBestFile) && !File.Exists(targetBestFile))
+            {
+                File.Copy(sourceBestFile, targetBestFile);
+            }
+
             LoadBest();
             _CurrentStep = -1;
             Data = new HObj();
@@ -642,6 +653,7 @@ namespace Pal98Timer
                 string FilePath = fn;
                 try
                 {
+                    SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
                     if (File.Exists(FilePath))
                     {
                         File.Delete(FilePath);
@@ -661,6 +673,7 @@ namespace Pal98Timer
                             cb(false, ex.Message);
                         });
                     }
+                    return;
                 }
                 if (cb != null)
                 {
@@ -674,6 +687,7 @@ namespace Pal98Timer
 
         private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")
         {
+            LoadedSrpgRequiresGameRestart = false;
             SRPGobj so = null;
             string FilePath = fn;
             try
@@ -693,6 +707,13 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                SRPGFlyingFlagSidecarSnapshot flyingFlagSnapshot =
+                    SRPGSidecarTransport.ReadFlyingFlagSnapshot(so);
+                if (flyingFlagSnapshot != null && !GetPalHandle())
+                {
+                    throw new Exception("此SRPG包含飞行旗完整快照，请先启动PAL.exe再导入");
+                }
+
                 string tmppath = rn;
                 try
                 {
@@ -718,8 +739,28 @@ namespace Pal98Timer
                 SetTimerFromString(so.TimerStr);
                 TotalMonsterCount = savedMonsterCount;
 
+                if (flyingFlagSnapshot != null)
+                {
+                    SRPGSidecarTransport.ApplyFlyingFlagSnapshot(GetPalFolder(), flyingFlagSnapshot);
+                    LoadedSrpgRequiresGameRestart = true;
+                }
+
                 WillCopyRPG = tmppath;
             }
+        }
+
+        private string GetLoadGameSuccessMessage()
+        {
+            if (LoadedSrpgRequiresGameRestart)
+            {
+                return "存档和飞行旗完整快照已导入，计时器已自动暂停。请保持计时器开启，只关闭并重新启动PAL.exe；重启后再读取游戏中的“进度一”。重启前不要使用飞行旗。";
+            }
+            return "存档导入成功，计时器已自动暂停，请读取游戏中“进度一”后关闭此窗口";
+        }
+
+        private string GetLoadGameSuccessButtonText()
+        {
+            return LoadedSrpgRequiresGameRestart ? "我会重启游戏" : "我已读档";
         }
 
         public void SetTimerFromString(string json)
@@ -795,8 +836,8 @@ namespace Pal98Timer
                             {
                                 isw.Dispose();
                             });
-                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
-                            isw.btnOK.Text = "我已读档";
+                            isw.lblInfo.Text = GetLoadGameSuccessMessage();
+                            isw.btnOK.Text = GetLoadGameSuccessButtonText();
                             isw.ShowDialog(f);
                         }
                         catch (Exception ee)
@@ -864,8 +905,8 @@ namespace Pal98Timer
                 {
                     isw.Dispose();
                 });
-                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中'进度一'后关闭此窗口";
-                isw.btnOK.Text = "我已读档";
+                isw.lblInfo.Text = GetLoadGameSuccessMessage();
+                isw.btnOK.Text = GetLoadGameSuccessButtonText();
                 isw.ShowDialog(form);
             };
 
@@ -1951,14 +1992,13 @@ namespace Pal98Timer
             return MT.CurrentTS.Ticks.ToString() + "," + ST.CurrentTS.Ticks.ToString() + "," + BattleLong.Ticks.ToString();
         }
 
-        // Override LoadPlugins to also load PAL98 plugins for compatibility
+        // Load PAL98UNHAPPY plugins first, then PAL98 plugins for compatibility.
         public override void LoadPlugins()
         {
-            // First load PAL98DX9-specific plugins
+            // CoreName selects PAL98UNHAPPY.*.tpg packages here.
             base.LoadPlugins();
             
-            // Then also load PAL98 plugins for compatibility
-            // This allows PAL98 plugins (like bottom-left money/item display) to work with DX9
+            // PAL98 packages such as the money/item display remain valid fallbacks.
             string pluginPath = TimerPluginPackageInfo.GetPluginDir();
             if (!System.IO.Directory.Exists(pluginPath)) return;
             

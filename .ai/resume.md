@@ -45,6 +45,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
 
+2026-07-27 本轮未提交改动：不欢乐模式 `CoreName` 从历史中文值统一为 README 已公开的 `PAL98UNHAPPY`，旧最佳线保留式迁移。PAL98DX9/PAL98UNHAPPY 新 SRPG 现在携带 `PalDrawCard.FlyingFlagAll.v1.bin` 完整快照与 SHA-256；明确记录源 sidecar 不存在，旧 SRPG 不处理目标 sidecar，导入前保留时间戳备份并要求重启 PAL.exe。服务器继续不透明存取 `.bin`，无需修改。新增两项回归脚本和规则文档。
+
 2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
 
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
@@ -75,6 +77,14 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 3. 已完成内容
+
+### 未发布（2026-07-27）
+- 不欢乐模式内部身份统一为 `PAL98UNHAPPY`；旧本地最佳线仅在新文件不存在时复制迁移，旧文件保留
+- `PAL98UNHAPPY.*.tpg` 成为不欢乐模式专用插件前缀，仍兼容 `PAL98.*.tpg`，不自动加载 `PAL98DX9.*.tpg`
+- 新增 `.ai/pal98unhappy_identity_regression_check.py`；Release|x64 构建通过
+- PAL98DX9/PAL98UNHAPPY 新 SRPG 携带飞行旗完整快照、存在标志和 SHA-256；旧 SRPG 通过 `OptionalField` 保持“不处理 sidecar”语义
+- 导入新 SRPG 时先验证完整快照；目标 sidecar 存在则生成时间戳备份并原子替换，源快照明确不存在时把目标移到备份；服务器代码不变
+- 新增 `docs/SRPG_FLYING_FLAG_SIDECAR_RULE.md` 和 `.ai/srpg_flying_flag_sidecar_regression_check.ps1`；新旧 BinaryFormatter 双向兼容、备份恢复行为及 Release|x64 构建通过
 
 ### 未发布（2026-07-03）
 - 富甲插件右下角显示新增“四大神器/神器”状态，测试包当前紧凑输出顺序为“神器:状态 钱N 道具N”
@@ -133,6 +143,10 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 4. 未完成内容
+
+### 本轮已修复，待实机验证
+
+- **SRPG 携带 `PalDrawCard.FlyingFlagAll.v1.bin`**：代码、行为 harness 和构建验证完成。仍需在真实 PAL98DX9/PAL98UNHAPPY 中分别验证 sidecar 存在/不存在的接力与云存读档，确认时间戳备份、重启提示、重启后飞行旗位置和 `1.RPG` 一致；本轮没有部署到游戏目录。
 
 ### 高优先级 - 已修复，待实机验证
 
@@ -220,17 +234,19 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
-2. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
-1. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
-2. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
-3. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
-4. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
-5. task-014 和 task-015 代码层修复已完成，仍需实机验证。
-6. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
-7. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
-8. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
-9. 如需发布版本，再决定是否更新 README.md 版本记录。
+1. 实机验证 PAL98DX9/PAL98UNHAPPY 新 SRPG：源 sidecar 存在与不存在各做一次接力存读档；确认目标时间戳备份、重启提示，保持 PalTimer 开启并重启 PAL.exe 后再读取进度一，核对飞行旗与 RPG 属于同一快照。
+2. 实机打开不欢乐模式，确认旧 `best仙剑98DX9不欢乐模式.txt` 会复制为 `bestPAL98UNHAPPY.txt`，专用插件前缀和成绩导出文件名均使用 `PAL98UNHAPPY`。
+3. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
+4. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
+5. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
+6. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
+7. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
+8. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
+9. task-014 和 task-015 代码层修复已完成，仍需实机验证。
+10. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
+11. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
+12. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
+13. 如需发布版本，再决定是否更新 README.md 版本记录。
 
 ---
 
@@ -257,6 +273,20 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-07-27 会话（SRPG 飞行旗完整快照 + 不欢乐模式身份统一）
+
+- 新增 `Pal98Timer/SRPGSidecarTransport.cs`：捕获 sidecar 存在/不存在状态，存在时携带原始字节和 SHA-256；导入时验证版本、长度和哈希
+- 扩展共享 `SRPGobj`，新增字段全部使用 `OptionalField`；实测新程序可读旧 SRPG，旧程序也可忽略新字段读取新 SRPG
+- PAL98DX9/PAL98UNHAPPY 的接力与云存档共用相同客户端封装；服务器仍只上传/下载原 `.bin`，没有协议或服务器改动
+- 导入完整快照要求 PAL.exe 已运行以确认游戏目录；覆盖前生成 `.paltimer-backup-YYYYMMDD-HHmmssfff`，源无 sidecar 时把目标移到备份
+- PALDLL 不做热重载；新 SRPG 导入后提示保持计时器开启、重启 PAL.exe、再读取进度一，旧 SRPG 保持原提示和本地 sidecar
+- 新增规则文档与行为回归 harness，覆盖存在、明确不存在、旧包、哈希损坏、覆盖备份和空快照备份
+- 修改 `Pal98Timer/仙剑98柔情不欢乐模式.cs`：`CoreName` 统一为 `PAL98UNHAPPY`，使最佳线、成绩导出、插件前缀及后续云标识与 README 的公开英文名一致
+- 兼容旧本地最佳线：仅在新文件不存在时复制 `best仙剑98DX9不欢乐模式.txt` 为 `bestPAL98UNHAPPY.txt`，不删除旧文件、不覆盖新文件
+- 仍先加载 `PAL98UNHAPPY.*.tpg`，再兼容加载 `PAL98.*.tpg`；未把 `PAL98DX9.*.tpg` 自动注入不欢乐内核
+- 新增 `.ai/pal98unhappy_identity_regression_check.py`，结构性检查规范身份、旧最佳线迁移和插件回退链路
+- 未修改计时、暂停、反作弊、存读档、节点判定、OBS、进程匹配或任何内存地址；不欢乐修改器只在进程内注入脚本且没有稳定文件标志，本轮不增加猜测性自动检测
 
 ### 2026-07-03 会话（富甲插件增加四大神器状态 + 插件授权本地调试开关）
 
@@ -430,6 +460,28 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-07-27 本轮补充验证：
+
+```powershell
+& .\.ai\srpg_flying_flag_sidecar_regression_check.ps1
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal98unhappy_identity_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\pal98dx9_title_identity_regression_check.py
+C:\Users\other\miniconda3\envs\paltools-hermes\python.exe .ai\cloud_save_load_pause_regression_check.py
+git diff --check
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln -m -p:Configuration=Release -p:Platform=x64 -verbosity:minimal
+```
+
+```text
+PASS: SRPG sidecar capture, old-package compatibility, hash rejection, replace backup, and absent snapshot behavior.
+PASS: new PalTimer deserializes an old SRPG with no sidecar action requested.
+PASS: legacy PalTimer can deserialize a new SRPG while ignoring sidecar fields.
+PASS: PAL98UNHAPPY uses the canonical identity and preserves legacy local best data.
+PASS: PAL98DX9 timer title matching supports Simplified, Traditional, and English PAL98DX9 identities.
+PASS: PAL98 cloud/relay save-load paths leave UI pause enabled.
+git diff --check passed（仅生成式 goal pointer 有既有 CRLF/LF 警告）。
+Pal98Timer.sln Release|x64 build succeeded；0 errors，只有既有 warning。
+```
 
 2026-07-03 本轮补充验证：
 

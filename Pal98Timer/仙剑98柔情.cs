@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading;
@@ -2468,6 +2469,21 @@ namespace Pal98Timer
     {
         public byte[] RPG;
         public string TimerStr;
+
+        [OptionalField(VersionAdded = 2)]
+        public int FlyingFlagSidecarEnvelopeVersion;
+
+        [OptionalField(VersionAdded = 2)]
+        public bool FlyingFlagSidecarCaptured;
+
+        [OptionalField(VersionAdded = 2)]
+        public bool FlyingFlagSidecarPresent;
+
+        [OptionalField(VersionAdded = 2)]
+        public byte[] FlyingFlagSidecarPayload;
+
+        [OptionalField(VersionAdded = 2)]
+        public byte[] FlyingFlagSidecarSha256;
     }
 
     public class SI
