@@ -51,6 +51,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮改动：PAL98/PAL98DX9 的“水灵珠”节点改为双位置门闩，彻底移除脚本状态依赖。正常路线在场景 `267`、小李逍遥交换点 `(1040,1640)` 的 X±96/Y±48 扩大范围内锁定当前水灵珠数量 `N`，后续轮询只有看到数量大于 `N` 才触发；没有前置水灵珠只是 `N=0` 的特例。回梦无痕在场景 `204`、回程固定落点 `(1168,760)` 的 X±96/Y±48 扩大范围内，结合背包存在水灵珠触发。70ms循环只复用既有场景、坐标和背包快照，不再解析 `SSS.MKF`/`M.MSG`，也不再读取当前脚本状态。聚焦状态机与有效资源检查通过，待 PAL98/PAL98DX9 双路线实机确认。不欢乐模式没有该节点，未修改。
 
+2026-07-27 本轮测试部署：提交 `0893c0bf471c07f52b841580e061d3f93dbd5a86` 的 `Release|x64` 主程序已部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe`，只覆盖主 EXE，未覆盖目标目录中的配置、成绩、插件或其他用户数据。覆盖前备份到 `backup-before-water-pearl-position-20260727-114503\Pal98Timer.exe`；新 EXE SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`。目录名为3.36.6，但当前源码和 EXE 内部版本仍为3.36.5；本轮未启动程序、未执行 PAL98/PAL98DX9 实机路线验证。
+
 2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
 
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
@@ -155,7 +157,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ### 本轮已修复，待实机验证
 
 - **PAL98/PAL98DX9 水灵珠双路线节点**：双位置状态机、有效资源检查与构建均通过。仍需分别实机验证：十年前之前由随机物品/特殊剧情使背包成为任意 `N` 时不跳节点，进入扩大交换范围锁定 `N` 后，正常交换的 `N→N+1` 才跳；回梦无痕从任意 `N` 给予一颗并跳到大理后，在场景204扩大回程范围内跳；两个分支都要补测范围边缘、范围外和F10 reset。PAL98UNHAPPY 未改。
-- **SRPG 携带 `PalDrawCard.FlyingFlagAll.v1.bin`**：代码、行为 harness 和构建验证完成。仍需在真实 PAL98DX9/PAL98UNHAPPY 中分别验证 sidecar 存在/不存在的接力与云存读档，确认时间戳备份、重启提示、重启后飞行旗位置和 `1.RPG` 一致；本轮没有部署到游戏目录。
+- **SRPG 携带 `PalDrawCard.FlyingFlagAll.v1.bin`**：代码、行为 harness 和构建验证完成。包含该代码的当前主程序已随水灵珠测试部署到计时器3.36.6目录，但仍需在真实 PAL98DX9/PAL98UNHAPPY 中分别验证 sidecar 存在/不存在的接力与云存读档，确认时间戳备份、重启提示、重启后飞行旗位置和 `1.RPG` 一致。
 
 ### 高优先级 - 已修复，待实机验证
 
@@ -480,6 +482,18 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-07-27 水灵珠节点测试部署：
+
+```text
+目标：D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe
+来源：Pal98Timer\bin\x64\Release\Pal98Timer.exe（commit 0893c0bf471c07f52b841580e061d3f93dbd5a86）
+备份：D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\backup-before-water-pearl-position-20260727-114503\Pal98Timer.exe
+旧 SHA-256：45301CEEA08CB7EDF5EBB6F18DD94D1FDF50BB5CC54955AE00B50C686CE47604
+新 SHA-256：EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A（来源与目标一致）
+部署范围：仅 Pal98Timer.exe；配置、成绩、插件、plugin_auth 和其他依赖未覆盖
+未执行：程序启动烟测、PAL98/PAL98DX9 正常交换、随机物品和回梦无痕实机路线
+```
 
 2026-07-27 水灵珠节点补充验证：
 
