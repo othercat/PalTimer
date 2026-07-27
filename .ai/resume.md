@@ -41,9 +41,11 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 2. 当前工作状态
 
-**版本：v3.36.5**（2026-05-15）
+**版本：v3.36.6**（2026-07-27）
 
 当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
+
+2026-07-27 本轮正式把界面当前版本、程序集版本和文件版本统一升级为 `3.36.6`，并把 README 中截至当前的未发布内容归档为 v3.36.6 更新说明。VS2026 / MSBuild 18 `Release|x64` 重建成功；生成的 `Pal98Timer.exe` 程序集版本为 `3.36.6.0`，文件版本与产品版本均为 `3.36.6`，SHA-256 为 `773B808E3153BBF299E44E3BEB18E9D33897B50E92AA29ADD9B85A89FA533CBF`。本轮只处理版本与发布文档，没有重新部署实机目录，也没有改变计时、节点、内存读取或存档语义。
 
 2026-07-27 本轮改动已通过提交 `4727096` 推送到 `origin/master`：不欢乐模式 `CoreName` 从历史中文值统一为 README 已公开的 `PAL98UNHAPPY`，旧最佳线保留式迁移。PAL98DX9/PAL98UNHAPPY 新 SRPG 现在携带 `PalDrawCard.FlyingFlagAll.v1.bin` 完整快照与 SHA-256；明确记录源 sidecar 不存在，旧 SRPG 不处理目标 sidecar，导入前保留时间戳备份并要求重启 PAL.exe。服务器继续不透明存取 `.bin`，无需修改。新增两项回归脚本和规则文档。
 
@@ -51,7 +53,7 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮改动：PAL98/PAL98DX9 的“水灵珠”节点改为双位置门闩，彻底移除脚本状态依赖。实机在场景267确认旧 `X/Y=(912,1512)` 是视口坐标、实际地图坐标 `rX/rY=(1072,1624)`，最近的小李逍遥对象位于 `(1088,1616)`、TriggerMode=2；正常路线现按实际坐标和队伍朝向复现该对象的手动触发搜索范围，并在范围内锁定水灵珠数量 `N`，后续轮询只有看到数量大于 `N` 才触发，用户已确认正常交换位置正确。回梦无痕实机连续五次快照稳定在 `MapID=175`、场景 `204`、实际回程落点 `(1168,760)`；重启前数量 `4` 会归一为 `1`，因此该分支要求精确固定位置且水灵珠数量至少为 `1`。70ms循环只复用既有场景、实际坐标、朝向和背包快照，不再解析 `SSS.MKF`/`M.MSG`，也不再读取当前脚本状态。不欢乐模式没有该节点，未修改。
 
-2026-07-27 本轮测试部署：提交 `0893c0bf471c07f52b841580e061d3f93dbd5a86` 的 `Release|x64` 主程序已部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe`，只覆盖主 EXE，未覆盖目标目录中的配置、成绩、插件或其他用户数据。覆盖前备份到 `backup-before-water-pearl-position-20260727-114503\Pal98Timer.exe`；新 EXE SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`。目录名为3.36.6，但当前源码和 EXE 内部版本仍为3.36.5；本轮未启动程序、未执行 PAL98/PAL98DX9 实机路线验证。
+2026-07-27 本轮测试部署：提交 `0893c0bf471c07f52b841580e061d3f93dbd5a86` 的 `Release|x64` 主程序已部署到 `D:\SteamLibrary\steamapps\common\PAL\自动计时器\计时器3.36.6\Pal98Timer.exe`，只覆盖主 EXE，未覆盖目标目录中的配置、成绩、插件或其他用户数据。覆盖前备份到 `backup-before-water-pearl-position-20260727-114503\Pal98Timer.exe`；新 EXE SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`。该次部署时目录名为3.36.6，而当时源码和 EXE 内部版本仍为3.36.5；后续已正式升级到3.36.6。本轮未启动程序、未执行 PAL98/PAL98DX9 实机路线验证。
 
 2026-07-27 坐标修正部署：提交 `4daf189e7e5e1ce86f9d652935a096357b48302d` 的 `Release|x64` 主程序已重新部署到同一计时器3.36.6目录。覆盖前把上一版主程序备份到 `backup-before-water-pearl-coordinate-frame-20260727-120149\Pal98Timer.exe`，旧 SHA-256 为 `EDF6C0BFFF65342FCB4391C3FF64BBEDF6A3608BE007AA77C7AD5A3ADCA50D6A`，新 SHA-256 为 `B1D1CEE0F00818BDD6AABB9DDB832866EC8F02CEFEE91D92DCEC2136FFC19251`，来源与目标一致。只覆盖主 EXE，配置、成绩、插件、`plugin_auth` 和其他依赖均保留；部署时 PAL.exe 保持运行，Pal98Timer 未运行，部署后未自动启动计时器。
 
