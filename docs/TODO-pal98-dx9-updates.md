@@ -357,9 +357,9 @@ PalTimer 现有入口：
 
 新增音效优先级机制：`GetPriority()` 返回优先级值（通关=30 > 总时间=20 > 分段=10）。`PlaySound()` 支持优先级中断——高优先级音效会停止当前正在播放的低优先级音效，低优先级不会打断高优先级。
 
-## DONE: 云读档不覆盖撞怪计数
+## DONE: 云读档撞怪计数完整快照兼容
 
-`PALCloud.dll` 接口不包含 `TotalMonsterCount`（撞怪总数），导致云读档后怪计数归零。在三个内核的 `LoadGame()` 方法中，`SetTimerFromString` 调用前后保存并恢复 `TotalMonsterCount`，使云读档和接力读档均不影响撞怪计数。
+`PALCloud.dll` 没有单独的 `TotalMonsterCount`（撞怪总数）接口，但服务器会原样存取整个 SRPG `.bin`，其中 `TimerStr` 已携带该字段。PAL98、PAL98DX9、PAL98UNHAPPY 三个内核在导入时按字段存在性恢复：新 SRPG 有该字段就恢复快照值，旧 SRPG 缺少字段则保留当前本地计数。云读档和接力读档语义一致，不需要修改服务器或 `PALCloud.dll`。
 
 ## DONE: 暂停状态下操作存档后保持暂停
 

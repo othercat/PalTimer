@@ -47,6 +47,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮改动已通过提交 `4727096` 推送到 `origin/master`：不欢乐模式 `CoreName` 从历史中文值统一为 README 已公开的 `PAL98UNHAPPY`，旧最佳线保留式迁移。PAL98DX9/PAL98UNHAPPY 新 SRPG 现在携带 `PalDrawCard.FlyingFlagAll.v1.bin` 完整快照与 SHA-256；明确记录源 sidecar 不存在，旧 SRPG 不处理目标 sidecar，导入前保留时间戳备份并要求重启 PAL.exe。服务器继续不透明存取 `.bin`，无需修改。新增两项回归脚本和规则文档。
 
+2026-07-27 本轮改动：PAL98、PAL98DX9、PAL98UNHAPPY 的接力/云 SRPG 改为恢复 `TimerStr.TotalMonsterCount` 完整快照；旧 SRPG 缺少字段时保留本地撞怪数。服务器和 `PALCloud.dll` 不变。新增 `.ai/srpg_monster_count_regression_check.ps1`，新/旧字段行为 harness、既有 sidecar 兼容检查和 VS2026 `Release|x64` 构建均通过。
+
 2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
 
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
@@ -85,6 +87,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - PAL98DX9/PAL98UNHAPPY 新 SRPG 携带飞行旗完整快照、存在标志和 SHA-256；旧 SRPG 通过 `OptionalField` 保持“不处理 sidecar”语义
 - 导入新 SRPG 时先验证完整快照；目标 sidecar 存在则生成时间戳备份并原子替换，源快照明确不存在时把目标移到备份；服务器代码不变
 - 新增 `docs/SRPG_FLYING_FLAG_SIDECAR_RULE.md` 和 `.ai/srpg_flying_flag_sidecar_regression_check.ps1`；新旧 BinaryFormatter 双向兼容、备份恢复行为及 Release|x64 构建通过
+- PAL98/PAL98DX9/PAL98UNHAPPY 从接力或云 SRPG 恢复 `TotalMonsterCount`；旧 SRPG 无字段时不覆盖本地值，无需修改服务器或 `PALCloud.dll`
+- 新增 `.ai/srpg_monster_count_regression_check.ps1`；字段存在、零值及旧包缺字段三种行为 harness 通过
 
 ### 未发布（2026-07-03）
 - 富甲插件右下角显示新增“四大神器/神器”状态，测试包当前紧凑输出顺序为“神器:状态 钱N 道具N”
@@ -234,7 +238,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. 实机验证 PAL98DX9/PAL98UNHAPPY 新 SRPG：源 sidecar 存在与不存在各做一次接力存读档；确认目标时间戳备份、重启提示，保持 PalTimer 开启并重启 PAL.exe 后再读取进度一，核对飞行旗与 RPG 属于同一快照。
+1. 实机验证 PAL98/PAL98DX9/PAL98UNHAPPY 新 SRPG：先制造可辨识的撞怪数并分别做一次接力、云存读档，确认导入后恢复源快照计数；再用缺少 `TotalMonsterCount` 的旧 SRPG 确认本地计数不变。PAL98DX9/PAL98UNHAPPY 同时覆盖源 sidecar 存在与不存在，确认目标时间戳备份、重启提示，并在重启 PAL.exe 后核对飞行旗与 RPG 属于同一快照。
 2. 实机打开不欢乐模式，确认旧 `best仙剑98DX9不欢乐模式.txt` 会复制为 `bestPAL98UNHAPPY.txt`，专用插件前缀和成绩导出文件名均使用 `PAL98UNHAPPY`。
 3. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
 4. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
@@ -451,7 +455,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - `TimerCore.cs`：`Checking()` 改为读取 `form.IsNonSequentialCheck`；`OnCheckPointEnd()` 新增通关音效播放
 - `GForm.cs`：版本号更新为 `3.36.4`；新增 `IsNonSequentialCheck` 字段、点击处理、`skip_node` 文件加载/保存
 - `GForm.Designer.cs`：功能菜单新增"跳图路线(非顺序节点)"勾选项
-- `仙剑98柔情.cs`/`仙剑98柔情DX9.cs`/`仙剑98柔情不欢乐模式.cs`：删除 `EnableNonSequentialCheck = true` 硬编码；`LoadGame()` 中保存/恢复 `TotalMonsterCount`（云读档不清零撞怪）；`UI_SaveGameEx`/接力-接盘/云读档暂停状态保持修复
+- `仙剑98柔情.cs`/`仙剑98柔情DX9.cs`/`仙剑98柔情不欢乐模式.cs`：删除 `EnableNonSequentialCheck = true` 硬编码；当时在 `LoadGame()` 中保存/恢复本地 `TotalMonsterCount`（该历史语义已于 2026-07-27 被“新 SRPG 恢复快照、旧 SRPG 保留本地值”取代）；`UI_SaveGameEx`/接力-接盘/云读档暂停状态保持修复
 - `GEX.cs`：删除 `BuildCenteredMainTimer()` 和 `MeasureTextSize()`，恢复固定偏移布局
 - `KeyChangerDel.cs`：F11 改键兼容"改建器"和"改键器"两种窗口标题
 - `README.md`：合并 v3.36.2/3/4 为统一的 v3.36.4 更新说明

@@ -1560,9 +1560,7 @@ namespace Pal98Timer
                     throw;
                 }
 
-                int savedMonsterCount = TotalMonsterCount;
                 SetTimerFromString(so.TimerStr);
-                TotalMonsterCount = savedMonsterCount;
 
                 WillCopyRPG = tmppath;
             }
@@ -1582,6 +1580,10 @@ namespace Pal98Timer
                 MaxYXY = ho.GetValue<short>("NightCloth");
                 MaxTLF = ho.GetValue<short>("EarthPaper");
                 MaxQTJ = ho.GetValue<short>("CuArmor");
+                if (ho.ToDic().ContainsKey("TotalMonsterCount"))
+                {
+                    TotalMonsterCount = ho.GetValue<int>("TotalMonsterCount");
+                }
                 MT.SetTS(ConvertTimeSpan(ho.GetValue<string>("Current")));
                 ST.SetTS(ConvertTimeSpan(ho.GetValue<string>("Idle")));
                 HObj cps = ho.GetValue<HObj>("CheckPoints");
