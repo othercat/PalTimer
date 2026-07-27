@@ -1,1 +1,1 @@
-../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_DX9_V142_RELEASE_STABILITY/GOAL_STATE.md
+../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_TIMER_WATER_PEARL_SPLIT_V1/GOAL_STATE.md
