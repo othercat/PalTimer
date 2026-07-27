@@ -112,6 +112,7 @@
 不欢乐模式内部标识统一为 `PAL98UNHAPPY`；首次启动时若只存在旧的 `best仙剑98DX9不欢乐模式.txt`，会复制为新的 `bestPAL98UNHAPPY.txt`，旧文件保留不删
 PAL98DX9/PAL98UNHAPPY 新建的接力或云 SRPG 会携带 `PalDrawCard.FlyingFlagAll.v1.bin` 完整快照及 SHA-256；旧 SRPG 不改本地 sidecar。导入新包会先备份目标 sidecar，并要求保持计时器开启、重启 PAL.exe 后再读取“进度一”
 PAL98/PAL98DX9/PAL98UNHAPPY 接力或云 SRPG 中存在 `TotalMonsterCount` 时，导入后恢复该快照的撞怪总数；旧 SRPG 缺少该字段时继续保留本地计数，无需修改云服务器或 `PALCloud.dll`
+PAL98/PAL98DX9 的“水灵珠”节点不再由背包物品单独触发：连接 PAL.exe 时从当前 `SSS.MKF`/`M.MSG` 一次解析“得到水灵珠”和大理祭坛返回对话，运行中仅在相应对话结束后结合背包水灵珠判定；开局随机获得水灵珠不会提前跳节点，不欢乐模式保持原状
 
 ## v3.36.5 (2026-05-15 by othercat)
 修复仙剑98柔情、仙剑98柔情DX9、仙剑98柔情不欢乐模式中，香蕉树反作弊暂停期间按 F9 手动暂停后，拿到香蕉再恢复时计时器无法继续的问题

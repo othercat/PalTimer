@@ -220,6 +220,7 @@
     <Compile Include="仙剑98柔情DX9.cs" />
     <Compile Include="仙剑98柔情.cs" />
     <Compile Include="PalPackVersion.cs" />
+    <Compile Include="Pal98WaterSpiritPearlSplit.cs" />
     <Compile Include="SoundConfig.cs" />
     <Compile Include="SoundConfigForm.cs" />
     <Compile Include="SRPGSidecarTransport.cs" />

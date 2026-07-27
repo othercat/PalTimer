@@ -49,6 +49,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 2026-07-27 本轮改动：PAL98、PAL98DX9、PAL98UNHAPPY 的接力/云 SRPG 改为恢复 `TimerStr.TotalMonsterCount` 完整快照；旧 SRPG 缺少字段时保留本地撞怪数。服务器和 `PALCloud.dll` 不变。新增 `.ai/srpg_monster_count_regression_check.ps1`，新/旧字段行为 harness、既有 sidecar 兼容检查和 VS2026 `Release|x64` 构建均通过。
 
+2026-07-27 本轮改动：PAL98/PAL98DX9 的“水灵珠”节点改为剧情标记门闩与物品联合判定。连接新 PAL.exe 时从最终 `SSS.MKF`/`M.MSG` 一次解析“得到水灵珠”和大理祭坛返回对话，70ms 循环只读当前脚本状态与既有背包状态；开局随机水灵珠不再提前触发，正常十年前路线和回梦无痕等跳过路线均有独立入口。不欢乐模式没有该节点，未修改。资源/状态机回归和 VS2026 `Release|x64` 构建通过，待 PAL98/PAL98DX9 双路线实机确认。
+
 2026-07-09 本轮未发布改动：PAL98DX9 标题识别补充繁体与英文兼容。简体仍要求并识别旧基本盘 `仙剑奇侠传...` 标题格式；繁体同等识别 `仙劍奇俠傳...`；英文识别 `PAL98DX9 (v...)` 并沿用版本号提取。同步更新 `仙剑98柔情DX9.cs` 与 `仙剑98柔情不欢乐模式.cs`，新增 `.ai/pal98dx9_title_identity_regression_check.py` 结构检查。
 
 2026-07-03 本轮未发布改动：修改富甲插件源码 `PAL98.FujiaCaishen`，右下角输出改为在“钱/道具”前显示“四大神器：已收集/未收集”。插件在计时开始、节点初始化和重置后重新统计；在上船节点坐标触发时冻结状态。目标物品为紫金丹 `0x111`、土灵珠 `0x10B`、六神丹 `0x11E`、布包 `0x10F`，读取链路沿用富甲插件既有背包槽读取。新增 `.ai/fujia_yuhang_artifacts_regression_check.py`。
@@ -89,6 +91,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - 新增 `docs/SRPG_FLYING_FLAG_SIDECAR_RULE.md` 和 `.ai/srpg_flying_flag_sidecar_regression_check.ps1`；新旧 BinaryFormatter 双向兼容、备份恢复行为及 Release|x64 构建通过
 - PAL98/PAL98DX9/PAL98UNHAPPY 从接力或云 SRPG 恢复 `TotalMonsterCount`；旧 SRPG 无字段时不覆盖本地值，无需修改服务器或 `PALCloud.dll`
 - 新增 `.ai/srpg_monster_count_regression_check.ps1`；字段存在、零值及旧包缺字段三种行为 harness 通过
+- PAL98/PAL98DX9 的“水灵珠”节点不再由 `0x109` 物品单独触发；必须先观察到动态解析的正常获取或大理祭坛返回对话并离开该对话，再结合背包水灵珠完成节点
+- 新增 `Pal98WaterSpiritPearlSplit.cs` 与 `.ai/water_spirit_pearl_split_regression_check.ps1`；当前补丁资源解析为 `FFFF 2EE4`/脚本 `886E` 和 `FFFF 2AB1`/脚本 `773F`，重复/损坏资源按 fail-closed 处理，70ms Observe 路径无文件 I/O
 
 ### 未发布（2026-07-03）
 - 富甲插件右下角显示新增“四大神器/神器”状态，测试包当前紧凑输出顺序为“神器:状态 钱N 道具N”
@@ -150,6 +154,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 本轮已修复，待实机验证
 
+- **PAL98/PAL98DX9 水灵珠双路线节点**：资源动态解析、状态机 harness 与构建均通过。仍需分别实机验证：开局已有水灵珠不跳节点；正常进入十年前在“得到水灵珠”对话结束且物品存在后跳；回梦无痕跳过十年前后在大理祭坛“小李子”对话结束且物品存在后跳；F10 reset 后旧门闩不残留。PAL98UNHAPPY 未改。
 - **SRPG 携带 `PalDrawCard.FlyingFlagAll.v1.bin`**：代码、行为 harness 和构建验证完成。仍需在真实 PAL98DX9/PAL98UNHAPPY 中分别验证 sidecar 存在/不存在的接力与云存读档，确认时间戳备份、重启提示、重启后飞行旗位置和 `1.RPG` 一致；本轮没有部署到游戏目录。
 
 ### 高优先级 - 已修复，待实机验证
@@ -238,19 +243,20 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-1. 实机验证 PAL98/PAL98DX9/PAL98UNHAPPY 新 SRPG：先制造可辨识的撞怪数并分别做一次接力、云存读档，确认导入后恢复源快照计数；再用缺少 `TotalMonsterCount` 的旧 SRPG 确认本地计数不变。PAL98DX9/PAL98UNHAPPY 同时覆盖源 sidecar 存在与不存在，确认目标时间戳备份、重启提示，并在重启 PAL.exe 后核对飞行旗与 RPG 属于同一快照。
-2. 实机打开不欢乐模式，确认旧 `best仙剑98DX9不欢乐模式.txt` 会复制为 `bestPAL98UNHAPPY.txt`，专用插件前缀和成绩导出文件名均使用 `PAL98UNHAPPY`。
-3. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
-4. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
-5. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
-6. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
-7. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
-8. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
-9. task-014 和 task-015 代码层修复已完成，仍需实机验证。
-10. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
-11. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
-12. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
-13. 如需发布版本，再决定是否更新 README.md 版本记录。
+1. 实机验证 PAL98/PAL98DX9 水灵珠节点三场景：开局已有水灵珠不跳；正常十年前路线在“得到水灵珠”对话结束后跳；回梦无痕路线在大理祭坛“小李子”对话结束后跳，并补测 F10 reset 清门闩。
+2. 实机验证 PAL98/PAL98DX9/PAL98UNHAPPY 新 SRPG：先制造可辨识的撞怪数并分别做一次接力、云存读档，确认导入后恢复源快照计数；再用缺少 `TotalMonsterCount` 的旧 SRPG 确认本地计数不变。PAL98DX9/PAL98UNHAPPY 同时覆盖源 sidecar 存在与不存在，确认目标时间戳备份、重启提示，并在重启 PAL.exe 后核对飞行旗与 RPG 属于同一快照。
+3. 实机打开不欢乐模式，确认旧 `best仙剑98DX9不欢乐模式.txt` 会复制为 `bestPAL98UNHAPPY.txt`，专用插件前缀和成绩导出文件名均使用 `PAL98UNHAPPY`。
+4. 音效独立音量：Human 打开“节点音效配置”，分别为节点提示音、最终通关音效、音效打开/关闭提示音设置不同音量，测试 wav/mp3 的试听和真实节点触发播放。
+5. PalTimer 插件 Skill：如果继续插件开发，用 `D:\Workspace\agent-setting\projects\Pal98Works\skills\pal98-paltimer-plugin-development` 作为唯一事实来源；实机 `.tpg` 包默认只读检查，不要绕过签名。
+6. task-114：让 Kimi/Codex 复核 automation tick snapshot PR；合并后用真实 route-bootstrap + PalTimer 导出文件重跑 same-run snapshot gate v5，并在 compact review 中检查最后 snapshot 的 `export_trigger`、`pal_process_attach`、`split_reached`、`single_run_evidence_chain_confirmed`。
+7. task-113：在普通权限 PAL98DX9/PAL98/PAL98UNHAPPY 实机环境验证读内存、F9/F10/F11、KeyChanger、云功能和关闭游戏生命周期；补测 PAL.exe 管理员 + PalTimer 普通时短提示后退出、PAL.exe 管理员 + PalTimer 管理员时不提示、PAL.exe 普通 + PalTimer 管理员时不提示。
+8. task-111 需要 Human 打开计时器实测：背景图透明度变化时，文字、按钮和计时数字保持不透明；OBS 截取框可按直播需求另行调透明度。
+9. task-112 需要发布前确认 Win7 SP1 目标机已安装 .NET Framework 4.7.2 runtime。
+10. task-014 和 task-015 代码层修复已完成，仍需实机验证。
+11. 实机测试 task-015：云存档、云读档、接力存档、接力接盘操作完成后均保持暂停，用户手动恢复计时。
+12. 实机测试 task-014：站到香蕉树→F9暂停→拿香蕉→F9恢复，确认计时器能恢复。
+13. 补测普通路径：站到香蕉树→拿香蕉自动恢复；普通 F9 暂停不应被误启动。
+14. 如需发布版本，再决定是否更新 README.md 版本记录。
 
 ---
 
@@ -267,6 +273,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 | `Pal98Timer/GForm.cs` | 主窗体、快捷键处理、版本号 `CurrentVersion` |
 | `Pal98Timer/GEX.cs` | GDI 主界面绘制、布局（BuildRects/DrawMainTimer） |
 | `Pal98Timer/TimerCore.cs` | 通用节点推进、CurrentStep、跳节点、成绩导出 |
+| `Pal98Timer/Pal98WaterSpiritPearlSplit.cs` | 水灵珠节点资源解析、脚本状态只读与双路线门闩 |
 | `Pal98Timer/仙剑98柔情DX9.cs` | DX9 内核、进程检测、物品/战斗统计、节点定义 |
 | `Pal98Timer/仙剑98柔情.cs` | 原 98 内核 |
 | `Pal98Timer/仙剑98柔情不欢乐模式.cs` | 不欢乐模式内核 |
@@ -277,6 +284,15 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-07-27 会话（水灵珠节点双路线剧情门闩）
+
+- PAL98/PAL98DX9 将“背包有水灵珠”改为“先观察到目标剧情对话、离开对话、背包有水灵珠”三段判定；开局随机物品不再触发
+- 正常路线匹配“得到水灵珠”，跳过十年前路线匹配回到大理祭坛后的“糟．．希望灵儿不会有事才好”；不依赖固定对话 ID，而是从最终 `M.MSG` 文本和 `SSS.MKF` 唯一 `FFFF` 引用解析
+- 每次连接新 PAL.exe 只解析一次约 0.8MB 资源；70ms OnTick 只沿 `0x428000 -> p1 + 0x500 -> p2` 读取 8 字节脚本状态，并沿用既有物品栏读取
+- 资源缺失、越界、重复文本或重复脚本引用时 fail closed，节点保持未触发并显示一次解析错误；F10 reset 和游戏进程断开均清门闩
+- 新增行为 harness，覆盖动态 ID、当前实机资源、同 PID 缓存、换 PID 重解析、开局已有物品、正常路线、回梦无痕路线、无关对话、reset、重复/损坏资源
+- 未修改 PAL98UNHAPPY、PALDLL_DX9、CunCunExpress、云存读档、sidecar、暂停、反作弊、OBS、写内存或服务器协议
 
 ### 2026-07-27 会话（SRPG 飞行旗完整快照 + 不欢乐模式身份统一）
 
@@ -464,6 +480,22 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-07-27 水灵珠节点补充验证：
+
+```powershell
+& .\.ai\water_spirit_pearl_split_regression_check.ps1 -GameDirectory 'D:\SteamLibrary\steamapps\common\PAL\PAL98'
+& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" Pal98Timer.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /nologo
+git diff --check
+```
+
+```text
+REAL: canonical=0x2EE4/script=0x886E, Dali=0x2AB1/script=0x773F
+PASS: 动态资源 ID、同 PID 一次解析缓存、换 PID 重解析、损坏/重复拒绝、开局已有物品保护、正常路线、跳过路线、reset、无关对话保护。
+PASS: 70ms Observe 路径没有文件/资源访问，PAL98UNHAPPY 未接入。
+Pal98Timer.sln Release|x64 build succeeded；0 errors，27 个既有 warning。
+git diff --check passed（仅生成式 goal pointer 有既有 CRLF/LF 警告）。
+```
 
 2026-07-27 本轮补充验证：
 
