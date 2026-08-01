@@ -1,1 +1,1 @@
-../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_AGENT_SETTING_CROSS_PLATFORM_GOVERNANCE_V1/GOAL_STATE.md
+../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_EDITOR_CROSS_PLATFORM_DISTRIBUTION_V1/GOAL_STATE.md
