@@ -1,1 +1,1 @@
-../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_DX9_V143_VOICE_OPCODE_V1/repo-bindings/PalTimer.md
+../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_AGENT_SETTING_CROSS_PLATFORM_GOVERNANCE_V1/repo-bindings/PalTimer.md
