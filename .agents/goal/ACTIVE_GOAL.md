@@ -1,1 +1,1 @@
-../../../../../../agent-setting/projects/Pal98Works/ACTIVE_GOAL.md
+../../../../../../agent-setting/projects/Pal98Works/ACTIVE_GOALS.md
