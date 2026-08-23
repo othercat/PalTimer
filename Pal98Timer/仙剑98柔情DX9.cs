@@ -952,6 +952,16 @@ namespace Pal98Timer
         private ToolStripMenuItem btnCloudLoad;
         private ToolStripMenuItem btnSwitch;
         private ToolStripMenuItem btnGameSpeedShow;
+        private ToolStripMenuItem btnDx9Overlay;
+        private ToolStripMenuItem btnDx9OverlayEnabled;
+        private ToolStripMenuItem btnDx9OverlayHotkey;
+        private ToolStripMenuItem btnDx9OverlayAdjust;
+        private ToolStripMenuItem btnDx9OverlayFont;
+        private ToolStripMenuItem btnDx9OverlayFontColor;
+        private ToolStripMenuItem btnDx9OverlayReset;
+        private Dx9OverlayForm Dx9Overlay;
+        private Keys Dx9OverlayToggleHotkey = Keys.None;
+        private const int Dx9OverlayTimelineEntryCount = 3;
 
         public override void InitUI()
         {
@@ -1017,6 +1027,104 @@ namespace Pal98Timer
                 IsShowSpeed = btnGameSpeedShow.Checked;
             };
 
+            btnDx9Overlay = form.NewMenuItem();
+            btnDx9Overlay.Text = "游戏内信息叠加设置";
+            btnDx9Overlay.Checked = false;
+
+            btnDx9OverlayEnabled = new ToolStripMenuItem();
+            btnDx9OverlayEnabled.Text = "启用游戏内信息叠加（实验）";
+            btnDx9OverlayEnabled.Checked = false;
+            btnDx9OverlayEnabled.Click += delegate (object sender, EventArgs e) {
+                ToggleDx9OverlayEnabled();
+            };
+
+            Dx9OverlayLayoutSettings initialOverlayLayout = Dx9OverlaySettings.LoadLayout();
+            if (string.IsNullOrEmpty(Dx9OverlaySettings.ValidateToggleHotkey(
+                initialOverlayLayout.ToggleHotkey,
+                SoundConfig.ins.ToggleHotkey)))
+            {
+                Dx9OverlayToggleHotkey = initialOverlayLayout.ToggleHotkey;
+            }
+
+            btnDx9OverlayHotkey = new ToolStripMenuItem();
+            UpdateDx9OverlayHotkeyMenuText();
+            btnDx9OverlayHotkey.Click += delegate (object sender, EventArgs e) {
+                ConfigureDx9OverlayHotkey();
+            };
+
+            btnDx9OverlayAdjust = new ToolStripMenuItem();
+            btnDx9OverlayAdjust.Text = "调整叠加位置和比例";
+            btnDx9OverlayAdjust.Enabled = false;
+            btnDx9OverlayAdjust.Click += delegate (object sender, EventArgs e) {
+                if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
+                {
+                    return;
+                }
+                if (Dx9Overlay.IsInEditMode)
+                {
+                    Dx9Overlay.EndEditMode();
+                    return;
+                }
+                if (!Dx9Overlay.BeginEditMode())
+                {
+                    form.Alert("请先启动并保持 PAL98DX9 游戏窗口未最小化，再调整叠加位置和比例。");
+                }
+            };
+
+            btnDx9OverlayFont = new ToolStripMenuItem();
+            btnDx9OverlayFont.Text = "调整叠加字体和字号...";
+            btnDx9OverlayFont.Enabled = false;
+            btnDx9OverlayFont.Click += delegate (object sender, EventArgs e) {
+                ConfigureDx9OverlayFont();
+            };
+
+            btnDx9OverlayFontColor = new ToolStripMenuItem();
+            btnDx9OverlayFontColor.Text = "调整叠加字体颜色...";
+            btnDx9OverlayFontColor.Enabled = false;
+            btnDx9OverlayFontColor.Click += delegate (object sender, EventArgs e) {
+                ConfigureDx9OverlayFontColor();
+            };
+
+            btnDx9OverlayReset = new ToolStripMenuItem();
+            btnDx9OverlayReset.Text = "恢复叠加默认设置";
+            btnDx9OverlayReset.Enabled = false;
+            btnDx9OverlayReset.Click += delegate (object sender, EventArgs e) {
+                if (Dx9Overlay == null || Dx9Overlay.IsDisposed ||
+                    !form.Confirm("恢复右下角位置、1.0比例、自动宋体/细明体和默认颜色，并清除叠加开关快捷键？"))
+                {
+                    return;
+                }
+                try
+                {
+                    Dx9Overlay.ResetLayout();
+                    Dx9OverlayToggleHotkey = Keys.None;
+                    UpdateDx9OverlayHotkeyMenuText();
+                }
+                catch (Exception ex)
+                {
+                    form.Error("无法保存游戏内叠加默认设置：" + ex.Message);
+                }
+            };
+            btnDx9Overlay.DropDownItems.AddRange(new ToolStripItem[] {
+                btnDx9OverlayEnabled,
+                btnDx9OverlayHotkey,
+                new ToolStripSeparator(),
+                btnDx9OverlayAdjust,
+                btnDx9OverlayFont,
+                btnDx9OverlayFontColor,
+                btnDx9OverlayReset,
+            });
+            try
+            {
+                SetDx9OverlayEnabled(Dx9OverlaySettings.LoadEnabled());
+            }
+            catch (Exception ex)
+            {
+                SetDx9OverlayEnabled(false);
+                try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
+                form.Alert("游戏内信息叠加启动失败，已恢复为关闭状态：" + ex.Message);
+            }
+
             btnCloudSave = form.NewCloudMenuItem();
             btnCloudSave.Text = "云存档";
             btnCloudSave.Enabled = false;
@@ -1071,6 +1179,355 @@ namespace Pal98Timer
                 });
                 dw.ShowDialog(form);
             };
+        }
+
+        public override void UnloadUI()
+        {
+            CloseDx9Overlay();
+            base.UnloadUI();
+        }
+
+        private void SetDx9OverlayEnabled(bool enabled)
+        {
+            if (!enabled)
+            {
+                CloseDx9Overlay();
+                if (btnDx9Overlay != null)
+                {
+                    btnDx9Overlay.Checked = false;
+                }
+                if (btnDx9OverlayEnabled != null)
+                {
+                    btnDx9OverlayEnabled.Checked = false;
+                }
+                UpdateDx9OverlayMenuState(false);
+                return;
+            }
+
+            try
+            {
+                if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
+                {
+                    Dx9Overlay = new Dx9OverlayForm(CreateDx9OverlaySnapshot);
+                    Dx9Overlay.EditModeChanged += Dx9Overlay_EditModeChanged;
+                    Dx9Overlay.LayoutSaveFailed += Dx9Overlay_LayoutSaveFailed;
+                    Dx9Overlay.Start();
+                }
+                btnDx9Overlay.Checked = true;
+                btnDx9OverlayEnabled.Checked = true;
+                UpdateDx9OverlayMenuState(true);
+            }
+            catch
+            {
+                CloseDx9Overlay();
+                btnDx9Overlay.Checked = false;
+                btnDx9OverlayEnabled.Checked = false;
+                UpdateDx9OverlayMenuState(false);
+                throw;
+            }
+        }
+
+        private void ToggleDx9OverlayEnabled()
+        {
+            bool enabled = Dx9Overlay == null || Dx9Overlay.IsDisposed;
+            try
+            {
+                Dx9OverlaySettings.SaveEnabled(enabled);
+                SetDx9OverlayEnabled(enabled);
+            }
+            catch (Exception ex)
+            {
+                SetDx9OverlayEnabled(false);
+                try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
+                form.Error("无法启用或保存游戏内信息叠加设置：" + ex.Message);
+            }
+        }
+
+        private void CloseDx9Overlay()
+        {
+            if (Dx9Overlay == null)
+            {
+                return;
+            }
+
+            Dx9Overlay.EditModeChanged -= Dx9Overlay_EditModeChanged;
+            Dx9Overlay.LayoutSaveFailed -= Dx9Overlay_LayoutSaveFailed;
+            Dx9Overlay.Stop();
+            Dx9Overlay.Dispose();
+            Dx9Overlay = null;
+        }
+
+        private void UpdateDx9OverlayMenuState(bool enabled)
+        {
+            if (btnDx9Overlay != null)
+            {
+                btnDx9Overlay.Checked = enabled;
+            }
+            if (btnDx9OverlayEnabled != null)
+            {
+                btnDx9OverlayEnabled.Checked = enabled;
+            }
+            if (btnDx9OverlayAdjust != null)
+            {
+                btnDx9OverlayAdjust.Enabled = enabled;
+                btnDx9OverlayAdjust.Checked = enabled && Dx9Overlay != null && Dx9Overlay.IsInEditMode;
+            }
+            if (btnDx9OverlayFont != null)
+            {
+                btnDx9OverlayFont.Enabled = enabled;
+            }
+            if (btnDx9OverlayFontColor != null)
+            {
+                btnDx9OverlayFontColor.Enabled = enabled;
+            }
+            if (btnDx9OverlayReset != null)
+            {
+                btnDx9OverlayReset.Enabled = enabled;
+            }
+        }
+
+        private void UpdateDx9OverlayHotkeyMenuText()
+        {
+            if (btnDx9OverlayHotkey != null)
+            {
+                btnDx9OverlayHotkey.Text = "配置叠加开关快捷键...（" +
+                    Dx9OverlaySettings.FormatToggleHotkey(Dx9OverlayToggleHotkey) + "）";
+            }
+        }
+
+        private void ConfigureDx9OverlayHotkey()
+        {
+            Func<Keys, string> validator = delegate (Keys hotkey) {
+                return Dx9OverlaySettings.ValidateToggleHotkey(hotkey, SoundConfig.ins.ToggleHotkey);
+            };
+            using (Dx9OverlayHotkeyForm dialog = new Dx9OverlayHotkeyForm(Dx9OverlayToggleHotkey, validator))
+            {
+                if (dialog.ShowDialog(form) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                Keys previousHotkey = Dx9OverlayToggleHotkey;
+                try
+                {
+                    if (Dx9Overlay != null && !Dx9Overlay.IsDisposed)
+                    {
+                        Dx9Overlay.ApplyToggleHotkey(dialog.SelectedHotkey);
+                    }
+                    else
+                    {
+                        Dx9OverlayLayoutSettings layout = Dx9OverlaySettings.LoadLayout();
+                        layout.ToggleHotkey = dialog.SelectedHotkey;
+                        Dx9OverlaySettings.SaveLayout(layout);
+                    }
+                    Dx9OverlayToggleHotkey = dialog.SelectedHotkey;
+                    UpdateDx9OverlayHotkeyMenuText();
+                }
+                catch (Exception ex)
+                {
+                    Dx9OverlayToggleHotkey = previousHotkey;
+                    UpdateDx9OverlayHotkeyMenuText();
+                    form.Error("无法保存游戏内叠加快捷键：" + ex.Message);
+                }
+            }
+        }
+
+        private void Dx9Overlay_EditModeChanged(object sender, EventArgs e)
+        {
+            UpdateDx9OverlayMenuState(Dx9Overlay != null && !Dx9Overlay.IsDisposed);
+        }
+
+        private void Dx9Overlay_LayoutSaveFailed(Exception ex)
+        {
+            form.Error("无法保存游戏内叠加位置或比例：" + ex.Message);
+        }
+
+        private void ConfigureDx9OverlayFont()
+        {
+            if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
+            {
+                return;
+            }
+
+            string family = string.IsNullOrEmpty(Dx9Overlay.ConfiguredFontFamily)
+                ? GetDx9OverlayFontFamily()
+                : Dx9Overlay.ConfiguredFontFamily;
+            Font initialFont;
+            try
+            {
+                initialFont = new Font(family, Dx9Overlay.ConfiguredFontSize, Dx9Overlay.ConfiguredFontStyle, GraphicsUnit.Point);
+            }
+            catch
+            {
+                initialFont = new Font("SimSun", Dx9OverlayLayoutSettings.DefaultFontSize, FontStyle.Regular, GraphicsUnit.Point);
+            }
+
+            using (initialFont)
+            using (FontDialog dialog = new FontDialog())
+            {
+                dialog.Font = initialFont;
+                dialog.FontMustExist = true;
+                dialog.ShowColor = false;
+                dialog.ShowEffects = false;
+                dialog.MinSize = (int)Dx9OverlayLayoutSettings.MinimumFontSize;
+                dialog.MaxSize = (int)Dx9OverlayLayoutSettings.MaximumFontSize;
+                if (dialog.ShowDialog(form) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    Dx9Overlay.ApplyFont(dialog.Font.FontFamily.Name, dialog.Font.Size, dialog.Font.Style);
+                }
+                catch (Exception ex)
+                {
+                    form.Error("无法保存游戏内叠加字体设置：" + ex.Message);
+                }
+            }
+        }
+
+        private void ConfigureDx9OverlayFontColor()
+        {
+            if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
+            {
+                return;
+            }
+
+            using (ColorDialog dialog = new ColorDialog())
+            {
+                dialog.AllowFullOpen = true;
+                dialog.FullOpen = true;
+                dialog.Color = Dx9Overlay.ConfiguredFontColorArgb == 0
+                    ? Color.FromArgb(226, 226, 216)
+                    : Color.FromArgb(Dx9Overlay.ConfiguredFontColorArgb);
+                if (dialog.ShowDialog(form) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    Dx9Overlay.ApplyFontColor(dialog.Color);
+                }
+                catch (Exception ex)
+                {
+                    form.Error("无法保存游戏内叠加字体颜色：" + ex.Message);
+                }
+            }
+        }
+
+        public override bool TryHandleCustomHotkey(Keys hotkey)
+        {
+            if (Dx9OverlayToggleHotkey == Keys.None || hotkey != Dx9OverlayToggleHotkey ||
+                !string.IsNullOrEmpty(Dx9OverlaySettings.ValidateToggleHotkey(
+                    Dx9OverlayToggleHotkey,
+                    SoundConfig.ins.ToggleHotkey)))
+            {
+                return false;
+            }
+
+            form.UI(delegate {
+                ToggleDx9OverlayEnabled();
+            });
+            return true;
+        }
+
+        private Dx9OverlaySnapshot CreateDx9OverlaySnapshot()
+        {
+            Dx9OverlayTimelineEntry timelineFirst;
+            Dx9OverlayTimelineEntry timelineSecond;
+            Dx9OverlayTimelineEntry timelineThird;
+            CreateDx9OverlayTimeline(out timelineFirst, out timelineSecond, out timelineThird);
+
+            bool antiCheatPaused = IsInUnCheat;
+            bool paused = antiCheatPaused || IsPause || IsUIPause;
+            string state = antiCheatPaused ? "反作弊暂停" : (paused ? "已暂停" : "");
+            return new Dx9OverlaySnapshot(
+                GameWindowHandle,
+                GetDx9OverlayFontFamily(),
+                MT.ToString(),
+                GetSmallWatch(),
+                GetSecondWatch(),
+                GetMoreInfo(),
+                form.ManualPauseCount,
+                timelineFirst,
+                timelineSecond,
+                timelineThird,
+                state,
+                antiCheatPaused,
+                paused);
+        }
+
+        private string GetDx9OverlayFontFamily()
+        {
+            if (!string.IsNullOrEmpty(LastPalWindowTitle) &&
+                (LastPalWindowTitle.Contains("仙劍") || LastPalWindowTitle.Contains("新補丁")))
+            {
+                return "MingLiU";
+            }
+            return "SimSun";
+        }
+
+        private void CreateDx9OverlayTimeline(
+            out Dx9OverlayTimelineEntry first,
+            out Dx9OverlayTimelineEntry second,
+            out Dx9OverlayTimelineEntry third)
+        {
+            first = default(Dx9OverlayTimelineEntry);
+            second = default(Dx9OverlayTimelineEntry);
+            third = default(Dx9OverlayTimelineEntry);
+            if (CheckPoints == null || CheckPoints.Count == 0)
+            {
+                return;
+            }
+
+            int count = CheckPoints.Count;
+            int displayStep = Math.Max(0, Math.Min(CurrentStep, count));
+            int visibleCount = Math.Min(Dx9OverlayTimelineEntryCount, count);
+            int start = Math.Max(0, displayStep - 1);
+            if (start + visibleCount > count)
+            {
+                start = count - visibleCount;
+            }
+
+            for (int offset = 0; offset < visibleCount; ++offset)
+            {
+                int index = start + offset;
+                CheckPoint point = CheckPoints[index];
+                bool isCurrent = index == displayStep;
+                bool isCompleted = index < displayStep;
+                string difference = "";
+                if (index <= displayStep && point.Current.Ticks > 0)
+                {
+                    difference = FormatDx9OverlayDifference(point.GetCHA());
+                }
+                Dx9OverlayTimelineEntry entry = new Dx9OverlayTimelineEntry(
+                    point.GetNickName(),
+                    TItem.TimeSpanToStringLite(point.Best),
+                    difference,
+                    isCurrent,
+                    isCompleted);
+                if (offset == 0)
+                {
+                    first = entry;
+                }
+                else if (offset == 1)
+                {
+                    second = entry;
+                }
+                else
+                {
+                    third = entry;
+                }
+            }
+        }
+
+        private static string FormatDx9OverlayDifference(long differenceSeconds)
+        {
+            string sign = differenceSeconds < 0 ? "-" : "+";
+            long absoluteSeconds = Math.Abs(differenceSeconds);
+            return sign + (absoluteSeconds / 60).ToString() + ":" + (absoluteSeconds % 60).ToString().PadLeft(2, '0');
         }
 
         protected override void OnTick()

@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.36.6";
+        public const string CurrentVersion = "3.37.0";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -28,6 +28,7 @@ namespace Pal98Timer
         private ToolStripMenuItem btnCloudInit;
         private PCloud cloud;
         private KeyboardLib _keyboardHook = null;
+        private Keys ActiveCustomHotkey = Keys.None;
         private int locx = 0;
         private int locy = 0;
         private bool IsCriticalExitRequested = false;
@@ -295,6 +296,11 @@ namespace Pal98Timer
         }
 
         private int HandPauseCount = 0;
+        public int ManualPauseCount
+        {
+            get { return HandPauseCount; }
+        }
+
         public void UIPause()
         {
             if (core != null)
@@ -526,6 +532,32 @@ namespace Pal98Timer
                     SoundConfig.ins.SaveConfig();
                     SoundConfig.ins.PlayToggleSound(newState);
                     UI(delegate () { btnSoundConfig.Checked = newState; });
+                    return;
+                }
+            }
+
+            // 内核专用组合键复用现有全局钩子，不新增线程或键盘钩子。
+            // 按下时锁存并拦截基准键，直到抬起，避免系统按键重复触发开关。
+            Keys keyCode = (Keys)(hookStruct.vkCode);
+            if (ActiveCustomHotkey != Keys.None && (ActiveCustomHotkey & Keys.KeyCode) == keyCode)
+            {
+                handle = true;
+                if (hookStruct.flags >= 128)
+                {
+                    ActiveCustomHotkey = Keys.None;
+                }
+                return;
+            }
+            if (hookStruct.flags < 128 && core != null)
+            {
+                Keys pressed = keyCode;
+                if (OnCtrlDown || OnCtrlDown2) pressed |= Keys.Control;
+                if (Control.ModifierKeys.HasFlag(Keys.Shift)) pressed |= Keys.Shift;
+                if (Control.ModifierKeys.HasFlag(Keys.Alt)) pressed |= Keys.Alt;
+                if (core.TryHandleCustomHotkey(pressed))
+                {
+                    ActiveCustomHotkey = pressed;
+                    handle = true;
                     return;
                 }
             }

@@ -198,6 +198,9 @@
     <Compile Include="Download.Designer.cs">
       <DependentUpon>Download.cs</DependentUpon>
     </Compile>
+    <Compile Include="Dx9OverlayForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="FormEx.cs">
       <SubType>Form</SubType>
     </Compile>

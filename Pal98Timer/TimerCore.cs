@@ -911,6 +911,13 @@ namespace Pal98Timer
         /// <param name="FunNo">对应F几</param>
         public abstract void OnFunctionKey(int FunNo);
         /// <summary>
+        /// 由现有全局键盘钩子转发内核专用组合键。返回 true 表示该按键已处理并应拦截。
+        /// </summary>
+        public virtual bool TryHandleCustomHotkey(Keys hotkey)
+        {
+            return false;
+        }
+        /// <summary>
         /// 顶部豆豆增加
         /// </summary>
         /// <returns>返回空字符串为不增加，否则增加</returns>
