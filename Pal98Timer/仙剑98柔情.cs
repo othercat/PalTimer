@@ -2434,8 +2434,12 @@ namespace Pal98Timer
                 throw e;
             }
         }
-        public static byte[] GetSaveBuffer(IntPtr handle)
+        public static byte[] GetSaveBuffer(IntPtr handle, int eventObjectBytes = 0x27AA0)
         {
+            if (eventObjectBytes <= 0 || eventObjectBytes > 0x40000)
+            {
+                throw new ArgumentOutOfRangeException("eventObjectBytes");
+            }
             byte[] res = BitConverter.GetBytes((short)1);
 
             int BaseAddr = MemoryReadBase.Readm<int>(handle, GameObject.BaseAddrPTR);
@@ -2450,7 +2454,8 @@ namespace Pal98Timer
                 {
                     cur[3] = MemoryReadBase.Readm<int>(handle, BaseAddr + cur[0]);
                 }
-                byte[] tmp = Readb(handle, cur[3] + cur[4], cur[2]);
+                int length = i == Items.Length - 1 ? eventObjectBytes : cur[2];
+                byte[] tmp = Readb(handle, cur[3] + cur[4], length);
                 Array.Resize(ref res, res.Length + tmp.Length);
                 tmp.CopyTo(res, res.Length - tmp.Length);
             }

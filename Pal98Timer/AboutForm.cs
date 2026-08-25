@@ -35,15 +35,17 @@ namespace Pal98Timer
             r.Add("othercat", new string[3] { "othercat", "https://space.bilibili.com/349512", "1" });
             r.Add("!官网", new string[3] { "www.palspeed.com", "http://www.palspeed.com", "2" });
             r.Add("!各位玩家", new string[3] { "各位玩家", "http://www.palspeed.com/tj.html?n1", "2" });
-            r.Add("!github", new string[3] { "https://github.com/ihouou/PalTimer", "https://github.com/ihouou/PalTimer", "2" });
+            r.Add("!github", new string[3] { "https://github.com/othercat/PalTimer", "https://github.com/othercat/PalTimer", "2" });
             r.Add("!gitee", new string[3] { "https://gitee.com/houou/PalTimer", "https://gitee.com/houou/PalTimer", "2" });
             return r;
         }
         private HText InitData(Dictionary<string, string[]> c)
         {
             HText ht = new HText();
-            ht.Text("本软件以及所属插件均永久开源免费")
-                .Title("主程序")
+            ht.Text("本仓库主程序按 GNU GPL v2 only 开源发布")
+                .Title("项目 Owner / 当前维护")
+                .Link(c["othercat"])
+                .Title("主程序（历史作者）")
                 .Link(c["Houou"]).Space().Text("QQ群：27735311")
                 .Title("视觉")
                 .Text("界面：").Link(c["Houou"]).Space().Text("图标：").Link(c["兰"]).Space().Link(c["狐狸"])
@@ -62,7 +64,11 @@ namespace Pal98Timer
                 .Line()
                 .Text("古剑2官方：").Link(c["江月"])
                 .Line()
-                .Text("梦幻2.2：").Link(c["回忆"])
+                .Text("梦幻2.2（SDLPal 旧内核）：").Link(c["回忆"])
+                .Line()
+                .Text("仙剑98柔情DX9魂牵：女尸，孙小柔，").Link(c["othercat"])
+                .Line()
+                .Text("梦幻2.2显血版：主播粉丝，孙小柔，").Link(c["othercat"])
                 .Title("更多请访问官网")
                 .Link(c["!官网"])
                 .Title("开源")

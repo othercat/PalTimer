@@ -9,6 +9,17 @@ using TimerPluginBase;
 
 namespace Pal98Timer
 {
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class TimerCoreDisplayNameAttribute : Attribute
+    {
+        public TimerCoreDisplayNameAttribute(string displayName)
+        {
+            DisplayName = displayName;
+        }
+
+        public string DisplayName { get; private set; }
+    }
+
     public delegate void LoadCoreDel(TimerCore core);
     /// <summary>
     /// 计时内核
@@ -56,6 +67,26 @@ namespace Pal98Timer
         public static TimerCore GetCoreIns(string name,GForm fm)
         {
             return CreateInstance<TimerCore>("Pal98Timer." + name, "Pal98Timer", fm);
+        }
+
+        public static string GetCoreDisplayName(string name)
+        {
+            Type type = Type.GetType("Pal98Timer." + name + ",Pal98Timer");
+            if (type == null)
+            {
+                return name;
+            }
+
+            object[] attributes = type.GetCustomAttributes(typeof(TimerCoreDisplayNameAttribute), false);
+            if (attributes.Length != 1)
+            {
+                return name;
+            }
+
+            TimerCoreDisplayNameAttribute display = attributes[0] as TimerCoreDisplayNameAttribute;
+            return display == null || string.IsNullOrWhiteSpace(display.DisplayName)
+                ? name
+                : display.DisplayName;
         }
         /// <summary>
         /// 创建对象实例

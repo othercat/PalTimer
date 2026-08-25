@@ -13,9 +13,13 @@ def _program_parses_automation_flags() -> bool:
         and '"--automation-snapshot-run-id"' in text
         and '"--automation-non-sequential-splits"' in text
         and '"--automation-accept-pal98-base-title"' in text
+        and '"--automation-room-exit-split"' in text
+        and '"--automation-snapshot-interval-ms"' in text
         and "public bool Enabled" in text
         and "public bool EnableNonSequentialSplits" in text
         and "public bool EnablePal98BaseTitleFallback" in text
+        and "public bool EnableRoomExitSplit" in text
+        and "public int SnapshotIntervalMilliseconds = 500;" in text
         and "get { return Enabled && AcceptPal98BaseTitle; }" in text
     )
 
@@ -66,7 +70,9 @@ def _timer_core_builds_autotest_snapshot_envelope() -> bool:
         in text
         and 'snapshot["automation_pal98_base_title_fallback"] = AutomationArgs.Current.EnablePal98BaseTitleFallback;'
         in text
-        and 'snapshot["automation_tick_snapshot_interval_ms"] = AutomationTickSnapshotIntervalMilliseconds;'
+        and 'snapshot["automation_room_exit_split"] = AutomationArgs.Current.EnableRoomExitSplit;'
+        in text
+        and 'snapshot["automation_tick_snapshot_interval_ms"] = Math.Max(10, AutomationArgs.Current.SnapshotIntervalMilliseconds);'
         in text
         and "FillAutomationSnapshotDiagnostics(snapshot);" in text
         and "protected virtual void FillAutomationSnapshotDiagnostics(HObj snapshot)" in text
@@ -79,10 +85,11 @@ def _timer_core_builds_autotest_snapshot_envelope() -> bool:
 def _timer_core_writes_tick_snapshot_only_for_automation() -> bool:
     text = (ROOT / "Pal98Timer" / "TimerCore.cs").read_text(encoding="utf-8-sig")
     return (
-        "private const int AutomationTickSnapshotIntervalMilliseconds = 500;" in text
-        and "private DateTime LastAutomationTickSnapshotTime = DateTime.MinValue;" in text
+        "private DateTime LastAutomationTickSnapshotTime = DateTime.MinValue;" in text
         and "private void WriteAutomationTickSnapshotIfDue()" in text
         and "if (!AutomationArgs.Current.Enabled || form == null)" in text
+        and "int intervalMs = Math.Max(10, AutomationArgs.Current.SnapshotIntervalMilliseconds);" in text
+        and "(now - LastAutomationTickSnapshotTime).TotalMilliseconds < intervalMs" in text
         and "LastAutomationTickSnapshotTime = now;" in text
         and 'form.WriteAutomationSnapshot("automation_tick");' in text
         and "OnTick();" in text

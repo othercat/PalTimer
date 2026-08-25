@@ -41,9 +41,17 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 ## 2. 当前工作状态
 
-**版本：v3.37.0**（2026-08-23）
+**版本：v3.38.0**（2026-08-25）
 
 当前 Git 状态以实际 `git status` 为准；2026-08-24 P 键重启权限误报修复的源码、测试与文档已经收口。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
+
+2026-08-25 当前 Dream 显血核心除基础 `pal98.dream220.compat@1.0.18` 外，只额外接受冻结派生
+`pal98.dream220.compat.drawcard.16e143813df5@1.0.18`；任意其他 Dream 派生仍失败关闭。该派生包是显血 +
+李逍遥专用扎麻神针 + 敌人物抗1/五人防御+888 + 全吴强，但继续共用 `DREAM220VISIBLE` 时间线和
+`bestDREAM220VISIBLE.txt`。Release|x64、定向 profile/路线/no-new-memory-write 与关键 PAL98DX9 回归通过；GPL
+r3 EXE SHA-256 `EA8220AE399D93CC59C9DF0613B33C0C762796B5FB64E51D410CB923A7737FC5`，对应源码 ZIP SHA-256
+`FD2035B11C9CE7C738399B6B2A60C3DDC605C9EFEBE0549854DCB5C3A88ABBCF`，已部署到
+`D:\PAL98_v1.58\Tools\PalTimer-3.38.0`，未启动程序或改计时数据。
 
 2026-08-24 修复 PALDLL_DX9 游戏内按 P 重启时的管理员权限误报。实机只读证据确认重启后的 PAL 与 PalTimer 均为 `Elevated=0`，且相同 `OpenProcess(0x1F0FFF)` 随后成功；问题是三个 PAL98 内核把 PID 切换期单次 `ERROR_ACCESS_DENIED=5` 立即解释为管理员进程。新增共享 `PalProcessOpenRetryPolicy`：只对同一 PID 的错误5提供1.5秒单调时钟稳定期，成功、非错误5、换 PID 或清理状态都会复位；同一 PID 持续拒绝后仍发布既有权限提示。定向策略 harness、三内核权限/标题/叠加/暂停/云读档回归和 VS2026 `Release|x64` 构建通过；仅有既有 warning。新版主程序已部署到计时器3.37.0目录，SHA-256 `77D5FD838E4EC496B0D91199603A851F2F79AB41A993CF2099075FB022FCDDB2`；旧版备份位于 `backup-before-p-restart-access-denied-debounce-20260824-115943`。除主 EXE 和新增备份外，其余23个文件哈希未变；未启动计时器。
 
@@ -288,7 +296,10 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
-**最高优先：** 实机验证 PAL98DX9 叠加配置快捷键：游戏前台开/关各一次、按住不连发、游戏不收到基准键，并复测 F6/F8/F9/F10/F11/F12、Ctrl+Enter、暂停/反作弊/云与接力读档、路线节点推进；随后做关闭/开启各30分钟 CPU、Private Bytes、GDI Handles 与游戏速度对照。
+**最高优先：** 在明确授权启动/写入后，用冻结派生 profile
+`pal98.dream220.compat.drawcard.16e143813df5@1.0.18` 做自然剧情、真实战斗、结局、接力存档→退出→重启→读档和完整 `DREAM220VISIBLE` 时间线验收；再切到魂牵三版和 `仙剑98柔情DX9` 确认隔离与 Classic 176528 字节接力存档不变。资源/合成谓词通过不等于实机验收。
+
+实机验证 PAL98DX9 叠加配置快捷键：游戏前台开/关各一次、按住不连发、游戏不收到基准键，并复测 F6/F8/F9/F10/F11/F12、Ctrl+Enter、暂停/反作弊/云与接力读档、路线节点推进；随后做关闭/开启各30分钟 CPU、Private Bytes、GDI Handles 与游戏速度对照。
 
 在下一次明确授权部署 PalTimer 后，先验证普通权限 PAL/PalTimer 连续按 P 重启不会误报，再用管理员 PAL + 普通 PalTimer 确认持续拒绝提示仍存在；不要把计时器改成默认管理员运行。
 
@@ -324,6 +335,9 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 | `Pal98Timer/TimerCore.cs` | 通用节点推进、CurrentStep、跳节点、成绩导出 |
 | `Pal98Timer/Pal98WaterSpiritPearlSplit.cs` | 水灵珠节点正常交换基线增长与大理回程双位置门闩 |
 | `Pal98Timer/仙剑98柔情DX9.cs` | DX9 内核、进程检测、物品/战斗统计、节点定义 |
+| `Pal98Timer/Hunqian167*.cs` | 魂牵三版精确 profile 门、独立时间线与路线纯谓词 |
+| `Pal98Timer/Dream220Visible*.cs` | 梦幻2.2显血版精确 profile 门、独立时间线与路线纯谓词 |
+| `docs/PAL98DX9_PROFILE_CORES.md` | 三条 PAL.exe DX9 核心的公开身份、存档长度和发布门 |
 | `Pal98Timer/仙剑98柔情.cs` | 原 98 内核 |
 | `Pal98Timer/仙剑98柔情不欢乐模式.cs` | 不欢乐模式内核 |
 | `Pal98Timer/SoundConfig.cs` | 音效配置单例、MCI/WMP 播放逻辑 |
@@ -333,6 +347,21 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-08-25 会话（3.38.0 魂牵 / 梦幻22显血独立 PAL.exe 时间线）
+
+- 保留 `梦幻22 / DREAM22` 为 `sdlpal` 历史内核；新增玩家可见的 `仙剑98柔情DX9魂牵 / PAL98DX9HUNQIAN` 与 `仙剑98柔情DX9梦幻22显血 / DREAM220VISIBLE`，Classic 继续使用 `仙剑98柔情DX9 / PAL98DX9`
+- 三条 PAL.exe DX9 线共用既有 `仙剑98柔情DX9.GameObject` 和 70ms 只读循环，但使用独立 CoreName、best 文件和节点线；没有新增线程、网络、进程枚举、RPM/WPM 调用点
+- Dream 接受 `pal98.dream220.compat@1.0.18` 和本次冻结的 `pal98.dream220.compat.drawcard.16e143813df5@1.0.18`；魂牵只接受 v1.57 Easy 1.0.2、Hard 1.0.2、Nonhuman 1.0.3 基础 profile。Dream 其他派生包、魂牵抽卡派生包以及 pointer/descriptor/hash/path 异常均失败关闭
+- 接力捕获按内容扩展：Classic 176528 字节不变，魂牵 184688，梦幻显血 185872；只在用户主动接力/云存档时触发，不改变每 tick 读取
+- 版本升级至 3.38.0；11 个 Python、原 6 个 PowerShell 回归入口与新增 Owner/GPL guard 全通过；VS2026 Release x64 构建零错误、28 个既有 warning
+- About、README 和根 `LICENSE` 已统一为仓库 Owner/当前维护者 `othercat`、`GPL-2.0-only`，历史 `ihouou/PalTimer` 只保留 upstream 归属；正式 EXE SHA-256 `BC9CA2441C600DBE19DBE49D9FD1387ED0D529104C463A012B2180C11D621F98`
+- GPL r2 候选 `artifacts/paltimer-3.38.0-dream220-visible-gpl-candidate-20260825-r2`：源码 ZIP SHA-256 `07EFF79C8BDC70DEC3ABDAB47FCD14989A1BB3138B09D2C70D3A41967BC743B2`。首版 ZIP 因 Git 默认转义中文路径而被拒绝；r2 强制 `core.quotepath=false`，192 个条目包含中文核心源码，排除私有 overlay/构建产物/密钥类型，并已从 ZIP 独立完成 Release|x64 重建
+- 已随 `D:\PAL98_v1.58\Tools\PalTimer-3.38.0` 本地部署，随附 GPL、README、完整对应源码、release manifest 和 SHA256SUMS；部署 EXE 通过隔离 STA overlay 行为 harness。未公开发布、未启动 PalTimer
+- 2026-08-25 派生内容增量：`DREAM220VISIBLE` 仍使用同一独立时间线与 `bestDREAM220VISIBLE.txt`，但额外精确接受“显血 + 李逍遥专用扎麻神针 + 物抗1 + 全吴强”的冻结 profile，不把任意 Dream draw-card 家族泛化为受支持计时身份。定向 profile/路线/no-new-memory-write 回归及关键 PAL98DX9 既有回归通过，VS2026 `Release|x64` 重建零错误、28 个既有 warning
+- 新 GPL r3 候选 `artifacts/paltimer-3.38.0-dream220-derived-gpl-candidate-20260825-r3`：EXE SHA-256 `EA8220AE399D93CC59C9DF0613B33C0C762796B5FB64E51D410CB923A7737FC5`，源码 ZIP SHA-256 `FD2035B11C9CE7C738399B6B2A60C3DDC605C9EFEBE0549854DCB5C3A88ABBCF`；源码 ZIP 已在独立目录完成 `Release|x64` 重建后清理验证目录
+- r3 已增量部署到 `D:\PAL98_v1.58\Tools\PalTimer-3.38.0`，旧文件备份在 `D:\PAL98_v1.58\_codex_backups\20260825-120311-dream220-derived-addon`。未启动 PalTimer，也未改 best、叠加布局、配置或计时数据
+- 当前路线证据仅为 profile/resource 对齐与合成谓词；自然剧情、真实战斗、结局、完整跑线和接力存读档仍需实机验收
 
 ### 2026-08-24 会话（P 键重启权限误报稳定门）
 
@@ -546,6 +575,17 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-08-25 Dream220 冻结派生 profile 补充验证：
+
+```text
+PASS: dream220_visible_regression_check.ps1（基础/精确派生接受，未知派生拒绝，路线谓词与 no-new-memory-write）
+PASS: owner/license、PAL98DX9 title、process permission/retry、overlay、water pearl、cloud pause 关键回归
+PASS: VS2026 MSBuild 18 Release|x64，0 errors，28 个既有 warning
+PASS: GPL r3 源码 ZIP 在独立解压目录完成 Release|x64 重建，验证目录已清理
+PASS: 部署 EXE/源码 ZIP 与 r3 候选 SHA-256 一致；备份位于 D:\PAL98_v1.58\_codex_backups\20260825-120311-dream220-derived-addon
+NOT RUN: PalTimer/PAL.exe GUI、真实 Dream 路线、接力存读档、30 分钟性能与 Classic/魂牵隔离
+```
 
 2026-08-24 P 键重启权限误报补充验证：
 

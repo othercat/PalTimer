@@ -62,7 +62,7 @@ namespace Pal98Timer
 
         private string cryerror = "";
         
-        private GameObject GameObj = new GameObject();
+        protected GameObject GameObj = new GameObject();
         private readonly Pal98WaterSpiritPearlSplit WaterSpiritPearlSplit = new Pal98WaterSpiritPearlSplit();
 
         private List<string> NamedBattleRes = new List<string>();
@@ -79,6 +79,8 @@ namespace Pal98Timer
         private bool LastPalTitleMatchedBase = false;
         private bool LastPalTitleAcceptedByAutomation = false;
         private int LastOpenPalProcessErrorCode = 0;
+        private int LastRejectedProfileProcessId = -1;
+        private string LastRejectedProfileMessage = "";
 
         private float MoveSpeed = 0;
         private DateTime LastFlushTime = DateTime.Now;
@@ -734,7 +736,7 @@ namespace Pal98Timer
                 }
 
                 SRPGobj so = new SRPGobj();
-                so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
+                so.RPG = CaptureRelaySaveBuffer();
                 so.TimerStr = GetRStr();
 
                 string FilePath = fn;
@@ -770,6 +772,11 @@ namespace Pal98Timer
                     });
                 }
             });
+        }
+
+        protected virtual byte[] CaptureRelaySaveBuffer()
+        {
+            return SaveObject.GetSaveBuffer(this.PalHandle);
         }
 
         private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")
@@ -1850,6 +1857,30 @@ namespace Pal98Timer
                             }
                         }
                         
+                        // A selected profile cannot be hot-swapped into a running PAL.exe.
+                        // Cache a rejection by PID so an invalid profile does not cause 70ms file/hash polling.
+                        if (LastRejectedProfileProcessId == res[0].Id)
+                        {
+                            RecordAttachProbe("profile_rejected_cached", res[0]);
+                            return false;
+                        }
+
+                        string profileError;
+                        if (!TryValidateAttachedGameProfile(res[0], out profileError))
+                        {
+                            RecordAttachProbe("profile_rejected", res[0]);
+                            if (LastRejectedProfileProcessId != res[0].Id ||
+                                !string.Equals(LastRejectedProfileMessage, profileError, StringComparison.Ordinal))
+                            {
+                                cryerror = profileError;
+                                LastRejectedProfileProcessId = res[0].Id;
+                                LastRejectedProfileMessage = profileError;
+                            }
+                            return false;
+                        }
+
+                        LastRejectedProfileProcessId = -1;
+                        LastRejectedProfileMessage = "";
                         if (!TryOpenPalProcess(res[0]))
                         {
                             return false;
@@ -2017,6 +2048,12 @@ namespace Pal98Timer
                 ClearGameState();
                 return false;
             }
+        }
+
+        protected virtual bool TryValidateAttachedGameProfile(Process process, out string error)
+        {
+            error = "";
+            return true;
         }
 
         private bool TryOpenPalProcess(Process process)

@@ -185,6 +185,12 @@
     <Compile Include="仙剑二官方Steam.cs" />
     <Compile Include="古剑2官方.cs" />
     <Compile Include="梦幻22.cs" />
+    <Compile Include="Dream220Visible.cs" />
+    <Compile Include="Dream220VisibleProfile.cs" />
+    <Compile Include="Dream220VisibleRoute.cs" />
+    <Compile Include="Hunqian167.cs" />
+    <Compile Include="Hunqian167Profile.cs" />
+    <Compile Include="Hunqian167Route.cs" />
     <Compile Include="简版.cs" />
     <Compile Include="DebugForm.cs">
       <SubType>Form</SubType>

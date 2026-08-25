@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.0";
+        public const string CurrentVersion = "3.38.0";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -104,7 +104,7 @@ namespace Pal98Timer
             foreach (string cn in cores)
             {
                 ToolStripMenuItem ti = new ToolStripMenuItem();
-                ti.Text = cn;
+                ti.Text = TimerCore.GetCoreDisplayName(cn);
                 ti.Click += delegate (object sender, EventArgs e) {
                     if (Confirm("确定更换内核么？这将重置计时器"))
                     {
