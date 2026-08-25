@@ -227,6 +227,7 @@
     <Compile Include="SoundConfig.cs" />
     <Compile Include="SoundConfigForm.cs" />
     <Compile Include="SRPGSidecarTransport.cs" />
+    <Compile Include="PalProcessOpenRetryPolicy.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TimerCore.cs" />

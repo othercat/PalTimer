@@ -69,6 +69,7 @@ namespace Pal98Timer
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
         private bool HasAlertPalOpenProcessError = false;
+        private readonly PalProcessOpenRetryPolicy PalOpenRetryPolicy = new PalProcessOpenRetryPolicy();
 
         private int TotalMonsterCount = 0;  // 撞怪总数
 
@@ -940,12 +941,13 @@ namespace Pal98Timer
             {
                 PalHandle = new IntPtr(handle);
                 HasAlertPalOpenProcessError = false;
+                PalOpenRetryPolicy.Reset();
                 return true;
             }
 
             PalHandle = IntPtr.Zero;
             int errorCode = Kernel32.GetLastWin32Error();
-            if (!HasAlertPalOpenProcessError)
+            if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
                 HasAlertPalOpenProcessError = true;
@@ -959,11 +961,12 @@ namespace Pal98Timer
             if (handle != 0)
             {
                 Kernel32.CloseHandle(handle);
+                PalOpenRetryPolicy.Reset();
                 return true;
             }
 
             int errorCode = Kernel32.GetLastWin32Error();
-            if (!HasAlertPalOpenProcessError)
+            if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
                 HasAlertPalOpenProcessError = true;
@@ -994,6 +997,7 @@ namespace Pal98Timer
             PID = -1;
             GMD5 = "none";
             HasAlertPalOpenProcessError = false;
+            PalOpenRetryPolicy.Reset();
         }
 
         private void CalcPalMD5()

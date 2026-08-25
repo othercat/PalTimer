@@ -72,6 +72,7 @@ namespace Pal98Timer
         private bool IsShowSpeed = false;
         private bool HasAlertMutiPal = false;
         private bool HasAlertPalOpenProcessError = false;
+        private readonly PalProcessOpenRetryPolicy PalOpenRetryPolicy = new PalProcessOpenRetryPolicy();
         private string LastPalAttachStatus = "not_checked";
         private int LastPalProcessCount = 0;
         private int LastPalProcessId = -1;
@@ -1474,6 +1475,7 @@ namespace Pal98Timer
             {
                 PalHandle = new IntPtr(handle);
                 HasAlertPalOpenProcessError = false;
+                PalOpenRetryPolicy.Reset();
                 LastOpenPalProcessErrorCode = 0;
                 return true;
             }
@@ -1482,7 +1484,7 @@ namespace Pal98Timer
             int errorCode = Kernel32.GetLastWin32Error();
             LastOpenPalProcessErrorCode = errorCode;
             RecordAttachProbe("open_process_failed", process, null, errorCode);
-            if (!HasAlertPalOpenProcessError)
+            if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
                 HasAlertPalOpenProcessError = true;
@@ -1496,6 +1498,7 @@ namespace Pal98Timer
             if (handle != 0)
             {
                 Kernel32.CloseHandle(handle);
+                PalOpenRetryPolicy.Reset();
                 LastOpenPalProcessErrorCode = 0;
                 return true;
             }
@@ -1503,7 +1506,7 @@ namespace Pal98Timer
             int errorCode = Kernel32.GetLastWin32Error();
             LastOpenPalProcessErrorCode = errorCode;
             RecordAttachProbe("can_open_process_failed", process, null, errorCode);
-            if (!HasAlertPalOpenProcessError)
+            if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
                 cryerror = BuildOpenPalProcessError(errorCode);
                 HasAlertPalOpenProcessError = true;
@@ -1623,6 +1626,7 @@ namespace Pal98Timer
             DX9Version = "未知";
             InitialDetectionTime = null;
             HasAlertPalOpenProcessError = false;
+            PalOpenRetryPolicy.Reset();
             // 注意：不重置 HasConfirmedDX9 和 _GameWasRunning
             // 这些状态用于区分首次检测和游戏关闭后重新检测
         }

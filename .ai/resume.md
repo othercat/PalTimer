@@ -43,7 +43,9 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 **版本：v3.37.0**（2026-08-23）
 
-当前 Git 状态：`master...origin/master`。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
+当前 Git 状态以实际 `git status` 为准；2026-08-24 P 键重启权限误报修复的源码、测试与文档已经收口。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
+
+2026-08-24 修复 PALDLL_DX9 游戏内按 P 重启时的管理员权限误报。实机只读证据确认重启后的 PAL 与 PalTimer 均为 `Elevated=0`，且相同 `OpenProcess(0x1F0FFF)` 随后成功；问题是三个 PAL98 内核把 PID 切换期单次 `ERROR_ACCESS_DENIED=5` 立即解释为管理员进程。新增共享 `PalProcessOpenRetryPolicy`：只对同一 PID 的错误5提供1.5秒单调时钟稳定期，成功、非错误5、换 PID 或清理状态都会复位；同一 PID 持续拒绝后仍发布既有权限提示。定向策略 harness、三内核权限/标题/叠加/暂停/云读档回归和 VS2026 `Release|x64` 构建通过；仅有既有 warning。新版主程序已部署到计时器3.37.0目录，SHA-256 `77D5FD838E4EC496B0D91199603A851F2F79AB41A993CF2099075FB022FCDDB2`；旧版备份位于 `backup-before-p-restart-access-denied-debounce-20260824-115943`。除主 EXE 和新增备份外，其余23个文件哈希未变；未启动计时器。
 
 2026-08-23 本轮新增 PAL98DX9 专用、默认关闭的实验性游戏内信息叠加，并把界面、程序集与文件版本升级为 `3.37.0`。叠加层仅在开关启用时创建无激活、鼠标穿透的透明窗口和 100ms WinForms Timer；根据原开发者补充和历史 `LiveWindow` 的 `ShowPointCount=2` 语义，窗口改为 PAL98DX9 客户区右下角的紧凑面板，并显示路线首尾自动平移的3行节点窗口（上一、当前、下一；节点名、最佳线，已完成/当前项含差值）。后续视觉反馈要求移除补丁版本和预计通关文字、缩窄面板、把节点名右对齐靠近时间列，并通过缩短底部锚定面板一行高度让全部内容下移一行；简体/英文标题使用常规宋体 `SimSun`，繁体标题根据既有缓存窗口标题使用细明体 `MingLiU`（BIG5 风格字形，不改变 Unicode 解码链），亮绿/亮黄/亮红改为低饱和灰金/灰绿/灰红，文字渲染使用 `SingleBitPerPixelGridFit` 以避免洋红透明色键与抗锯齿混色产生紫边。战斗计时左侧新增 `暂停N`，只读复用 `GForm.HandPauseCount` 的公开 getter；手动从未暂停切到暂停时沿用既有逻辑加一，重置归零，窗口失焦、反作弊和云/接力读档的 `SetUIPause` 不计入。功能菜单最终收拢为单一顶层“游戏内信息叠加设置”，子菜单承载启用/关闭、开关快捷键、位置/比例、字体/字号/颜色和恢复默认。叠加快捷键默认未设置，只允许至少含一个 Ctrl/Shift/Alt 的组合键，拒绝 F1-F12、Ctrl+Enter 和当前节点音效快捷键；它复用主窗体既有全局键盘钩子，基准键按下后锁存到抬起以屏蔽系统连发，没有新增钩子、线程或轮询。显式编辑遮罩只有用户进入“调整叠加位置和比例”时才临时移除鼠标穿透并在原窗口绘制低饱和遮罩、提示栏和右下角缩放手柄；左键拖动位置、拖动手柄等比缩放、右键或再次点菜单完成，退出立即恢复 `WS_EX_TRANSPARENT`。系统字体对话框可选择字体、6–18号字号和常规/粗体/斜体，颜色对话框配置常规文字颜色；快/慢与反作弊语义色保留，拒绝透明色键所用的洋红色。归一化位置、0.5–2.0比例、字体、颜色和快捷键保存到独立 `dx9_overlay_layout`；旧目录缺少该文件时保持原布局、默认颜色且快捷键未设置。它只消费 DX9 内核已有的计时、资源、节点、暂停和窗口句柄快照，不抓屏、不联网、不接旧 OBS 插件、不增加 `OpenProcess` / `ReadProcessMemory` / `WriteProcessMemory`，也不进入计时、反作弊、读档或节点推进链。缺少 `dx9_overlay` 时默认关闭；关闭时只在 PAL98DX9 内核初始化读取一次小型布局文件取得快捷键，不创建叠加窗口、Timer、线程或周期轮询。`.ai/dx9_overlay_regression_check.py`、`.ai/dx9_overlay_interaction_regression_check.ps1`、构建/部署产物反射行为检查、离屏视觉预览及暂停、反作弊、云/接力读档、管理员提示、DX9 标题、水灵珠相关回归均通过；VS2026 / MSBuild 18 `Release|x64` 重建成功，只有既有警告。最终重建的 `Pal98Timer.exe` 程序集版本为 `3.37.0.0`，文件/产品版本为 `3.37.0`，SHA-256 为 `D0D2AD09BD664A60AD44BB547EAE86D6A2AD5B675060D70978B0E07D52ECA42B`。未启动 PalTimer，真实游戏中的快捷键输入、合并菜单、暂停次数、拖动、缩放、字体/颜色、焦点、性能和速通语义仍需实机验证。
 
@@ -120,6 +122,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 - 叠加快捷键复用既有全局键盘钩子，拒绝 F1-F12、Ctrl+Enter、无修饰键和节点音效快捷键冲突，按住时不会连续切换
 - 字体颜色可选；透明色键洋红被拒绝，快/慢差值和反作弊等语义色不被自定义常规色覆盖
 - `Release|x64` 构建、静态契约、隔离交互/渲染、既有暂停/反作弊/读档/管理员提示/DX9 标题/水灵珠回归通过；已部署主 EXE且保留用户配置哈希
+- PALDLL_DX9 按 P 重启的短暂访问拒绝不再立即误报管理员权限；三个 PAL98 内核共用按 PID 限定的1.5秒重试门，持续权限不匹配提示保持不变，已部署到计时器3.37.0目录
 
 ### 未发布（2026-07-27）
 - 不欢乐模式内部身份统一为 `PAL98UNHAPPY`；旧本地最佳线仅在新文件不存在时复制迁移，旧文件保留
@@ -193,6 +196,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 本轮已修复，待实机验证
 
+- **P 键重启管理员权限误报**：代码、策略 harness、三内核结构回归和 `Release|x64` 构建通过。仍需部署后验证“普通 PAL + 普通 PalTimer，连续按 P 重启不弹提示且重新附加”；并验证“管理员 PAL + 普通 PalTimer”在约1.5秒后仍提示并退出。
 - **PAL98DX9 游戏内信息叠加**：代码、构建、隔离窗口交互、配置往返和部署验证完成。仍需实机确认配置快捷键在游戏前台启用/关闭时不影响游戏输入，F6/F8/F9/F10/F11/F12、Ctrl+Enter 与节点音效快捷键保持原语义；并分别在关闭/开启状态完成30分钟 CPU、Private Bytes、GDI Handles 与游戏速度对照，覆盖暂停、反作弊、读档和节点推进。
 
 - **PAL98/PAL98DX9 水灵珠双路线节点**：正常交换位置已由用户确认正确。回梦无痕重启验证证明数量会从临时的 `4` 归一为 `1`；修正后应在场景204固定实际坐标 `(1168,760)` 时数量 `0` 不跳、数量 `1` 及以上跳。仍需玩家复测，并补测错误位置、F10 reset 和 PAL98DX9 同路线。PAL98UNHAPPY 未改。
@@ -286,6 +290,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 **最高优先：** 实机验证 PAL98DX9 叠加配置快捷键：游戏前台开/关各一次、按住不连发、游戏不收到基准键，并复测 F6/F8/F9/F10/F11/F12、Ctrl+Enter、暂停/反作弊/云与接力读档、路线节点推进；随后做关闭/开启各30分钟 CPU、Private Bytes、GDI Handles 与游戏速度对照。
 
+在下一次明确授权部署 PalTimer 后，先验证普通权限 PAL/PalTimer 连续按 P 重启不会误报，再用管理员 PAL + 普通 PalTimer 确认持续拒绝提示仍存在；不要把计时器改成默认管理员运行。
+
 1. 正常交换位置已经实机通过；下一步重新验证 PAL98/PAL98DX9 回梦无痕分支：场景204固定实际坐标 `(1168,760)` 下数量 `0` 不跳、重启归一后的数量 `1` 及以上跳，错误场景/相邻坐标不跳；然后补测 F10 reset 和 PAL98DX9。
 2. 实机验证 PAL98/PAL98DX9/PAL98UNHAPPY 新 SRPG：先制造可辨识的撞怪数并分别做一次接力、云存读档，确认导入后恢复源快照计数；再用缺少 `TotalMonsterCount` 的旧 SRPG 确认本地计数不变。PAL98DX9/PAL98UNHAPPY 同时覆盖源 sidecar 存在与不存在，确认目标时间戳备份、重启提示，并在重启 PAL.exe 后核对飞行旗与 RPG 属于同一快照。
 3. 实机打开不欢乐模式，确认旧 `best仙剑98DX9不欢乐模式.txt` 会复制为 `bestPAL98UNHAPPY.txt`，专用插件前缀和成绩导出文件名均使用 `PAL98UNHAPPY`。
@@ -327,6 +333,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-08-24 会话（P 键重启权限误报稳定门）
+
+- 新增 `PalProcessOpenRetryPolicy.cs`，使用 `Stopwatch` 为同一 PID 的错误5提供1.5秒稳定期；非错误5立即沿用旧错误，成功/换 PID/清理均复位
+- PAL98、PAL98DX9、PAL98UNHAPPY 的 `CanOpenPalProcess` 与 `TryOpenPalProcess` 统一接入；真正持续的管理员权限不匹配提示和确认后退出语义不变
+- 新增策略行为 harness，并扩展三内核权限结构检查；没有修改内存地址、RPM/WPM、计时、暂停、反作弊、节点、云存读档或 OBS
+- 新版 `Pal98Timer.exe` 已备份旧版后部署到计时器3.37.0目录；来源/目标哈希一致，其他23个文件未变，未启动 PAL/PalTimer
 
 ### 2026-08-23 会话（PAL98DX9 游戏内信息叠加 3.37.0）
 
@@ -533,6 +546,17 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-08-24 P 键重启权限误报补充验证：
+
+```text
+PASS: .ai/pal_process_open_retry_policy_regression_check.ps1（同 PID 边界、复位、换 PID、单调时钟回退、fail-closed）
+PASS: pal_open_process_permission / pal98dx9_title_identity / dx9_overlay / banana_pause_resume / cloud_save_load_pause 回归
+PASS: VS2026 MSBuild 18 Release|x64，0 errors，只有27个既有 warning
+PASS: 部署版反射行为测试确认1.5秒边界、持续拒绝、非错误5和换 PID 语义；目标 SHA-256 77D5FD838E4EC496B0D91199603A851F2F79AB41A993CF2099075FB022FCDDB2
+KNOWN FAIL: automation_snapshot_export_regression_check.py 仍失败在未修改的 TimerCore AutoTest envelope / gated tick snapshot 旧字符串匹配，与本轮权限重试无关
+NOT RUN: 部署版普通权限连续 P 重启、管理员 PAL + 普通 PalTimer 持续拒绝、Win7 SP1
+```
 
 2026-08-23 PAL98DX9 叠加快捷键/字体颜色补充验证：
 

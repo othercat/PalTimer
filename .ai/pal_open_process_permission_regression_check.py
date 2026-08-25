@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+POLICY = ROOT / "Pal98Timer" / "PalProcessOpenRetryPolicy.cs"
 KERNELS = [
     ROOT / "Pal98Timer" / "仙剑98柔情.cs",
     ROOT / "Pal98Timer" / "仙剑98柔情DX9.cs",
@@ -21,6 +22,9 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
         and "private string BuildOpenPalProcessError(int errorCode)" in text
         and "Kernel32.ERROR_ACCESS_DENIED" in text
         and "TimerCore.ElevatedPalProcessErrorMessage" in text
+        and "private readonly PalProcessOpenRetryPolicy PalOpenRetryPolicy" in text
+        and text.count("PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode)") == 2
+        and text.count("PalOpenRetryPolicy.Reset();") >= 3
         and "PalHandle = new IntPtr(handle);" in text
         and "Kernel32.CloseHandle(handle);" in text
         and "PalHandle = new IntPtr(Kernel32.OpenProcess" not in text
@@ -28,6 +32,18 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
         and "if (!CanOpenPalProcess(res[0]))" in text
         and text.find(open_call) != -1
         and text.find(pid_assign, text.find(open_call)) != -1
+    )
+
+
+def _retry_policy_is_bounded() -> bool:
+    text = POLICY.read_text(encoding="utf-8-sig")
+    return (
+        "internal const int AccessDeniedGraceMilliseconds = 1500;" in text
+        and "Stopwatch.GetTimestamp()" in text
+        and "errorCode != AccessDeniedErrorCode" in text
+        and "PendingProcessId != processId" in text
+        and "elapsedMilliseconds >= AccessDeniedGraceMilliseconds" in text
+        and "Invalid timing input cannot safely suppress a real permission error." in text
     )
 
 
@@ -65,6 +81,9 @@ def _timer_core_has_short_elevation_message() -> bool:
 
 def main() -> int:
     failed = [path for path in KERNELS if not _kernel_has_permission_prompt(path)]
+    if not _retry_policy_is_bounded():
+        print("FAIL: PAL process access-denied retry policy is missing or unbounded.")
+        return 1
     if not _kernel32_captures_open_process_error():
         print("FAIL: Kernel32.OpenProcess does not capture last-error state.")
         return 1
