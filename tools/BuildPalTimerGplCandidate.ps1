@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$CandidateName = 'paltimer-3.38.0-dream220-visible-gpl-candidate-20260825'
+    [string]$CandidateName = 'paltimer-3.37.0-dream220-visible-gpl-candidate-20260825'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,7 +82,7 @@ $metadata = @(
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $sourceStage 'SOURCE_SNAPSHOT_METADATA.txt'), $metadata + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 
-$sourceZip = Join-Path $candidateRoot 'PalTimer-3.38.0-source.zip'
+$sourceZip = Join-Path $candidateRoot 'PalTimer-3.37.0-source.zip'
 Compress-Archive -Path (Join-Path $sourceStage '*') -DestinationPath $sourceZip -CompressionLevel Optimal
 
 $resolvedStage = [IO.Path]::GetFullPath($sourceStage)
@@ -101,7 +101,7 @@ $payload = Get-ChildItem -LiteralPath $candidateRoot -File | Sort-Object Name | 
 $manifest = [ordered]@{
     schema = 'pal98.local-public-tool-release.v1'
     product = 'PalTimer'
-    version = '3.38.0'
+    version = '3.37.0'
     license = 'GPL-2.0-only'
     repository_owner = 'othercat'
     repository = 'https://github.com/othercat/PalTimer'
