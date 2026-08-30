@@ -1505,15 +1505,21 @@ namespace Pal98Timer
                 CheckPoint point = CheckPoints[index];
                 bool isCurrent = index == displayStep;
                 bool isCompleted = index < displayStep;
-                string difference = "";
-                if (index <= displayStep && point.Current.Ticks > 0)
+                string current = "";
+                long comparisonSeconds = 0;
+                if (index <= displayStep && (isCurrent || point.Current.Ticks > 0))
                 {
-                    difference = FormatDx9OverlayDifference(point.GetCHA());
+                    current = TItem.TimeSpanToStringLite(point.Current);
+                    if (point.Current.Ticks > 0)
+                    {
+                        comparisonSeconds = point.GetCHA();
+                    }
                 }
                 Dx9OverlayTimelineEntry entry = new Dx9OverlayTimelineEntry(
                     point.GetNickName(),
                     TItem.TimeSpanToStringLite(point.Best),
-                    difference,
+                    current,
+                    comparisonSeconds,
                     isCurrent,
                     isCompleted);
                 if (offset == 0)
@@ -1529,13 +1535,6 @@ namespace Pal98Timer
                     third = entry;
                 }
             }
-        }
-
-        private static string FormatDx9OverlayDifference(long differenceSeconds)
-        {
-            string sign = differenceSeconds < 0 ? "-" : "+";
-            long absoluteSeconds = Math.Abs(differenceSeconds);
-            return sign + (absoluteSeconds / 60).ToString() + ":" + (absoluteSeconds % 60).ToString().PadLeft(2, '0');
         }
 
         protected override void OnTick()

@@ -16,12 +16,14 @@ namespace Pal98Timer
         public readonly bool IsCompleted;
         public readonly string Name;
         public readonly string Best;
-        public readonly string Difference;
+        public readonly string Current;
+        public readonly long ComparisonSeconds;
 
         public Dx9OverlayTimelineEntry(
             string name,
             string best,
-            string difference,
+            string current,
+            long comparisonSeconds,
             bool isCurrent,
             bool isCompleted)
         {
@@ -30,7 +32,8 @@ namespace Pal98Timer
             IsCompleted = isCompleted;
             Name = name ?? "";
             Best = best ?? "";
-            Difference = difference ?? "";
+            Current = current ?? "";
+            ComparisonSeconds = comparisonSeconds;
         }
     }
 
@@ -868,20 +871,22 @@ namespace Pal98Timer
             }
 
             float bestWidth = 76.0F * scale;
-            float differenceWidth = 54.0F * scale;
-            float nameWidth = Math.Max(1.0F, width - bestWidth - differenceWidth);
+            float currentWidth = 76.0F * scale;
+            float nameWidth = Math.Max(1.0F, width - bestWidth - currentWidth);
             RectangleF nameRect = new RectangleF(left, top, nameWidth, height);
             RectangleF bestRect = new RectangleF(nameRect.Right, top, bestWidth, height);
-            RectangleF differenceRect = new RectangleF(bestRect.Right, top, differenceWidth, height);
+            RectangleF currentRect = new RectangleF(bestRect.Right, top, currentWidth, height);
             SolidBrush nameBrush = entry.IsCurrent ? currentBrush : (entry.IsCompleted ? primaryBrush : secondaryBrush);
 
             string name = entry.IsCurrent ? "> " + entry.Name : entry.Name;
             DrawOutlinedText(graphics, name, font, nameBrush, shadowBrush, nameRect, rightFormat, scale);
             DrawOutlinedText(graphics, entry.Best, font, currentBrush, shadowBrush, bestRect, rightFormat, scale);
-            if (entry.Difference != "")
+            if (entry.Current != "")
             {
-                SolidBrush differenceBrush = entry.Difference.StartsWith("-") ? fasterBrush : slowerBrush;
-                DrawOutlinedText(graphics, entry.Difference, font, differenceBrush, shadowBrush, differenceRect, rightFormat, scale);
+                SolidBrush currentTimeBrush = entry.ComparisonSeconds < 0
+                    ? fasterBrush
+                    : (entry.ComparisonSeconds > 0 ? slowerBrush : currentBrush);
+                DrawOutlinedText(graphics, entry.Current, font, currentTimeBrush, shadowBrush, currentRect, rightFormat, scale);
             }
         }
 

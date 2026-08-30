@@ -101,10 +101,12 @@ try {
     Assert-True ([string]::IsNullOrEmpty($validateHotkey.Invoke($null, @($configuredHotkey, [Windows.Forms.Keys]::None)))) "a distinct modified key must be accepted"
 
     $defaultLayout = $createDefault.Invoke($null, @())
-    $timelineConstructor = $timelineType.GetConstructors($binding) | Where-Object { $_.GetParameters().Count -eq 5 } | Select-Object -First 1
-    $entry1 = $timelineConstructor.Invoke(@("Split A", "00:06:05", "-0:04", $true, $false))
-    $entry2 = $timelineConstructor.Invoke(@("Split B", "00:11:13", "", $false, $false))
-    $entry3 = $timelineConstructor.Invoke(@("Split C", "00:18:37", "", $false, $false))
+    $timelineConstructor = $timelineType.GetConstructors($binding) | Where-Object { $_.GetParameters().Count -eq 6 } | Select-Object -First 1
+    $entry1 = $timelineConstructor.Invoke(@("Split A", "00:06:05", "00:06:01", [long]-4, $true, $false))
+    $entry2 = $timelineConstructor.Invoke(@("Split B", "00:11:13", "", [long]0, $false, $false))
+    $entry3 = $timelineConstructor.Invoke(@("Split C", "00:18:37", "", [long]0, $false, $false))
+    Assert-True ($timelineType.GetField("Current", $binding).GetValue($entry1) -eq "00:06:01") "timeline third column must carry the current cumulative time"
+    Assert-True ($timelineType.GetField("ComparisonSeconds", $binding).GetValue($entry1) -eq -4) "timeline current-time color must preserve the faster/slower comparison"
 
     $hostForm = New-Object Windows.Forms.Form
     $hostForm.StartPosition = [Windows.Forms.FormStartPosition]::Manual
@@ -196,7 +198,7 @@ try {
     Assert-True ($layoutType.GetField("FontColorArgb", $binding).GetValue($reset) -eq 0) "reset must restore the default font color palette"
     Assert-True ($layoutType.GetField("ToggleHotkey", $binding).GetValue($reset) -eq [Windows.Forms.Keys]::None) "reset must clear the overlay hotkey"
 
-    Write-Output "PASS: overlay defaults, layout round-trip, hotkey conflict guards, edit-only movement/resize, font/color selection, render, reset, and click-through restoration all passed."
+    Write-Output "PASS: overlay current-time timeline, layout round-trip, hotkey conflict guards, edit-only movement/resize, render, reset, and click-through restoration all passed."
 }
 finally {
     if ($overlayForm -ne $null) {

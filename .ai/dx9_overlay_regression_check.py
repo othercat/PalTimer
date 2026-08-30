@@ -161,7 +161,11 @@ def main() -> int:
             and "bool isCurrent = index == displayStep;" in snapshot_method
             and "point.GetNickName()" in snapshot_method
             and "TItem.TimeSpanToStringLite(point.Best)" in snapshot_method
-            and "FormatDx9OverlayDifference(point.GetCHA())" in snapshot_method
+            and "TItem.TimeSpanToStringLite(point.Current)" in snapshot_method
+            and "comparisonSeconds = point.GetCHA();" in snapshot_method
+            and "FormatDx9OverlayDifference" not in snapshot_method
+            and "public readonly string Current;" in overlay
+            and "DrawOutlinedText(graphics, entry.Current" in overlay
             and "TimelineFirst" in overlay
             and "TimelineSecond" in overlay
             and "TimelineThird" in overlay
@@ -232,7 +236,7 @@ def main() -> int:
             print(f"- {name}")
         return 1
 
-    print("PASS: PAL98DX9 overlay is default-off, consolidated under one settings menu, 10 Hz, edit-gated, font/color/hotkey-configurable, conflict-guarded, manual-pause-count display-only, capture-free, network-free, and isolated from other cores.")
+    print("PASS: PAL98DX9 overlay is default-off, 10 Hz, current-time timeline enabled, edit-gated, conflict-guarded, capture-free, network-free, and isolated from other cores.")
     return 0
 
 
