@@ -260,3 +260,6 @@ paket-files/
 __pycache__/
 *.pyc
 .agents/**/*.disabled-*
+
+# Private tournament trust material (never commit).
+/Pal98Timer/TournamentIntegrityKey.txt

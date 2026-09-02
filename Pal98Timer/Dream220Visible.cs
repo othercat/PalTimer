@@ -82,6 +82,10 @@ namespace Pal98Timer
         public override string GetGameVersion()
         {
             string inherited = base.GetGameVersion();
+            if (!string.IsNullOrEmpty(TournamentDisplayName))
+            {
+                return TournamentDisplayName;
+            }
             return string.Equals(inherited, "等待游戏运行", StringComparison.Ordinal)
                 ? inherited
                 : Dream220VisibleProfile.CoreDisplayName + " / " + inherited;

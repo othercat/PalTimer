@@ -45,6 +45,8 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前 Git 状态以实际 `git status` 为准；2026-08-24 P 键重启权限误报修复的源码、测试与文档已经收口。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
 
+2026-09-02 当前工作区有未提交的比赛锁身份支持，并保留 `.agents/goal/*` 的既有生成式改动。`TournamentLockInfoReader` 从已附加 PAL.exe 所在目录校验 `PAL98.TournamentLock.v1` 的私有 Release HMAC、规范字段、固定三文件集合和快照哈希；当前清单要求 `display_line_overrides` 与 `configuration_code_marker` 成对出现，先前两字段均缺失的已签名 v1 清单继续兼容，半升级失败关闭。有效锁让 PAL98DX9、魂牵、Dream220 显血和不欢乐内核精确显示 `competition_display_name`（“xx比赛专用”），无锁沿用原身份，损坏锁不采用比赛身份。没有修改进程匹配、内存地址、RPM/WPM、70ms 循环、节点、计时或 `PAL98_IPC_v1`。产品版本保持 3.37.0。可信完整性密钥只存在于本机 Git exclude 文件 `Pal98Timer/TournamentIntegrityKey.txt` 并嵌入本地 Release；公开 Debug 使用明确测试密钥，公开 Release 缺少私钥时不会信任比赛锁。最终 Release|x64 SHA-256 `5B7F4FAD63552CD3479F1D8349DB29247B6DAF62A86BFB476F4C4C323D62C40E`；新旧清单、篡改与无锁回归通过，未提交、未推送、未部署。
+
 2026-08-30 按用户截图调整 PAL98DX9 游戏内三行时间线：第三列由相对最佳线差值改为节点当前累计时间，当前节点实时刷新、已完成节点保留完成时刻、未来节点留空；快/慢颜色仍按原比较值计算。只改叠加快照和绘制，不改节点推进、主计时、暂停、反作弊、存读档或内存读取。产品、文件和程序集版本继续保持 `3.37.0` / `3.37.0.0`；Release|x64、静态契约和离屏交互/渲染通过，构建 SHA-256 `D861DCBA4AF286BC0CD9D06B60FE971D6D0A840F497680045F1D30935FCC9593`。完整 GPL 候选位于 `artifacts/paltimer-3.37.0-overlay-current-time-20260830-r1`，源码 ZIP SHA-256 `15C47118DC80424D43633E458B2D24DCA64F8530FAA4A7CD1F0ACAA6E3D6388C`，并已独立解压完成 Release|x64 重建。部署到 `D:\PAL98_v1.59\Tools\PalTimer-3.37.0` 时同步主 EXE、对应源码 ZIP、README、发布清单和校验和；用户配置、最佳线、布局、插件、计时数据及其余 27 个文件哈希不变。旧 EXE/README/清单/校验和备份在 `backup-before-overlay-current-time-20260830-134547`。
 
 2026-08-25 当前 Dream 显血核心除基础 `pal98.dream220.compat@1.0.18` 外，只额外接受冻结派生
@@ -125,6 +127,12 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 3. 已完成内容
+
+### 未发布（2026-09-02）
+
+- PAL98DX9、魂牵、Dream220 显血和不欢乐内核统一读取同一份签名比赛锁身份；有效锁显示精确“xx比赛专用”，损坏/缺失快照或签名不采用该身份
+- 私有 Release 完整性密钥以内嵌资源读取，本机源文件已 Git exclude；开发密钥仅供 Debug/回归，不作为正式比赛信任根
+- 新增 `.ai/tournament_lock_identity_regression_check.ps1`，覆盖有效身份、清单篡改、快照篡改、无锁兼容和四个内核接线；版本保持 3.37.0
 
 ### v3.37.0（2026-08-23）
 - PAL98DX9 专用实验性游戏内信息叠加已实现并部署；默认关闭、10Hz、透明鼠标穿透，无抓屏、网络或旧 OBS 路径
@@ -207,6 +215,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 本轮已修复，待实机验证
 
+- **比赛锁计时器身份**：静态/反射回归和 Release|x64 已通过；仍需用配置工具真实创建一个锁，启动 PAL.exe 后确认四类内核显示精确比赛名，并确认无锁/解锁后恢复各自普通身份。该项未部署。
 - **P 键重启管理员权限误报**：代码、策略 harness、三内核结构回归和 `Release|x64` 构建通过。仍需部署后验证“普通 PAL + 普通 PalTimer，连续按 P 重启不弹提示且重新附加”；并验证“管理员 PAL + 普通 PalTimer”在约1.5秒后仍提示并退出。
 - **PAL98DX9 游戏内信息叠加**：代码、构建、隔离窗口交互、配置往返和部署验证完成。仍需实机确认配置快捷键在游戏前台启用/关闭时不影响游戏输入，F6/F8/F9/F10/F11/F12、Ctrl+Enter 与节点音效快捷键保持原语义；并分别在关闭/开启状态完成30分钟 CPU、Private Bytes、GDI Handles 与游戏速度对照，覆盖暂停、反作弊、读档和节点推进。
 - **PAL98DX9 三行时间线当前时间显示**：静态、构建和离屏渲染已通过；仍需实机确认当前节点秒数连续刷新、节点完成后时间冻结、未来节点留空，并检查默认字体和自定义缩放下两列 `HH:mm:ss` 不裁切。
@@ -300,6 +309,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
+**比赛锁优先：** PAL.dll 与 Pal98ConfigTool.exe 已部署到 Steam PAL98；PalTimer 尚无本轮明确部署目录。下一步用同一可信 Release 密钥做一次真实闭环：按 Tab 上完全一致的锁定者名字生成六位锁定码，创建锁，启动 PAL，核对四行逐行保持/覆盖、“锁定者XXX : 配置码末 6 位”和计时器精确“xx比赛专用”，再人工改三份受保护 INI 验证重启恢复，最后用自定义字符串解锁。不要提交或输出私钥；不要把自动回归写成实机验收。
+
 **最高优先：** 在明确授权启动/写入后，用冻结派生 profile
 `pal98.dream220.compat.drawcard.16e143813df5@1.0.18` 做自然剧情、真实战斗、结局、接力存档→退出→重启→读档和完整 `DREAM220VISIBLE` 时间线验收；再切到魂牵三版和 `仙剑98柔情DX9` 确认隔离与 Classic 176528 字节接力存档不变。资源/合成谓词通过不等于实机验收。
 
@@ -340,6 +351,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 | `Pal98Timer/GEX.cs` | GDI 主界面绘制、布局（BuildRects/DrawMainTimer） |
 | `Pal98Timer/TimerCore.cs` | 通用节点推进、CurrentStep、跳节点、成绩导出 |
 | `Pal98Timer/Pal98WaterSpiritPearlSplit.cs` | 水灵珠节点正常交换基线增长与大理回程双位置门闩 |
+| `Pal98Timer/TournamentLockInfoReader.cs` | 校验本地 PAL98 比赛锁签名、字段和快照身份，只提供可信计时器显示名 |
 | `Pal98Timer/仙剑98柔情DX9.cs` | DX9 内核、进程检测、物品/战斗统计、节点定义 |
 | `Pal98Timer/Hunqian167*.cs` | 魂牵三版精确 profile 门、独立时间线与路线纯谓词 |
 | `Pal98Timer/Dream220Visible*.cs` | 梦幻2.2显血版精确 profile 门、独立时间线与路线纯谓词 |
@@ -353,6 +365,13 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-09-02 会话（PAL98 Tournament Lock v1 计时器身份，版本保持 3.37.0）
+
+- 新增签名清单只读器和私有/开发资源构建门；严格校验 schema、比赛名/锁定者/四行标题、固定页脚、三份 INI 快照大小与 SHA-256
+- PAL98DX9 在成功附加 PAL.exe 时只读取一次可信比赛身份，Dream220 显血与魂牵派生核心优先返回该精确名称；不欢乐高相似内核同步接入
+- README 和回归脚本已更新；未改变 PAL98_IPC、内存读取、进程权限、节点、路线、暂停、反作弊、叠加或计时行为
+- Release|x64 重建零错误、27 个既有 warning；产品/文件版本仍为 3.37.0；未提交、未推送、未部署
 
 ### 2026-08-30 会话（PAL98DX9 叠加第三列改为当前时间，版本保持 3.37.0）
 
@@ -588,6 +607,16 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-09-02 PAL98 Tournament Lock v1 计时器身份验证：
+
+```text
+PASS: .ai/tournament_lock_identity_regression_check.ps1（有效签名、清单/快照篡改、无锁兼容、四内核身份接线、无 IPC/内存合同变化）
+PASS: pal98dx9_title_identity / pal98unhappy_identity / pal_open_process_permission / dx9_overlay / dream220_visible 回归
+PASS: VS2026 MSBuild 18 Release|x64，0 errors，27 个既有 warning
+PASS: 文件/产品版本保持 3.37.0；SHA-256 2FA37E55E1F3F77618E51A7FAB11AC3DBAC227A800077757A8E4332DC4F8D69E
+NOT RUN: 真实配置工具创建锁、PAL.exe 标题、四内核计时器显示、人工 INI 篡改恢复和解锁闭环
+```
 
 2026-08-30 PAL98DX9 三行时间线当前时间显示验证：
 

@@ -234,6 +234,7 @@
     <Compile Include="SoundConfigForm.cs" />
     <Compile Include="SRPGSidecarTransport.cs" />
     <Compile Include="PalProcessOpenRetryPolicy.cs" />
+    <Compile Include="TournamentLockInfoReader.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TimerCore.cs" />
@@ -256,6 +257,12 @@
     <Compile Include="自定义.cs" />
     <EmbeddedResource Include="AboutForm.resx">
       <DependentUpon>AboutForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TournamentIntegrityKey.txt" Condition="Exists('TournamentIntegrityKey.txt')">
+      <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TournamentIntegrityDevelopmentKey.txt" Condition="!Exists('TournamentIntegrityKey.txt') And '$(Configuration)' != 'Release'">
+      <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="BestEditForm.resx">
       <DependentUpon>BestEditForm.cs</DependentUpon>
@@ -301,6 +308,7 @@
       <DependentUpon>Upload.cs</DependentUpon>
     </EmbeddedResource>
     <None Include="app.config" />
+    <None Include="TournamentIntegrityDevelopmentKey.txt" />
     <None Include="Pal98Timer_TemporaryKey.pfx" />
     <None Include="Properties\app.manifest" />
     <None Include="Properties\Settings.settings">

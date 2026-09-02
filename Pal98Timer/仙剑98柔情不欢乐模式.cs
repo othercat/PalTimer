@@ -36,6 +36,7 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private string TournamentDisplayName = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
 
@@ -376,6 +377,10 @@ namespace Pal98Timer
         {
             if (PID != -1)
             {
+                if (!string.IsNullOrEmpty(TournamentDisplayName))
+                {
+                    return TournamentDisplayName;
+                }
                 return "仙剑98原版 新补丁 " + DX9Version + " 不欢乐";
             }
             else
@@ -1305,6 +1310,9 @@ namespace Pal98Timer
                         }
 
                         PalProcess = res[0];
+                        TournamentDisplayName = TournamentLockInfoReader
+                            .LoadForProcessExecutable(PalProcess.MainModule.FileName)
+                            .CompetitionDisplayName;
                         GameWindowHandle = res[0].MainWindowHandle;
                         PID = PalProcess.Id;
                         CalcPalMD5();
@@ -1621,6 +1629,7 @@ namespace Pal98Timer
             PalHandle = IntPtr.Zero;
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
+            TournamentDisplayName = string.Empty;
             PID = -1;
             GMD5 = "none";
             DX9Version = "未知";
