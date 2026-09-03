@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 
 namespace Pal98Timer
 {
@@ -17,12 +18,16 @@ namespace Pal98Timer
         static void Main()
         {
             AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
-            ClearTmpBG();
-            UpdateBestFiles();
-            KeyChangerDel.Open();
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new GForm());
+            using (EventWaitHandle tournamentCapability =
+                TournamentTimerCapability.Publish())
+            {
+                ClearTmpBG();
+                UpdateBestFiles();
+                KeyChangerDel.Open();
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new GForm());
+            }
             //Application.Run(new BestEditForm("CUSTOM"));
         }
         static void ClearTmpBG()

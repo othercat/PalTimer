@@ -56,7 +56,7 @@ namespace Pal98Timer
         private const int MaximumManifestBytes = 128 * 1024;
         private const int MaximumSnapshotBytes = 4 * 1024 * 1024;
         private static readonly Regex LockerName = new Regex(
-            "\\A[A-Za-z0-9\\u3400-\\u9FFF]{1,4}\\z",
+            "\\A[A-Za-z0-9\\u3400-\\u9FFF]{1,8}\\z",
             RegexOptions.CultureInvariant);
         private static readonly string[] ExpectedFiles =
         {
