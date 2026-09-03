@@ -114,6 +114,8 @@ namespace Pal98Timer
         public static Dx9OverlayLayoutSettings LoadLayout()
         {
             Dx9OverlayLayoutSettings result = Dx9OverlayLayoutSettings.CreateDefault();
+            bool hasWindowLeft = false;
+            bool hasWindowTop = false;
             try
             {
                 if (!File.Exists(LayoutConfigFileName))
@@ -160,6 +162,20 @@ namespace Pal98Timer
                         case "toggle_hotkey":
                             if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer)) result.ToggleHotkey = (Keys)integer;
                             break;
+                        case "window_left":
+                            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+                            {
+                                result.WindowLeft = integer;
+                                hasWindowLeft = true;
+                            }
+                            break;
+                        case "window_top":
+                            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+                            {
+                                result.WindowTop = integer;
+                                hasWindowTop = true;
+                            }
+                            break;
                     }
                 }
             }
@@ -168,6 +184,7 @@ namespace Pal98Timer
                 return Dx9OverlayLayoutSettings.CreateDefault();
             }
 
+            result.HasWindowPosition = hasWindowLeft && hasWindowTop;
             result.Normalize();
             return result;
         }
@@ -183,7 +200,7 @@ namespace Pal98Timer
             value.Normalize();
             string family = (value.FontFamily ?? "").Replace("\r", "").Replace("\n", "");
             StringBuilder text = new StringBuilder();
-            text.AppendLine("version=1");
+            text.AppendLine("version=2");
             text.AppendLine("position_x=" + value.PositionX.ToString("0.0000", CultureInfo.InvariantCulture));
             text.AppendLine("position_y=" + value.PositionY.ToString("0.0000", CultureInfo.InvariantCulture));
             text.AppendLine("scale=" + value.Scale.ToString("0.0000", CultureInfo.InvariantCulture));
@@ -192,6 +209,11 @@ namespace Pal98Timer
             text.AppendLine("font_style=" + ((int)value.FontStyle).ToString(CultureInfo.InvariantCulture));
             text.AppendLine("font_color=" + value.FontColorArgb.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("toggle_hotkey=" + ((int)value.ToggleHotkey).ToString(CultureInfo.InvariantCulture));
+            if (value.HasWindowPosition)
+            {
+                text.AppendLine("window_left=" + value.WindowLeft.ToString(CultureInfo.InvariantCulture));
+                text.AppendLine("window_top=" + value.WindowTop.ToString(CultureInfo.InvariantCulture));
+            }
             File.WriteAllText(LayoutConfigFileName, text.ToString(), new UTF8Encoding(false));
         }
 
@@ -256,6 +278,9 @@ namespace Pal98Timer
         public FontStyle FontStyle;
         public int FontColorArgb;
         public Keys ToggleHotkey;
+        public bool HasWindowPosition;
+        public int WindowLeft;
+        public int WindowTop;
 
         public static Dx9OverlayLayoutSettings CreateDefault()
         {
@@ -269,6 +294,9 @@ namespace Pal98Timer
                 FontStyle = FontStyle.Regular,
                 FontColorArgb = 0,
                 ToggleHotkey = Keys.None,
+                HasWindowPosition = false,
+                WindowLeft = 0,
+                WindowTop = 0,
             };
         }
 
@@ -284,6 +312,9 @@ namespace Pal98Timer
                 FontStyle = FontStyle,
                 FontColorArgb = FontColorArgb,
                 ToggleHotkey = ToggleHotkey,
+                HasWindowPosition = HasWindowPosition,
+                WindowLeft = WindowLeft,
+                WindowTop = WindowTop,
             };
         }
 
@@ -321,11 +352,16 @@ namespace Pal98Timer
         public Keys SelectedHotkey { get; private set; }
 
         public Dx9OverlayHotkeyForm(Keys currentHotkey, Func<Keys, string> validator)
+            : this(currentHotkey, validator, "配置 OBS 独立遮罩快捷键")
+        {
+        }
+
+        public Dx9OverlayHotkeyForm(Keys currentHotkey, Func<Keys, string> validator, string windowTitle)
         {
             Validator = validator ?? throw new ArgumentNullException("validator");
             SelectedHotkey = currentHotkey;
 
-            Text = "配置游戏内信息叠加快捷键";
+            Text = string.IsNullOrEmpty(windowTitle) ? "配置快捷键" : windowTitle;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -424,6 +460,7 @@ namespace Pal98Timer
 
     internal sealed class Dx9OverlayForm : Form
     {
+        internal const string ObsWindowTitle = "仙剑98自动计时器 - OBS独立遮罩";
         private const int RefreshIntervalMilliseconds = 100;
         private const float OverlayWidthLogicalPixels = 340.0F;
         // Removing the estimate row shortens the bottom-anchored panel by one row,
@@ -432,8 +469,6 @@ namespace Pal98Timer
         private const int WM_NCHITTEST = 0x0084;
         private const int HTTRANSPARENT = -1;
         private const int WS_EX_TRANSPARENT = 0x00000020;
-        private const int WS_EX_TOOLWINDOW = 0x00000080;
-        private const int WS_EX_NOACTIVATE = 0x08000000;
         private const float DefaultSmallFontLogicalPoints = 9.0F;
         private const float DefaultTimerFontLogicalPoints = 20.0F;
         private const float ResizeHandleLogicalPixels = 16.0F;
@@ -444,7 +479,7 @@ namespace Pal98Timer
         private readonly Timer RefreshTimer;
         private Dx9OverlaySnapshot CurrentSnapshot;
         private Dx9OverlayLayoutSettings LayoutSettings;
-        private Rectangle CurrentGameClientBounds = Rectangle.Empty;
+        private Rectangle CurrentMovementBounds = Rectangle.Empty;
         private float CurrentAutomaticScale = 1.0F;
         private float CurrentScale = 1.0F;
         private bool EditMode;
@@ -474,10 +509,11 @@ namespace Pal98Timer
             LayoutSettings = layoutSettings == null ? Dx9OverlayLayoutSettings.CreateDefault() : layoutSettings.Clone();
             LayoutSettings.Normalize();
             AutoScaleMode = AutoScaleMode.None;
+            Text = ObsWindowTitle;
             BackColor = TransparentColor;
             TransparencyKey = TransparentColor;
             FormBorderStyle = FormBorderStyle.None;
-            ShowInTaskbar = false;
+            ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
             TopMost = true;
             DoubleBuffered = true;
@@ -498,7 +534,6 @@ namespace Pal98Timer
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
                 if (!EditMode)
                 {
                     cp.ExStyle |= WS_EX_TRANSPARENT;
@@ -682,7 +717,7 @@ namespace Pal98Timer
                 EndEditMode();
                 return;
             }
-            if (e.Button != MouseButtons.Left || CurrentGameClientBounds.IsEmpty)
+            if (e.Button != MouseButtons.Left || CurrentMovementBounds.IsEmpty)
             {
                 return;
             }
@@ -908,48 +943,30 @@ namespace Pal98Timer
                 return;
             }
 
-            if (snapshot == null || snapshot.GameWindowHandle == IntPtr.Zero ||
-                !IsWindowVisible(snapshot.GameWindowHandle) || IsIconic(snapshot.GameWindowHandle) ||
-                (!EditMode && User32.GetForegroundWindow() != snapshot.GameWindowHandle))
-            {
-                HideOverlay();
-                return;
-            }
-
-            RECT clientRect = new RECT();
-            POINT clientOrigin = new POINT();
-            if (Win32API.GetClientRect(snapshot.GameWindowHandle, ref clientRect) == 0 ||
-                !Win32API.ClientToScreen(snapshot.GameWindowHandle, ref clientOrigin))
-            {
-                HideOverlay();
-                return;
-            }
-
-            int width = clientRect.right - clientRect.left;
-            int height = clientRect.bottom - clientRect.top;
-            if (width <= 0 || height <= 0)
+            if (snapshot == null)
             {
                 HideOverlay();
                 return;
             }
 
             CurrentSnapshot = snapshot;
-            CurrentGameClientBounds = new Rectangle(clientOrigin.x, clientOrigin.y, width, height);
-            float widthScale = width / 640.0F;
-            float heightScale = height / 480.0F;
-            CurrentAutomaticScale = Math.Max(0.75F, Math.Min(2.0F, Math.Min(widthScale, heightScale)));
+            CurrentAutomaticScale = 1.0F;
             float logicalHeight = GetOverlayHeightLogicalPixels();
+            Rectangle movementBounds = SystemInformation.VirtualScreen;
+            CurrentMovementBounds = movementBounds;
             float maximumFittingScale = Math.Min(
-                width / (OverlayWidthLogicalPixels * CurrentAutomaticScale),
-                height / (logicalHeight * CurrentAutomaticScale));
+                movementBounds.Width / (OverlayWidthLogicalPixels * CurrentAutomaticScale),
+                movementBounds.Height / (logicalHeight * CurrentAutomaticScale));
             float effectiveUserScale = Math.Min(LayoutSettings.Scale, Math.Max(0.10F, maximumFittingScale));
             CurrentScale = CurrentAutomaticScale * effectiveUserScale;
-            int overlayWidth = Math.Min(width, (int)Math.Ceiling(OverlayWidthLogicalPixels * CurrentScale));
-            int overlayHeight = Math.Min(height, (int)Math.Ceiling(logicalHeight * CurrentScale));
-            int availableWidth = Math.Max(0, width - overlayWidth);
-            int availableHeight = Math.Max(0, height - overlayHeight);
-            int overlayLeft = clientOrigin.x + (int)Math.Round(availableWidth * LayoutSettings.PositionX);
-            int overlayTop = clientOrigin.y + (int)Math.Round(availableHeight * LayoutSettings.PositionY);
+            int overlayWidth = Math.Min(movementBounds.Width, (int)Math.Ceiling(OverlayWidthLogicalPixels * CurrentScale));
+            int overlayHeight = Math.Min(movementBounds.Height, (int)Math.Ceiling(logicalHeight * CurrentScale));
+            Point initialPosition = GetWindowPosition(snapshot, overlayWidth, overlayHeight, movementBounds);
+            int overlayLeft = Clamp(initialPosition.X, movementBounds.Left, movementBounds.Right - overlayWidth);
+            int overlayTop = Clamp(initialPosition.Y, movementBounds.Top, movementBounds.Bottom - overlayHeight);
+            LayoutSettings.HasWindowPosition = true;
+            LayoutSettings.WindowLeft = overlayLeft;
+            LayoutSettings.WindowTop = overlayTop;
             if (Left != overlayLeft || Top != overlayTop || Width != overlayWidth || Height != overlayHeight)
             {
                 SetBounds(overlayLeft, overlayTop, overlayWidth, overlayHeight);
@@ -964,11 +981,59 @@ namespace Pal98Timer
         private void HideOverlay()
         {
             CurrentSnapshot = null;
-            CurrentGameClientBounds = Rectangle.Empty;
+            CurrentMovementBounds = Rectangle.Empty;
             if (Visible)
             {
                 Hide();
             }
+        }
+
+        private Point GetWindowPosition(
+            Dx9OverlaySnapshot snapshot,
+            int overlayWidth,
+            int overlayHeight,
+            Rectangle movementBounds)
+        {
+            if (LayoutSettings.HasWindowPosition)
+            {
+                return new Point(LayoutSettings.WindowLeft, LayoutSettings.WindowTop);
+            }
+
+            Rectangle anchor = Rectangle.Empty;
+            if (snapshot.GameWindowHandle != IntPtr.Zero && IsWindowVisible(snapshot.GameWindowHandle))
+            {
+                RECT clientRect = new RECT();
+                POINT clientOrigin = new POINT();
+                if (Win32API.GetClientRect(snapshot.GameWindowHandle, ref clientRect) != 0 &&
+                    Win32API.ClientToScreen(snapshot.GameWindowHandle, ref clientOrigin))
+                {
+                    int width = clientRect.right - clientRect.left;
+                    int height = clientRect.bottom - clientRect.top;
+                    if (width > 0 && height > 0)
+                    {
+                        anchor = new Rectangle(clientOrigin.x, clientOrigin.y, width, height);
+                    }
+                }
+            }
+
+            if (anchor.IsEmpty)
+            {
+                anchor = Screen.PrimaryScreen == null ? movementBounds : Screen.PrimaryScreen.WorkingArea;
+            }
+            int availableWidth = Math.Max(0, anchor.Width - overlayWidth);
+            int availableHeight = Math.Max(0, anchor.Height - overlayHeight);
+            return new Point(
+                anchor.Left + (int)Math.Round(availableWidth * LayoutSettings.PositionX),
+                anchor.Top + (int)Math.Round(availableHeight * LayoutSettings.PositionY));
+        }
+
+        private static int Clamp(int value, int minimum, int maximum)
+        {
+            if (maximum < minimum)
+            {
+                return minimum;
+            }
+            return Math.Max(minimum, Math.Min(maximum, value));
         }
 
         private float GetScaleFactor()
@@ -1007,10 +1072,10 @@ namespace Pal98Timer
 
         private void MoveFromDrag(int deltaX, int deltaY)
         {
-            int maximumLeft = Math.Max(CurrentGameClientBounds.Left, CurrentGameClientBounds.Right - Width);
-            int maximumTop = Math.Max(CurrentGameClientBounds.Top, CurrentGameClientBounds.Bottom - Height);
-            int left = Math.Max(CurrentGameClientBounds.Left, Math.Min(maximumLeft, DragStartBounds.Left + deltaX));
-            int top = Math.Max(CurrentGameClientBounds.Top, Math.Min(maximumTop, DragStartBounds.Top + deltaY));
+            int maximumLeft = Math.Max(CurrentMovementBounds.Left, CurrentMovementBounds.Right - Width);
+            int maximumTop = Math.Max(CurrentMovementBounds.Top, CurrentMovementBounds.Bottom - Height);
+            int left = Math.Max(CurrentMovementBounds.Left, Math.Min(maximumLeft, DragStartBounds.Left + deltaX));
+            int top = Math.Max(CurrentMovementBounds.Top, Math.Min(maximumTop, DragStartBounds.Top + deltaY));
             SetBounds(left, top, Width, Height);
             UpdateNormalizedPosition();
         }
@@ -1022,26 +1087,29 @@ namespace Pal98Timer
             float heightScale = (DragStartBounds.Height + deltaY) / (logicalHeight * CurrentAutomaticScale);
             float requestedScale = Math.Abs(deltaX) >= Math.Abs(deltaY) ? widthScale : heightScale;
             float fitScale = Math.Min(
-                (CurrentGameClientBounds.Right - DragStartBounds.Left) / (OverlayWidthLogicalPixels * CurrentAutomaticScale),
-                (CurrentGameClientBounds.Bottom - DragStartBounds.Top) / (logicalHeight * CurrentAutomaticScale));
+                (CurrentMovementBounds.Right - DragStartBounds.Left) / (OverlayWidthLogicalPixels * CurrentAutomaticScale),
+                (CurrentMovementBounds.Bottom - DragStartBounds.Top) / (logicalHeight * CurrentAutomaticScale));
             LayoutSettings.Scale = Math.Max(
                 Dx9OverlayLayoutSettings.MinimumScale,
                 Math.Min(Dx9OverlayLayoutSettings.MaximumScale, Math.Min(requestedScale, fitScale)));
             LayoutSettings.Normalize();
 
             CurrentScale = CurrentAutomaticScale * LayoutSettings.Scale;
-            int width = Math.Min(CurrentGameClientBounds.Width, (int)Math.Ceiling(OverlayWidthLogicalPixels * CurrentScale));
-            int height = Math.Min(CurrentGameClientBounds.Height, (int)Math.Ceiling(logicalHeight * CurrentScale));
+            int width = Math.Min(CurrentMovementBounds.Width, (int)Math.Ceiling(OverlayWidthLogicalPixels * CurrentScale));
+            int height = Math.Min(CurrentMovementBounds.Height, (int)Math.Ceiling(logicalHeight * CurrentScale));
             SetBounds(DragStartBounds.Left, DragStartBounds.Top, width, height);
             UpdateNormalizedPosition();
         }
 
         private void UpdateNormalizedPosition()
         {
-            int availableWidth = Math.Max(0, CurrentGameClientBounds.Width - Width);
-            int availableHeight = Math.Max(0, CurrentGameClientBounds.Height - Height);
-            LayoutSettings.PositionX = availableWidth == 0 ? 0.0F : (Left - CurrentGameClientBounds.Left) / (float)availableWidth;
-            LayoutSettings.PositionY = availableHeight == 0 ? 0.0F : (Top - CurrentGameClientBounds.Top) / (float)availableHeight;
+            int availableWidth = Math.Max(0, CurrentMovementBounds.Width - Width);
+            int availableHeight = Math.Max(0, CurrentMovementBounds.Height - Height);
+            LayoutSettings.PositionX = availableWidth == 0 ? 0.0F : (Left - CurrentMovementBounds.Left) / (float)availableWidth;
+            LayoutSettings.PositionY = availableHeight == 0 ? 0.0F : (Top - CurrentMovementBounds.Top) / (float)availableHeight;
+            LayoutSettings.HasWindowPosition = true;
+            LayoutSettings.WindowLeft = Left;
+            LayoutSettings.WindowTop = Top;
             LayoutSettings.Normalize();
         }
 
@@ -1102,8 +1170,5 @@ namespace Pal98Timer
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool IsIconic(IntPtr hWnd);
     }
 }

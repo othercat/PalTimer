@@ -18,6 +18,16 @@ namespace Pal98Timer
         private bool IsAutoLuck = false;
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
         private int transparencyValue = 100; // 背景图透明度 0-100, 100为不透明
+        private ObsWindowStyleSettings obsWindowStyleSettings;
+        private bool obsPresentationFailureHandled;
+
+        internal Keys ObsWindowStyleToggleHotkey
+        {
+            get
+            {
+                return obsWindowStyleSettings == null ? Keys.None : obsWindowStyleSettings.ToggleHotkey;
+            }
+        }
 
         public GRender rr;
         public GRender.GBtn btnPause;
@@ -37,6 +47,8 @@ namespace Pal98Timer
             _keyboardHook = new KeyboardLib();
             _keyboardHook.InstallHook(this.OnKeyPress);
             InitializeComponent();
+            obsWindowStyleSettings = ObsWindowStyleStore.Load();
+            UpdateObsWindowStyleMenu();
             this.FormClosing += GForm_FormClosing;
             this.FormClosed += GForm_FormClosed;
             this.Shown += GForm_Shown;
@@ -148,7 +160,14 @@ namespace Pal98Timer
         private void GForm_Shown(object sender, EventArgs e)
         {
             this.SetDesktopBounds(locx, locy, this.Width, this.Height);
-            UpdateTransparency();
+            try
+            {
+                UpdateTransparency();
+            }
+            catch (Exception ex)
+            {
+                DisableObsWindowStyleAfterFailure(ex);
+            }
         }
 
         private void InitCloud()
@@ -516,6 +535,38 @@ namespace Pal98Timer
                     }
                     break;
             }
+            // 全局自定义快捷键共用一个锁存状态，基准键抬起前不允许系统连发重复切换。
+            Keys keyCode = (Keys)(hookStruct.vkCode);
+            if (ActiveCustomHotkey != Keys.None && (ActiveCustomHotkey & Keys.KeyCode) == keyCode)
+            {
+                handle = true;
+                if (hookStruct.flags >= 128)
+                {
+                    ActiveCustomHotkey = Keys.None;
+                }
+                return;
+            }
+
+            // OBS 主窗口样式快捷键优先用于恢复普通界面。配置入口会阻止它与其它开关冲突；
+            // 即使用户后来手工制造冲突，也让恢复可见界面的快捷键保持优先。
+            if (hookStruct.flags < 128 && ObsWindowStyleToggleHotkey != Keys.None &&
+                string.IsNullOrEmpty(Dx9OverlaySettings.ValidateToggleHotkey(
+                    ObsWindowStyleToggleHotkey,
+                    Keys.None)))
+            {
+                Keys pressed = keyCode;
+                if (OnCtrlDown || OnCtrlDown2) pressed |= Keys.Control;
+                if (Control.ModifierKeys.HasFlag(Keys.Shift)) pressed |= Keys.Shift;
+                if (Control.ModifierKeys.HasFlag(Keys.Alt)) pressed |= Keys.Alt;
+
+                if (pressed == ObsWindowStyleToggleHotkey)
+                {
+                    ActiveCustomHotkey = pressed;
+                    handle = true;
+                    UI(delegate () { ToggleObsWindowStyleEnabled(); });
+                    return;
+                }
+            }
             // 音效开关快捷键（在修饰键状态更新后、功能键处理前检查）
             if (hookStruct.flags < 128 && SoundConfig.ins.ToggleHotkey != Keys.None)
             {
@@ -537,17 +588,6 @@ namespace Pal98Timer
             }
 
             // 内核专用组合键复用现有全局钩子，不新增线程或键盘钩子。
-            // 按下时锁存并拦截基准键，直到抬起，避免系统按键重复触发开关。
-            Keys keyCode = (Keys)(hookStruct.vkCode);
-            if (ActiveCustomHotkey != Keys.None && (ActiveCustomHotkey & Keys.KeyCode) == keyCode)
-            {
-                handle = true;
-                if (hookStruct.flags >= 128)
-                {
-                    ActiveCustomHotkey = Keys.None;
-                }
-                return;
-            }
             if (hookStruct.flags < 128 && core != null)
             {
                 Keys pressed = keyCode;
@@ -840,6 +880,10 @@ namespace Pal98Timer
                 catch { }
             }
             if (rr != null && rr.Draw(delegate (Rectangle? rect) {
+                if (obsWindowStyleSettings != null && obsWindowStyleSettings.Enabled)
+                {
+                    return;
+                }
                 if (rect == null)
                 {
                     Invalidate();
@@ -851,6 +895,17 @@ namespace Pal98Timer
             }))
             {
                 //Invalidate();
+            }
+            if (obsWindowStyleSettings != null && obsWindowStyleSettings.Enabled)
+            {
+                try
+                {
+                    PresentObsWindowFrame();
+                }
+                catch (Exception ex)
+                {
+                    DisableObsWindowStyleAfterFailure(ex);
+                }
             }
         }
         
@@ -1088,9 +1143,19 @@ namespace Pal98Timer
 
         private void UpdateTransparency()
         {
-            // 透明度只作用于背景图，文字、按钮和计时数字保持不透明。
+            // 普通模式只调整背景图；OBS 模式再独立调整非文字框架层。
+            // 两种模式都让文字、文字描边和计时数字保持不透明。
             this.Opacity = 1.0;
             rr?.SetBGOpacity(transparencyValue);
+            int chromeOpacity = obsWindowStyleSettings != null && obsWindowStyleSettings.Enabled
+                ? obsWindowStyleSettings.ChromeOpacity
+                : 100;
+            rr?.SetChromeOpacity(chromeOpacity);
+            LayeredWindowPresenter.SetEnabled(this, obsWindowStyleSettings != null && obsWindowStyleSettings.Enabled);
+            if (obsWindowStyleSettings != null && obsWindowStyleSettings.Enabled && Visible)
+            {
+                PresentObsWindowFrame();
+            }
         }
 
         private void UpdateTransparencyText()
@@ -1120,6 +1185,182 @@ namespace Pal98Timer
                     MessageBox.Show("请输入有效的数字 (0-100)", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
+        }
+
+        private void btnObsWindowStyleEnabled_Click(object sender, EventArgs e)
+        {
+            ToggleObsWindowStyleEnabled();
+        }
+
+        private void ToggleObsWindowStyleEnabled()
+        {
+            ObsWindowStyleSettings previous = obsWindowStyleSettings.Clone();
+            obsWindowStyleSettings.Enabled = !obsWindowStyleSettings.Enabled;
+            obsWindowStyleSettings.Normalize();
+            try
+            {
+                ObsWindowStyleStore.Save(obsWindowStyleSettings);
+                obsPresentationFailureHandled = false;
+                UpdateTransparency();
+                UpdateObsWindowStyleMenu();
+            }
+            catch (Exception ex)
+            {
+                obsWindowStyleSettings = previous;
+                try { ObsWindowStyleStore.Save(obsWindowStyleSettings); } catch { }
+                try { UpdateTransparency(); } catch { }
+                UpdateObsWindowStyleMenu();
+                Error("无法应用 OBS 窗口采集样式：" + ex.Message);
+            }
+        }
+
+        private void btnObsWindowStyleHotkey_Click(object sender, EventArgs e)
+        {
+            Func<Keys, string> validator = ValidateObsWindowStyleHotkey;
+            using (Dx9OverlayHotkeyForm dialog = new Dx9OverlayHotkeyForm(
+                ObsWindowStyleToggleHotkey,
+                validator,
+                "配置 OBS 窗口采集样式快捷键"))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                ObsWindowStyleSettings previous = obsWindowStyleSettings.Clone();
+                obsWindowStyleSettings.ToggleHotkey = dialog.SelectedHotkey;
+                try
+                {
+                    ObsWindowStyleStore.Save(obsWindowStyleSettings);
+                    UpdateObsWindowStyleMenu();
+                }
+                catch (Exception ex)
+                {
+                    obsWindowStyleSettings = previous;
+                    UpdateObsWindowStyleMenu();
+                    Error("无法保存 OBS 窗口采集样式快捷键：" + ex.Message);
+                }
+            }
+        }
+
+        private string ValidateObsWindowStyleHotkey(Keys hotkey)
+        {
+            string error = Dx9OverlaySettings.ValidateToggleHotkey(hotkey, SoundConfig.ins.ToggleHotkey);
+            if (!string.IsNullOrEmpty(error))
+            {
+                return error;
+            }
+            Keys coreHotkey = core == null ? Keys.None : core.GetCustomToggleHotkey();
+            if (hotkey != Keys.None && hotkey == coreHotkey)
+            {
+                return "该组合已用于当前内核的独立遮罩开关。";
+            }
+            return "";
+        }
+
+        private void btnObsWindowChromeOpacity_Click(object sender, EventArgs e)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox(
+                "请输入 OBS 窗口框架透明度 (0-100):\n0 = 只保留文字，背景和框架完全透明\n100 = 显示完整背景和框架\n文字、计时数字及文字描边始终保持不透明",
+                "设置 OBS 窗口框架透明度",
+                obsWindowStyleSettings.ChromeOpacity.ToString());
+            if (string.IsNullOrEmpty(input))
+            {
+                return;
+            }
+
+            int value;
+            if (!int.TryParse(input, out value))
+            {
+                MessageBox.Show("请输入有效的数字 (0-100)", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            ObsWindowStyleSettings previous = obsWindowStyleSettings.Clone();
+            obsWindowStyleSettings.ChromeOpacity = Math.Max(0, Math.Min(100, value));
+            try
+            {
+                ObsWindowStyleStore.Save(obsWindowStyleSettings);
+                UpdateTransparency();
+                UpdateObsWindowStyleMenu();
+            }
+            catch (Exception ex)
+            {
+                obsWindowStyleSettings = previous;
+                try { ObsWindowStyleStore.Save(obsWindowStyleSettings); } catch { }
+                try { UpdateTransparency(); } catch { }
+                UpdateObsWindowStyleMenu();
+                Error("无法保存 OBS 窗口框架透明度：" + ex.Message);
+            }
+        }
+
+        private void btnObsWindowHelp_Click(object sender, EventArgs e)
+        {
+            Info(
+                "在 OBS 中添加“窗口采集”，选择标题为“自动计时器”的窗口。\n\n" +
+                "启用本模式后，框架透明度为 0 时只保留文字；1-99 时保留半透明背景和框架；100 时显示完整界面。完整界面和简版使用同一设置。\n\n" +
+                "建议先配置样式开关快捷键。即使按钮和框架已经完全透明，也能用该快捷键恢复普通界面。\n\n" +
+                "如需采集右侧独立信息遮罩，请在 PAL98DX9 内核的菜单中启用“OBS 独立遮罩窗口”，然后在 OBS 中单独选择该窗口。",
+                "OBS 窗口采集说明");
+        }
+
+        private void UpdateObsWindowStyleMenu()
+        {
+            if (obsWindowStyleSettings == null)
+            {
+                return;
+            }
+            if (btnObsWindowStyle != null)
+            {
+                btnObsWindowStyle.Checked = obsWindowStyleSettings.Enabled;
+            }
+            if (btnObsWindowStyleEnabled != null)
+            {
+                btnObsWindowStyleEnabled.Checked = obsWindowStyleSettings.Enabled;
+                btnObsWindowStyleEnabled.Text = "启用 OBS 纯文字/透明框架模式";
+            }
+            if (btnObsWindowStyleHotkey != null)
+            {
+                btnObsWindowStyleHotkey.Text = "配置样式开关快捷键...（" +
+                    Dx9OverlaySettings.FormatToggleHotkey(obsWindowStyleSettings.ToggleHotkey) + "）";
+            }
+            if (btnObsWindowChromeOpacity != null)
+            {
+                btnObsWindowChromeOpacity.Text = "框架透明度 (" + obsWindowStyleSettings.ChromeOpacity + "%)...";
+            }
+        }
+
+        private void PresentObsWindowFrame()
+        {
+            Bitmap frame = rr == null ? null : rr.GetFrameBitmap();
+            if (frame != null)
+            {
+                LayeredWindowPresenter.Present(this, frame);
+            }
+        }
+
+        private void DisableObsWindowStyleAfterFailure(Exception ex)
+        {
+            if (obsPresentationFailureHandled)
+            {
+                return;
+            }
+            obsPresentationFailureHandled = true;
+            if (obsWindowStyleSettings == null)
+            {
+                obsWindowStyleSettings = ObsWindowStyleSettings.CreateDefault();
+            }
+            obsWindowStyleSettings.Enabled = false;
+            try { ObsWindowStyleStore.Save(obsWindowStyleSettings); } catch { }
+            try
+            {
+                rr?.SetChromeOpacity(100);
+                LayeredWindowPresenter.SetEnabled(this, false);
+                Invalidate(true);
+            }
+            catch { }
+            UpdateObsWindowStyleMenu();
+            Alert("本机无法启用 OBS 逐像素透明窗口，已安全恢复普通界面：" + ex.Message);
         }
     }
 

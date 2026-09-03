@@ -37,6 +37,11 @@
             this.btnShowPSInDots = new System.Windows.Forms.ToolStripMenuItem();
             this.btnEditBest = new System.Windows.Forms.ToolStripMenuItem();
             this.btnTransparency = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnObsWindowStyle = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnObsWindowStyleEnabled = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnObsWindowStyleHotkey = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnObsWindowChromeOpacity = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnObsWindowHelp = new System.Windows.Forms.ToolStripMenuItem();
             this.btnBattlePauseNoTimer = new System.Windows.Forms.ToolStripMenuItem();
             this.btnSoundConfig = new System.Windows.Forms.ToolStripMenuItem();
             this.btnNonSequentialCheck = new System.Windows.Forms.ToolStripMenuItem();
@@ -62,6 +67,7 @@
             this.btnShowPSInDots,
             this.btnEditBest,
             this.btnTransparency,
+            this.btnObsWindowStyle,
             this.btnBattlePauseNoTimer,
             this.btnSoundConfig,
             this.btnNonSequentialCheck});
@@ -104,6 +110,45 @@
             this.btnTransparency.Size = new System.Drawing.Size(184, 22);
             this.btnTransparency.Text = "背景透明度 (100%)";
             this.btnTransparency.Click += new System.EventHandler(this.btnTransparency_Click);
+            //
+            // btnObsWindowStyle
+            //
+            this.btnObsWindowStyle.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.btnObsWindowStyleEnabled,
+            this.btnObsWindowStyleHotkey,
+            this.btnObsWindowChromeOpacity,
+            this.btnObsWindowHelp});
+            this.btnObsWindowStyle.Name = "btnObsWindowStyle";
+            this.btnObsWindowStyle.Size = new System.Drawing.Size(184, 22);
+            this.btnObsWindowStyle.Text = "OBS窗口采集样式";
+            //
+            // btnObsWindowStyleEnabled
+            //
+            this.btnObsWindowStyleEnabled.Name = "btnObsWindowStyleEnabled";
+            this.btnObsWindowStyleEnabled.Size = new System.Drawing.Size(256, 22);
+            this.btnObsWindowStyleEnabled.Text = "启用 OBS 纯文字/透明框架模式";
+            this.btnObsWindowStyleEnabled.Click += new System.EventHandler(this.btnObsWindowStyleEnabled_Click);
+            //
+            // btnObsWindowStyleHotkey
+            //
+            this.btnObsWindowStyleHotkey.Name = "btnObsWindowStyleHotkey";
+            this.btnObsWindowStyleHotkey.Size = new System.Drawing.Size(256, 22);
+            this.btnObsWindowStyleHotkey.Text = "配置样式开关快捷键...（未设置）";
+            this.btnObsWindowStyleHotkey.Click += new System.EventHandler(this.btnObsWindowStyleHotkey_Click);
+            //
+            // btnObsWindowChromeOpacity
+            //
+            this.btnObsWindowChromeOpacity.Name = "btnObsWindowChromeOpacity";
+            this.btnObsWindowChromeOpacity.Size = new System.Drawing.Size(256, 22);
+            this.btnObsWindowChromeOpacity.Text = "框架透明度 (0%)...";
+            this.btnObsWindowChromeOpacity.Click += new System.EventHandler(this.btnObsWindowChromeOpacity_Click);
+            //
+            // btnObsWindowHelp
+            //
+            this.btnObsWindowHelp.Name = "btnObsWindowHelp";
+            this.btnObsWindowHelp.Size = new System.Drawing.Size(256, 22);
+            this.btnObsWindowHelp.Text = "OBS 采集说明...";
+            this.btnObsWindowHelp.Click += new System.EventHandler(this.btnObsWindowHelp_Click);
             // 
             // btnBattlePauseNoTimer
             // 
@@ -190,6 +235,11 @@
         private System.Windows.Forms.ToolStripMenuItem btnEditBest;
         private System.Windows.Forms.ToolStripMenuItem btnShowPSInDots;
         private System.Windows.Forms.ToolStripMenuItem btnTransparency;
+        private System.Windows.Forms.ToolStripMenuItem btnObsWindowStyle;
+        private System.Windows.Forms.ToolStripMenuItem btnObsWindowStyleEnabled;
+        private System.Windows.Forms.ToolStripMenuItem btnObsWindowStyleHotkey;
+        private System.Windows.Forms.ToolStripMenuItem btnObsWindowChromeOpacity;
+        private System.Windows.Forms.ToolStripMenuItem btnObsWindowHelp;
         private System.Windows.Forms.ToolStripMenuItem btnBattlePauseNoTimer;
         private System.Windows.Forms.ToolStripMenuItem btnSoundConfig;
         private System.Windows.Forms.ToolStripMenuItem btnNonSequentialCheck;

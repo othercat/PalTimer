@@ -63,6 +63,35 @@ namespace Pal98Timer
                 g.DrawImage(img, destRect, srcRect.X, srcRect.Y, srcRect.Width, srcRect.Height, GraphicsUnit.Pixel, ia);
             }
         }
+        public static Color ApplyOpacity(Color color, float opacity)
+        {
+            float normalized = Math.Max(0F, Math.Min(1F, opacity));
+            return Color.FromArgb((int)Math.Round(color.A * normalized), color.R, color.G, color.B);
+        }
+        public static SolidBrush CreateOpacityBrush(SolidBrush source, float opacity)
+        {
+            Color color = source == null ? Color.Transparent : ApplyOpacity(source.Color, opacity);
+            return new SolidBrush(color);
+        }
+        public static Pen CreateOpacityPen(Pen source, float opacity)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+            return new Pen(ApplyOpacity(source.Color, opacity), source.Width);
+        }
+        public static void FillRectanglesWithOpacity(Graphics graphics, SolidBrush source, Rectangle[] rectangles, float opacity)
+        {
+            if (graphics == null || source == null || rectangles == null || rectangles.Length == 0 || opacity <= 0F)
+            {
+                return;
+            }
+            using (SolidBrush brush = CreateOpacityBrush(source, opacity))
+            {
+                graphics.FillRectangles(brush, rectangles);
+            }
+        }
         public static void DrawText(Graphics g, string text, Font font, Brush fillBrush, Pen strokePen, Rectangle rect, StringFormat sf)
         {
             if (text == null) text = "";
@@ -417,18 +446,41 @@ namespace Pal98Timer
             }
         }
         private Image bg = null;
+        private float requestedBgOpacity = 1F;
         private float bgOpacity = 1F;
+        private float chromeOpacity = 1F;
         private bool isBGChanged = false;
         public void SetBGOpacity(int value)
         {
             if (value < 0) value = 0;
             if (value > 100) value = 100;
             float opacity = value / 100F;
-            if (Math.Abs(bgOpacity - opacity) > 0.001F)
+            if (Math.Abs(requestedBgOpacity - opacity) > 0.001F)
             {
-                bgOpacity = opacity;
+                requestedBgOpacity = opacity;
+                bgOpacity = requestedBgOpacity * chromeOpacity;
                 isBGChanged = true;
             }
+        }
+        public void SetChromeOpacity(int value)
+        {
+            if (value < 0) value = 0;
+            if (value > 100) value = 100;
+            float opacity = value / 100F;
+            if (Math.Abs(chromeOpacity - opacity) <= 0.001F)
+            {
+                return;
+            }
+
+            chromeOpacity = opacity;
+            bgOpacity = requestedBgOpacity * chromeOpacity;
+            isBGChanged = true;
+            RefreshDotsStyle();
+        }
+
+        public Bitmap GetFrameBitmap()
+        {
+            return CI as Bitmap;
         }
         public void SetBG(string path)
         {
@@ -482,8 +534,15 @@ namespace Pal98Timer
             {
                 var mode = g.SmoothingMode;
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                g.FillPath(bb.DotFills[curDotFillIdx], p);
-                g.DrawPath(bb.DotBorder, p);
+                using (SolidBrush fill = GEX.CreateOpacityBrush(bb.DotFills[curDotFillIdx], chromeOpacity))
+                using (Pen border = GEX.CreateOpacityPen(bb.DotBorder, chromeOpacity))
+                {
+                    g.FillPath(fill, p);
+                    if (border != null)
+                    {
+                        g.DrawPath(border, p);
+                    }
+                }
                 g.SmoothingMode = mode;
                 curDotFillIdx++;
                 if (curDotFillIdx >= bb.DotFills.Length) curDotFillIdx = 0;
@@ -684,16 +743,21 @@ namespace Pal98Timer
                 return x >= rectCache.X && x <= (rectCache.X + rectCache.Width);
             }
             public bool IsVisible = true;
-            public void Draw(Graphics g, Rectangle rect, GBoard bb)
+            public void Draw(Graphics g, Rectangle rect, GBoard bb, float chromeOpacity)
             {
                 rectCache.X = rect.X;
                 rectCache.Width = rect.Width;
                 using (GraphicsPath p = GEX.RadiusRectPath(rect.X, rect.Y, rect.Width, rect.Height, GEX.GDIMulti(rect.Height, 0.5F)))
+                using (SolidBrush fill = GEX.CreateOpacityBrush(bb.ButtonFill, chromeOpacity))
+                using (Pen border = GEX.CreateOpacityPen(bb.ButtonBorder, chromeOpacity))
                 {
                     var mode = g.SmoothingMode;
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                    g.FillPath(bb.ButtonFill, p);
-                    g.DrawPath(bb.ButtonBorder, p);
+                    g.FillPath(fill, p);
+                    if (border != null)
+                    {
+                        g.DrawPath(border, p);
+                    }
                     g.SmoothingMode = mode;
                 }
                 switch (_style)
@@ -888,7 +952,7 @@ namespace Pal98Timer
                     }
                 }
             }
-            public bool Draw(Graphics g, bool isForceDrawAll, GBoard bb, Rectangle rcName, Rectangle rcBest, Rectangle rcCha, Rectangle rcCur, Image bg, int bgWidth, int bgHeight, float bgOpacity, delUpdateRect ur = null)
+            public bool Draw(Graphics g, bool isForceDrawAll, GBoard bb, Rectangle rcName, Rectangle rcBest, Rectangle rcCha, Rectangle rcCur, Image bg, int bgWidth, int bgHeight, float bgOpacity, float chromeOpacity, delUpdateRect ur = null)
             {
                 bool ret = false;
                 if (isForceDrawAll) isDirty = true;
@@ -907,11 +971,11 @@ namespace Pal98Timer
                     // 跳过节点沿用普通显示，不做特殊颜色
                     if (IsActive)
                     {
-                        g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcName, rcBest });
+                        GEX.FillRectanglesWithOpacity(g, bb.CPItemActBG, new Rectangle[] { rcName, rcBest }, chromeOpacity);
                     }
                     else if (needFillBG)
                     {
-                        g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcName, rcBest });
+                        GEX.FillRectanglesWithOpacity(g, bb.CPItemBG, new Rectangle[] { rcName, rcBest }, chromeOpacity);
                     }
 
                     GEX.DrawText(g, _name, bb.CPNameFont, bb.CPNameFill, bb.CPNameBorder, rcName, GLayout.sfCC);
@@ -932,11 +996,11 @@ namespace Pal98Timer
                     // 跳过节点沿用普通显示，不做特殊颜色
                     if (IsActive)
                     {
-                        g.FillRectangles(bb.CPItemActBG, new Rectangle[] { rcCha, rcCur });
+                        GEX.FillRectanglesWithOpacity(g, bb.CPItemActBG, new Rectangle[] { rcCha, rcCur }, chromeOpacity);
                     }
                     else if (needFillBG)
                     {
-                        g.FillRectangles(bb.CPItemBG, new Rectangle[] { rcCha, rcCur });
+                        GEX.FillRectanglesWithOpacity(g, bb.CPItemBG, new Rectangle[] { rcCha, rcCur }, chromeOpacity);
                     }
 
                     if (_ispassed || _isact || isSkipped)
@@ -2303,12 +2367,19 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, close_rc, bg, Width, Height, bgOpacity);
                 }
-                var mode = g.SmoothingMode;
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                g.FillEllipse(bb.CloseFill, close_rc);
-                g.DrawLine(bb.CloseLine, close_rc.X + 10, close_rc.Y + 10, close_rc.X + close_rc.Width - 10, close_rc.Y + close_rc.Height - 10);
-                g.DrawLine(bb.CloseLine, close_rc.X + close_rc.Width - 10, close_rc.Y + 10, close_rc.X + 10, close_rc.Y + close_rc.Height - 10);
-                g.SmoothingMode = mode;
+                using (SolidBrush fill = GEX.CreateOpacityBrush(bb.CloseFill, chromeOpacity))
+                using (Pen line = GEX.CreateOpacityPen(bb.CloseLine, chromeOpacity))
+                {
+                    var mode = g.SmoothingMode;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.FillEllipse(fill, close_rc);
+                    if (line != null)
+                    {
+                        g.DrawLine(line, close_rc.X + 10, close_rc.Y + 10, close_rc.X + close_rc.Width - 10, close_rc.Y + close_rc.Height - 10);
+                        g.DrawLine(line, close_rc.X + close_rc.Width - 10, close_rc.Y + 10, close_rc.X + 10, close_rc.Y + close_rc.Height - 10);
+                    }
+                    g.SmoothingMode = mode;
+                }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
                     ur?.Invoke(close_rc);
@@ -2325,7 +2396,12 @@ namespace Pal98Timer
                 }
                 if (configIcon != null)
                 {
-                    g.DrawImage(configIcon, config_rc);
+                    GEX.DrawImage(
+                        g,
+                        configIcon,
+                        config_rc,
+                        new Rectangle(0, 0, configIcon.Width, configIcon.Height),
+                        chromeOpacity);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
@@ -2552,7 +2628,7 @@ namespace Pal98Timer
                     ret = true;
                     ModifyRect(ref rc, startX + p * (GBtn.Margin + GBtn.Width), btn_rc.Y, GBtn.Width, btn_rc.Height);
                     GEX.ClearRect(g, rc, bg, Width, Height, bgOpacity);
-                    cur.Draw(g, rc, bb);
+                    cur.Draw(g, rc, bb, chromeOpacity);
                     if (!isForceDrawAll)
                     {
                         ur?.Invoke(rc);
@@ -2643,8 +2719,8 @@ namespace Pal98Timer
             }
             if (isForceDrawAll)
             {
-                g.FillRectangle(bb.CPItemBG, rcItemScroll);
-                g.FillRectangle(bb.CPItemActBG, rcItemScBlock);
+                GEX.FillRectanglesWithOpacity(g, bb.CPItemBG, new Rectangle[] { rcItemScroll }, chromeOpacity);
+                GEX.FillRectanglesWithOpacity(g, bb.CPItemActBG, new Rectangle[] { rcItemScBlock }, chromeOpacity);
             }
             bool ret = false;
             for (int i = ItemScroll, j = 0; i < itemList.Count && j < CanShowCount; ++i, ++j)
@@ -2654,7 +2730,7 @@ namespace Pal98Timer
                 rcIBest.Y = y;
                 rcICha.Y = y + bb.ItemHalfHeight;
                 rcICur.Y = y;
-                if (itemList[i].Draw(g, isForceDrawAll, bb, rcIName, rcIBest, rcICha, rcICur, bg, Width, Height, bgOpacity, ur))
+                if (itemList[i].Draw(g, isForceDrawAll, bb, rcIName, rcIBest, rcICha, rcICur, bg, Width, Height, bgOpacity, chromeOpacity, ur))
                 {
                     ret = true;
                 }
@@ -2679,8 +2755,15 @@ namespace Pal98Timer
                 }
                 if (isC)
                 {
-                    g.FillRectangle(bb.IsCFill, rcIsC);
-                    g.DrawRectangle(bb.IsCBorder, rcIsC);
+                    using (SolidBrush fill = GEX.CreateOpacityBrush(bb.IsCFill, chromeOpacity))
+                    using (Pen border = GEX.CreateOpacityPen(bb.IsCBorder, chromeOpacity))
+                    {
+                        g.FillRectangle(fill, rcIsC);
+                        if (border != null)
+                        {
+                            g.DrawRectangle(border, rcIsC);
+                        }
+                    }
                     GEX.DrawText(g, "C", bb.IsCFont, bb.IsCTextFill, null, rcIsC, GLayout.sfCC);
                 }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)

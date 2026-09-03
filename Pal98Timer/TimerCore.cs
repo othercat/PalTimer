@@ -949,6 +949,13 @@ namespace Pal98Timer
             return false;
         }
         /// <summary>
+        /// 返回当前内核已经占用的自定义开关快捷键，供全局功能配置时检查冲突。
+        /// </summary>
+        public virtual Keys GetCustomToggleHotkey()
+        {
+            return Keys.None;
+        }
+        /// <summary>
         /// 顶部豆豆增加
         /// </summary>
         /// <returns>返回空字符串为不增加，否则增加</returns>

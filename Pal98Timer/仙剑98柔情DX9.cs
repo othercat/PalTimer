@@ -1041,20 +1041,18 @@ namespace Pal98Timer
             };
 
             btnDx9Overlay = form.NewMenuItem();
-            btnDx9Overlay.Text = "游戏内信息叠加设置";
+            btnDx9Overlay.Text = "OBS 独立遮罩窗口设置";
             btnDx9Overlay.Checked = false;
 
             btnDx9OverlayEnabled = new ToolStripMenuItem();
-            btnDx9OverlayEnabled.Text = "启用游戏内信息叠加（实验）";
+            btnDx9OverlayEnabled.Text = "启用 OBS 独立遮罩窗口";
             btnDx9OverlayEnabled.Checked = false;
             btnDx9OverlayEnabled.Click += delegate (object sender, EventArgs e) {
                 ToggleDx9OverlayEnabled();
             };
 
             Dx9OverlayLayoutSettings initialOverlayLayout = Dx9OverlaySettings.LoadLayout();
-            if (string.IsNullOrEmpty(Dx9OverlaySettings.ValidateToggleHotkey(
-                initialOverlayLayout.ToggleHotkey,
-                SoundConfig.ins.ToggleHotkey)))
+            if (string.IsNullOrEmpty(ValidateDx9OverlayHotkey(initialOverlayLayout.ToggleHotkey)))
             {
                 Dx9OverlayToggleHotkey = initialOverlayLayout.ToggleHotkey;
             }
@@ -1066,7 +1064,7 @@ namespace Pal98Timer
             };
 
             btnDx9OverlayAdjust = new ToolStripMenuItem();
-            btnDx9OverlayAdjust.Text = "调整叠加位置和比例";
+            btnDx9OverlayAdjust.Text = "拖动并调整遮罩比例";
             btnDx9OverlayAdjust.Enabled = false;
             btnDx9OverlayAdjust.Click += delegate (object sender, EventArgs e) {
                 if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
@@ -1080,30 +1078,30 @@ namespace Pal98Timer
                 }
                 if (!Dx9Overlay.BeginEditMode())
                 {
-                    form.Alert("请先启动并保持 PAL98DX9 游戏窗口未最小化，再调整叠加位置和比例。");
+                    form.Alert("独立遮罩窗口暂时不可用，请先关闭后重新启用该窗口。");
                 }
             };
 
             btnDx9OverlayFont = new ToolStripMenuItem();
-            btnDx9OverlayFont.Text = "调整叠加字体和字号...";
+            btnDx9OverlayFont.Text = "调整遮罩字体和字号...";
             btnDx9OverlayFont.Enabled = false;
             btnDx9OverlayFont.Click += delegate (object sender, EventArgs e) {
                 ConfigureDx9OverlayFont();
             };
 
             btnDx9OverlayFontColor = new ToolStripMenuItem();
-            btnDx9OverlayFontColor.Text = "调整叠加字体颜色...";
+            btnDx9OverlayFontColor.Text = "调整遮罩字体颜色...";
             btnDx9OverlayFontColor.Enabled = false;
             btnDx9OverlayFontColor.Click += delegate (object sender, EventArgs e) {
                 ConfigureDx9OverlayFontColor();
             };
 
             btnDx9OverlayReset = new ToolStripMenuItem();
-            btnDx9OverlayReset.Text = "恢复叠加默认设置";
+            btnDx9OverlayReset.Text = "恢复遮罩默认设置";
             btnDx9OverlayReset.Enabled = false;
             btnDx9OverlayReset.Click += delegate (object sender, EventArgs e) {
                 if (Dx9Overlay == null || Dx9Overlay.IsDisposed ||
-                    !form.Confirm("恢复右下角位置、1.0比例、自动宋体/细明体和默认颜色，并清除叠加开关快捷键？"))
+                    !form.Confirm("恢复主屏幕右下角位置、1.0比例、自动宋体/细明体和默认颜色，并清除遮罩开关快捷键？"))
                 {
                     return;
                 }
@@ -1115,7 +1113,7 @@ namespace Pal98Timer
                 }
                 catch (Exception ex)
                 {
-                    form.Error("无法保存游戏内叠加默认设置：" + ex.Message);
+                    form.Error("无法保存独立遮罩默认设置：" + ex.Message);
                 }
             };
             btnDx9Overlay.DropDownItems.AddRange(new ToolStripItem[] {
@@ -1135,7 +1133,7 @@ namespace Pal98Timer
             {
                 SetDx9OverlayEnabled(false);
                 try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
-                form.Alert("游戏内信息叠加启动失败，已恢复为关闭状态：" + ex.Message);
+                form.Alert("OBS 独立遮罩窗口启动失败，已恢复为关闭状态：" + ex.Message);
             }
 
             btnCloudSave = form.NewCloudMenuItem();
@@ -1224,6 +1222,7 @@ namespace Pal98Timer
                     Dx9Overlay = new Dx9OverlayForm(CreateDx9OverlaySnapshot);
                     Dx9Overlay.EditModeChanged += Dx9Overlay_EditModeChanged;
                     Dx9Overlay.LayoutSaveFailed += Dx9Overlay_LayoutSaveFailed;
+                    Dx9Overlay.FormClosed += Dx9Overlay_FormClosed;
                     Dx9Overlay.Start();
                 }
                 btnDx9Overlay.Checked = true;
@@ -1252,7 +1251,7 @@ namespace Pal98Timer
             {
                 SetDx9OverlayEnabled(false);
                 try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
-                form.Error("无法启用或保存游戏内信息叠加设置：" + ex.Message);
+                form.Error("无法启用或保存 OBS 独立遮罩窗口设置：" + ex.Message);
             }
         }
 
@@ -1265,6 +1264,7 @@ namespace Pal98Timer
 
             Dx9Overlay.EditModeChanged -= Dx9Overlay_EditModeChanged;
             Dx9Overlay.LayoutSaveFailed -= Dx9Overlay_LayoutSaveFailed;
+            Dx9Overlay.FormClosed -= Dx9Overlay_FormClosed;
             Dx9Overlay.Stop();
             Dx9Overlay.Dispose();
             Dx9Overlay = null;
@@ -1303,7 +1303,7 @@ namespace Pal98Timer
         {
             if (btnDx9OverlayHotkey != null)
             {
-                btnDx9OverlayHotkey.Text = "配置叠加开关快捷键...（" +
+                btnDx9OverlayHotkey.Text = "配置遮罩开关快捷键...（" +
                     Dx9OverlaySettings.FormatToggleHotkey(Dx9OverlayToggleHotkey) + "）";
             }
         }
@@ -1311,7 +1311,7 @@ namespace Pal98Timer
         private void ConfigureDx9OverlayHotkey()
         {
             Func<Keys, string> validator = delegate (Keys hotkey) {
-                return Dx9OverlaySettings.ValidateToggleHotkey(hotkey, SoundConfig.ins.ToggleHotkey);
+                return ValidateDx9OverlayHotkey(hotkey);
             };
             using (Dx9OverlayHotkeyForm dialog = new Dx9OverlayHotkeyForm(Dx9OverlayToggleHotkey, validator))
             {
@@ -1340,7 +1340,7 @@ namespace Pal98Timer
                 {
                     Dx9OverlayToggleHotkey = previousHotkey;
                     UpdateDx9OverlayHotkeyMenuText();
-                    form.Error("无法保存游戏内叠加快捷键：" + ex.Message);
+                    form.Error("无法保存独立遮罩快捷键：" + ex.Message);
                 }
             }
         }
@@ -1350,9 +1350,25 @@ namespace Pal98Timer
             UpdateDx9OverlayMenuState(Dx9Overlay != null && !Dx9Overlay.IsDisposed);
         }
 
+        private void Dx9Overlay_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            Dx9OverlayForm closed = sender as Dx9OverlayForm;
+            if (closed == null || !object.ReferenceEquals(Dx9Overlay, closed))
+            {
+                return;
+            }
+
+            closed.EditModeChanged -= Dx9Overlay_EditModeChanged;
+            closed.LayoutSaveFailed -= Dx9Overlay_LayoutSaveFailed;
+            closed.FormClosed -= Dx9Overlay_FormClosed;
+            Dx9Overlay = null;
+            try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
+            UpdateDx9OverlayMenuState(false);
+        }
+
         private void Dx9Overlay_LayoutSaveFailed(Exception ex)
         {
-            form.Error("无法保存游戏内叠加位置或比例：" + ex.Message);
+            form.Error("无法保存独立遮罩位置或比例：" + ex.Message);
         }
 
         private void ConfigureDx9OverlayFont()
@@ -1395,7 +1411,7 @@ namespace Pal98Timer
                 }
                 catch (Exception ex)
                 {
-                    form.Error("无法保存游戏内叠加字体设置：" + ex.Message);
+                    form.Error("无法保存独立遮罩字体设置：" + ex.Message);
                 }
             }
         }
@@ -1425,7 +1441,7 @@ namespace Pal98Timer
                 }
                 catch (Exception ex)
                 {
-                    form.Error("无法保存游戏内叠加字体颜色：" + ex.Message);
+                    form.Error("无法保存独立遮罩字体颜色：" + ex.Message);
                 }
             }
         }
@@ -1433,9 +1449,7 @@ namespace Pal98Timer
         public override bool TryHandleCustomHotkey(Keys hotkey)
         {
             if (Dx9OverlayToggleHotkey == Keys.None || hotkey != Dx9OverlayToggleHotkey ||
-                !string.IsNullOrEmpty(Dx9OverlaySettings.ValidateToggleHotkey(
-                    Dx9OverlayToggleHotkey,
-                    SoundConfig.ins.ToggleHotkey)))
+                !string.IsNullOrEmpty(ValidateDx9OverlayHotkey(Dx9OverlayToggleHotkey)))
             {
                 return false;
             }
@@ -1444,6 +1458,25 @@ namespace Pal98Timer
                 ToggleDx9OverlayEnabled();
             });
             return true;
+        }
+
+        public override Keys GetCustomToggleHotkey()
+        {
+            return Dx9OverlayToggleHotkey;
+        }
+
+        private string ValidateDx9OverlayHotkey(Keys hotkey)
+        {
+            string error = Dx9OverlaySettings.ValidateToggleHotkey(hotkey, SoundConfig.ins.ToggleHotkey);
+            if (!string.IsNullOrEmpty(error))
+            {
+                return error;
+            }
+            if (hotkey != Keys.None && hotkey == form.ObsWindowStyleToggleHotkey)
+            {
+                return "该组合已用于 OBS 窗口采集样式开关。";
+            }
+            return "";
         }
 
         private Dx9OverlaySnapshot CreateDx9OverlaySnapshot()

@@ -45,6 +45,10 @@ PalTimer（仙剑98自动计时器）是一个 Windows 桌面应用，用于仙�
 
 当前 Git 状态以实际 `git status` 为准；2026-08-24 P 键重启权限误报修复的源码、测试与文档已经收口。本文件此前记录的 `codex/paltimer-automation-tick-snapshot` 为旧会话状态；后续接手以实际 Git 状态和代码为准。
 
+2026-09-03 OBS 主窗口样式快捷键增量继续保持 3.37.0：在“OBS窗口采集样式”子菜单新增默认未设置的全局开关快捷键，主窗口、简版和所有内核共用；即使框架透明度为 0、功能按钮不可见，也能一键关闭逐像素透明并恢复普通界面。快捷键写入向后兼容的 version=2 `obs_window_style`，必须包含 Ctrl/Shift/Alt，拒绝 F1-F12、Ctrl+Enter、节点音效开关和当前 PAL98DX9 独立遮罩开关冲突；复用唯一全局键盘钩子和既有按键锁存，不新增线程或轮询。Release|x64 重建零错误，旧 OBS 设置默认无快捷键、新快捷键往返、遮罩交互和静态冲突合同均通过；EXE SHA-256 `31E82EC9F20A7D73BF2AC320A69380961B65A2EC55669259A8A700E68F778CA8`，GPL 源码 ZIP SHA-256 `BB830663FA81779ADD557A9C3BB57ECBEA96849342DCF18D6929B5BD8696C1EC`，源码 ZIP 独立重建通过。已同步 5 个差异发布文件到 `D:\PAL\完整包\PAL98_v1.60_20260903\Tools\仙剑98自动计时器`，备份为 `D:\PAL\完整包\PAL98_v1.60_20260903.paltimer-backup-20260903-183433`；未覆盖用户已经生成的 `obs_window_style`、布局、音效、窗口尺寸或成绩。现代 OBS、真实全局按键、按住不连发、Alt-Tab 和 Win7 SP1 仍待人工验收；产品改动未提交、未推送。
+
+2026-09-03 OBS 窗口采集增量保持 3.37.0：原 PAL98DX9 游戏内叠加改为固定标题“仙剑98自动计时器 - OBS独立遮罩”的任务栏顶层窗口，脱离游戏前台/最小化状态，可由 OBS 与主计时器分别选择；编辑态在虚拟桌面内拖动/等比缩放，version=2 `dx9_overlay_layout` 保存绝对屏幕位置并兼容旧 version=1。主窗口和简版共用默认关闭的 `obs_window_style`，Win32 `UpdateLayeredWindow` 逐像素呈现让文字/描边保持不透明，背景、按钮、图标和节点底色按 0–100 框架透明度绘制，0 为纯文字；失败会自动恢复普通界面。旧 `Pal98TimerOBSPlugin` 是 OBS 0.6xx 的 CLROBS x86 历史实现，未复活、未部署、未启动 TCP 39263。Release|x64 重建、像素/逐像素窗口/无游戏独立窗口/配置迁移烟测通过；候选 EXE SHA-256 `88705FAD5664CD4DB3EC8C05A24A244DF325A53B0FAD6C73BA5C99BF1E85A38B`，GPL 源码 ZIP SHA-256 `0C6A0A2BBCC9BD404771710368458D33119710B20389150C3C6640E66E631EFD`，源码 ZIP 独立重建通过。已替换 `D:\PAL\完整包\PAL98_v1.60_20260903\Tools\仙剑98自动计时器` 中 5 个变更发布文件，备份在 `D:\PAL\完整包\PAL98_v1.60_20260903.paltimer-backup-20260903-181721`；待现代 OBS、PAL98DX9、多显示器和 Win7 SP1 人工验收。产品改动未提交、未推送；`.agents/goal/*` 既有生成式改动继续保留。
+
 2026-09-03 比赛锁合同保持 `PAL98.TournamentLock.v1` 不升 schema；PalTimer 把锁定者合法长度从 1–4 扩为 1–8 个汉字、英文字母或数字，并在整个进程生命周期发布 `Local\PAL98.PalTimer.TournamentLock.v1` 版本化能力标记，供 PALDLL 在锁定游戏启动时识别支持比赛配置的计时器。四个 PAL98DX9 系内核在有效锁下仍只返回清单内 `competition_display_name`，即配置工具“比赛/补丁名称”规范化后的精确“xx比赛专用”，不追加普通版本号。PalTimer 继续只校验签名清单和三份不可变快照身份，不读取或解释 ConfigTool/PALDLL 的运行文件白名单；内存、IPC、轮询、节点和计时边界不变。Release|x64 构建和比赛锁专项回归通过，EXE SHA-256 `75FF6F1D7E0C6E46D4A2C81A821730D9D552FDADB31D50432ED1CBDDD1293A55`；已连同对应 PAL.dll、PAL.map 和配置工具部署到 `D:\SteamLibrary\steamapps\common\PAL\PAL98`，备份在 `_codex_backups\20260903-111027-tournament-timer-capability`。产品源码随本次 3.37.0 增量发布收口，`.agents/goal/*` 的既有生成式改动继续保留且不属于产品提交。
 
 2026-09-02 当前工作区有未提交的比赛锁身份支持，并保留 `.agents/goal/*` 的既有生成式改动。`TournamentLockInfoReader` 从已附加 PAL.exe 所在目录校验 `PAL98.TournamentLock.v1` 的私有 Release HMAC、规范字段、固定三文件集合和快照哈希；当前清单要求 `display_line_overrides` 与 `configuration_code_marker` 成对出现，先前两字段均缺失的已签名 v1 清单继续兼容，半升级失败关闭。有效锁让 PAL98DX9、魂牵、Dream220 显血和不欢乐内核精确显示 `competition_display_name`（“xx比赛专用”），无锁沿用原身份，损坏锁不采用比赛身份。没有修改进程匹配、内存地址、RPM/WPM、70ms 循环、节点、计时或 `PAL98_IPC_v1`。产品版本保持 3.37.0。可信完整性密钥只存在于本机 Git exclude 文件 `Pal98Timer/TournamentIntegrityKey.txt` 并嵌入本地 Release；公开 Debug 使用明确测试密钥，公开 Release 缺少私钥时不会信任比赛锁。最终 Release|x64 SHA-256 `5B7F4FAD63552CD3479F1D8349DB29247B6DAF62A86BFB476F4C4C323D62C40E`；新旧清单、篡改与无锁回归通过，未提交、未推送、未部署。
@@ -132,6 +136,10 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### v3.37.0 增量（2026-09-03）
 
+- PAL98DX9 独立遮罩成为可由 OBS 单独枚举的顶层窗口，不再随游戏失焦或最小化隐藏；支持虚拟桌面拖动、等比缩放、固定窗口标题和绝对位置持久化
+- 主计时器及简版新增默认关闭的 OBS 纯文字/透明框架模式；逐像素透明保持文字不透明，非文字框架层支持 0–100 透明度，失败自动回退普通界面
+- OBS 窗口样式新增全局开关快捷键；默认未设置，旧 version=1 配置兼容，配置时拒绝常规计时器、节点音效和独立遮罩快捷键冲突，按住基准键不会重复切换
+- `tools/TestObsWindowPresentation.ps1` 覆盖纯文字像素、逐像素呈现、无游戏窗口时独立遮罩可见、旧布局迁移、旧 OBS 样式默认无快捷键及 version=2 新设置往返；旧 CLROBS x86 插件未接入发布
 - PalTimer 进程生命周期发布 `Local\PAL98.PalTimer.TournamentLock.v1` 手动复位事件，作为 PALDLL 锁定启动时的 v1 兼容能力标记；发布失败只记调试信息，不影响计时器启动
 - 四个 PAL98DX9 系内核的反射回归现在直接断言 `GetGameVersion()` 等于签名 `competition_display_name`，保证版本位置不追加普通版本号
 - 比赛锁锁定者名称校验与 PALDLL_DX9、Pal98ConfigTool 同步扩为最多 8 个汉字、英文字母或数字；签名 schema、页脚、比赛显示名和旧 v1 清单兼容规则不变
@@ -224,6 +232,7 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 ### 本轮已修复，待实机验证
 
+- **OBS 两路窗口采集**：Release 构建、离屏像素、Win32 逐像素窗口和无游戏独立遮罩烟测通过并已部署 1.60 包；仍需现代 OBS Studio 实测分别枚举两个窗口、透明通道、完整/简版切换、0/30/100 框架透明度、游戏最小化/Alt-Tab、多显示器拖动与缩放。Win7 SP1 + .NET 4.7.2 仍为人工兼容门。
 - **比赛计时器能力握手**：源码和主机回归已覆盖能力事件的创建/发现/释放及四内核精确显示，并已部署到 Steam PAL98；仍需先启动新版 PalTimer、再启动锁定 PAL.exe，确认 PALDLL 不提示，并分别以旧版/未启动 PalTimer 验证更新提示。
 - **8 字符比赛锁身份**：源码、签名清单回归和 Release|x64 构建已通过并已部署；仍需用更新后的配置工具与 PAL.dll 创建真实 5–8 字符锁，确认 PalTimer 显示精确比赛名。
 - **比赛锁计时器身份**：静态/反射回归和 Release|x64 已通过并已部署；仍需用配置工具真实创建一个锁，启动 PAL.exe 后确认四类内核显示精确比赛名，并确认无锁/解锁后恢复各自普通身份。
@@ -320,6 +329,8 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 
 新的 AI 接手后，优先做以下事情：
 
+**OBS 优先人工验收：** 在现代 OBS Studio 中添加两个“窗口采集”，分别选择“自动计时器”和“仙剑98自动计时器 - OBS独立遮罩”。先配置 OBS 样式开关快捷键，再把主窗口框架透明度设为 0，确认按一次恢复普通界面、再按一次返回纯文字，长按不连发且游戏不收到基准键；同时验证完整 UI/简版、0/30/100 透明度和与节点音效/独立遮罩快捷键的冲突提示。独立遮罩验证无游戏、游戏前台、Alt-Tab、游戏最小化和双显示器拖动/缩放。确认 OBS 透明捕获选项保留 alpha、文字无紫边/黑底、两个来源可独立裁剪缩放，并做关闭/开启各 30 分钟 CPU、Private Bytes、GDI Handles 对照。不要把当前主机烟测写成 OBS 或 Win7 实机通过。
+
 **比赛锁优先：** 本轮 PALDLL_DX9、Pal98ConfigTool、PalTimer 源码已同步新白名单、8 字符锁定者边界和计时器 v1 能力标记，并已部署到 Steam PAL98 测试目录。下一步用同一可信 Release 密钥做一次真实闭环：以 5–8 字符锁定者创建锁，先启动新版 PalTimer、再启动 PAL.exe，确认 PALDLL 不出现更新提示且四内核版本位置只显示精确“xx比赛专用”；随后以未启动/旧版 PalTimer 启动同一锁定游戏，确认只出现一次更新提示且游戏仍可继续。再验证四行逐行保持/覆盖、“锁定者XXX : 配置码末 6 位”、锁定后分辨率/窗口位置和两种语言可调且启动无保存提示，并人工改 `DefaultPatch`、其它 `config.ini`/`dxwrapper.ini` 键和 `mod.ini`，确认只恢复非白名单内容，最后解锁。不要提交或输出私钥；不要把自动回归写成实机验收。
 
 **最高优先：** 在明确授权启动/写入后，用冻结派生 profile
@@ -360,6 +371,9 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 | `.ai/env.md` | 多电脑环境差异 |
 | `Pal98Timer/GForm.cs` | 主窗体、快捷键处理、版本号 `CurrentVersion` |
 | `Pal98Timer/GEX.cs` | GDI 主界面绘制、布局（BuildRects/DrawMainTimer） |
+| `Pal98Timer/LayeredWindowPresenter.cs` | 主窗口 OBS 模式的 Win32 逐像素 alpha 呈现与失败回退基础 |
+| `Pal98Timer/ObsWindowStyleSettings.cs` | `obs_window_style` 默认关闭、框架透明度 0–100 的兼容读写 |
+| `Pal98Timer/Dx9OverlayForm.cs` | PAL98DX9 独立遮罩窗口、拖动缩放、version=2 绝对屏幕布局 |
 | `Pal98Timer/TimerCore.cs` | 通用节点推进、CurrentStep、跳节点、成绩导出 |
 | `Pal98Timer/Pal98WaterSpiritPearlSplit.cs` | 水灵珠节点正常交换基线增长与大理回程双位置门闩 |
 | `Pal98Timer/TournamentLockInfoReader.cs` | 校验本地 PAL98 比赛锁签名、字段和快照身份，只提供可信计时器显示名 |
@@ -377,6 +391,22 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 7. 最近改动
+
+### 2026-09-03 会话（OBS 主窗口透明样式恢复快捷键，版本保持 3.37.0）
+
+- “OBS窗口采集样式”子菜单新增“配置样式开关快捷键”；所有内核、完整界面与简版共用，透明后可直接恢复普通界面
+- `obs_window_style` 升为兼容 version=2 并新增 `toggle_hotkey`；旧文件缺少该字段时保持未设置，不覆盖部署目录中的玩家配置
+- 快捷键复用现有唯一全局钩子和 `ActiveCustomHotkey` 锁存；配置时拒绝 F1-F12、Ctrl+Enter、无修饰键、节点音效和当前独立遮罩快捷键冲突，手工制造旧配置冲突时优先保证透明主窗口可恢复
+- Release|x64、静态合同、独立遮罩交互和 OBS 设置迁移回归通过；GPL 源码 ZIP 独立重建通过。指定 1.60 包只同步 EXE、源码 ZIP、README、发布清单和子校验和，备份为 `D:\PAL\完整包\PAL98_v1.60_20260903.paltimer-backup-20260903-183433`
+
+### 2026-09-03 会话（OBS 两路独立窗口采集，版本保持 3.37.0）
+
+- 原 PAL98DX9 游戏内叠加移除 `WS_EX_TOOLWINDOW`/前台与最小化门，改为任务栏可见、固定标题、无游戏也可保持的 OBS 独立顶层窗口；正常态仍鼠标穿透，显式编辑态可跨虚拟桌面拖动和等比缩放
+- `dx9_overlay_layout` 升为 version=2 并新增绝对 `window_left/window_top`；旧 version=1 仍按原归一位置初始化，首次调整后迁移
+- 主窗体和简版新增 `obs_window_style`；`LayeredWindowPresenter` 用 `UpdateLayeredWindow` 呈现逐像素 alpha，`GRender` 把背景、按钮胶囊、图标、节点底色等框架层与文字分离透明度，0 时只保留文字/描边
+- 旧 OBS 0.6xx `CLROBS/CLRHost.Interop` x86 插件只保留历史源码，不编译、不部署、不启动 TCP 39263；README/TODO 和自动烟测同步
+- Release|x64 重建零错误；烟测确认完整 UI 21060 个可见像素、纯文字 10347 个可见像素，逐像素呈现、无游戏独立窗口和设置迁移通过。候选 EXE `88705FAD...E85A38B`、源码 ZIP `0C6A0A2B...E631EFD`，源码 ZIP 独立重建通过
+- 指定 1.60 包只替换 5 个有差异的计时器发布文件，另外 12 个同哈希文件及用户状态未动；外部备份为 `D:\PAL\完整包\PAL98_v1.60_20260903.paltimer-backup-20260903-181721`。现代 OBS、PAL98DX9、多显示器、30 分钟资源和 Win7 SP1 仍待人工验收
 
 ### 2026-09-03 会话（比赛计时器能力握手与精确名称显示，版本保持 3.37.0）
 
@@ -631,6 +661,29 @@ task-111 / task-112 已完成代码层和构建验证，等待或已经进入 ch
 ---
 
 ## 8. 测试状态
+
+2026-09-03 OBS 主窗口样式快捷键验证：
+
+```text
+PASS: VS2026 MSBuild 18 Release|x64 Rebuild，0 errors；仅既有 27 个 obsolete/unused warnings；版本保持 3.37.0
+PASS: .ai/dx9_overlay_regression_check.py 与 .ai/dx9_overlay_interaction_regression_check.ps1（唯一键盘钩子、冲突保护、按键锁存、遮罩原行为）
+PASS: tools/TestObsWindowPresentation.ps1（旧 obs_window_style 默认无快捷键、version=2 快捷键往返；完整 UI 21060 / 纯文字 10347 可见像素）
+PASS: GPL 候选 EXE SHA-256 31E82EC9F20A7D73BF2AC320A69380961B65A2EC55669259A8A700E68F778CA8；源码 ZIP SHA-256 BB830663FA81779ADD557A9C3BB57ECBEA96849342DCF18D6929B5BD8696C1EC
+PASS: 源码 ZIP 独立解压 Release|x64 重建，文件/产品版本 3.37.0；临时验证目录经包含性检查后清理
+PASS: 1.60 包 5 个差异发布文件来源/目标哈希一致；子清单 16 项、固定整包清单 1307 项均零失败
+NOT RUN: 真实全局键盘输入/长按、现代 OBS Studio、PAL98DX9、Alt-Tab、双显示器、30 分钟资源、Win7 SP1
+```
+
+2026-09-03 OBS 两路窗口采集验证：
+
+```text
+PASS: VS2026 MSBuild 18 Release|x64 Rebuild，0 errors；仅既有 obsolete/unused warnings；版本保持 3.37.0
+PASS: tools/TestObsWindowPresentation.ps1（完整 UI 21060 / 纯文字 10347 可见像素、UpdateLayeredWindow、无 PAL 游戏独立遮罩、version=1->2 布局、obs_window_style 往返）
+PASS: GPL 候选 EXE SHA-256 88705FAD5664CD4DB3EC8C05A24A244DF325A53B0FAD6C73BA5C99BF1E85A38B；源码 ZIP SHA-256 0C6A0A2BBCC9BD404771710368458D33119710B20389150C3C6640E66E631EFD
+PASS: 源码 ZIP 独立解压 Release|x64 重建，文件/产品版本 3.37.0；临时验证目录经包含性检查后清理
+PASS: 1.60 包 5 个差异发布文件来源/目标 SHA-256 一致；外部备份包含旧文件及根发布清单/校验和
+NOT RUN: 现代 OBS Studio 两窗口枚举/透明通道/捕获方法、PAL98DX9 实机、双显示器、30 分钟资源、Win7 SP1
+```
 
 2026-09-03 比赛计时器能力握手与精确名称显示验证：
 

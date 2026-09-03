@@ -6,6 +6,8 @@ OVERLAY = ROOT / "Pal98Timer" / "Dx9OverlayForm.cs"
 DX9_CORE = ROOT / "Pal98Timer" / "仙剑98柔情DX9.cs"
 PROJECT = ROOT / "Pal98Timer" / "Pal98Timer.csproj"
 GFORM = ROOT / "Pal98Timer" / "GForm.cs"
+GFORM_DESIGNER = ROOT / "Pal98Timer" / "GForm.Designer.cs"
+OBS_STYLE_SETTINGS = ROOT / "Pal98Timer" / "ObsWindowStyleSettings.cs"
 TIMER_CORE = ROOT / "Pal98Timer" / "TimerCore.cs"
 ASSEMBLY_INFO = ROOT / "Pal98Timer" / "Properties" / "AssemblyInfo.cs"
 OTHER_PAL98_CORES = [
@@ -28,6 +30,8 @@ def main() -> int:
     dx9 = DX9_CORE.read_text(encoding="utf-8-sig")
     project = PROJECT.read_text(encoding="utf-8-sig")
     gform = GFORM.read_text(encoding="utf-8-sig")
+    gform_designer = GFORM_DESIGNER.read_text(encoding="utf-8-sig")
+    obs_style_settings = OBS_STYLE_SETTINGS.read_text(encoding="utf-8-sig")
     timer_core = TIMER_CORE.read_text(encoding="utf-8-sig")
     assembly = ASSEMBLY_INFO.read_text(encoding="utf-8-sig")
 
@@ -79,14 +83,17 @@ def main() -> int:
             "private const int RefreshIntervalMilliseconds = 100;" in overlay
             and "RefreshTimer.Interval = RefreshIntervalMilliseconds;" in overlay
         ),
-        "overlay defaults to the compact bottom-right panel and supports normalized movement": (
+        "overlay defaults to the compact bottom-right panel and supports virtual-screen movement": (
             "private const float OverlayWidthLogicalPixels = 340.0F;" in overlay
             and "private const float OverlayHeightLogicalPixels = 148.0F;" in overlay
             and "PositionX = 1.0F" in overlay
             and "PositionY = 1.0F" in overlay
+            and "Rectangle movementBounds = SystemInformation.VirtualScreen;" in overlay
+            and "LayoutSettings.HasWindowPosition = true;" in overlay
+            and "LayoutSettings.WindowLeft = overlayLeft;" in overlay
+            and "LayoutSettings.WindowTop = overlayTop;" in overlay
             and "availableWidth * LayoutSettings.PositionX" in overlay
             and "availableHeight * LayoutSettings.PositionY" in overlay
-            and "int overlayHeight = Math.Min(height" in overlay
             and "SetBounds(overlayLeft, overlayTop, overlayWidth, overlayHeight);" in overlay
         ),
         "layout config is bounded backward-compatible and only saved on explicit interaction": (
@@ -98,18 +105,22 @@ def main() -> int:
             and "MaximumFontSize = 18.00F" in overlay
             and 'case "font_color":' in overlay
             and 'case "toggle_hotkey":' in overlay
+            and 'case "window_left":' in overlay
+            and 'case "window_top":' in overlay
             and 'text.AppendLine("font_color="' in overlay
             and 'text.AppendLine("toggle_hotkey="' in overlay
+            and 'text.AppendLine("window_left="' in overlay
+            and 'text.AppendLine("window_top="' in overlay
             and "Dx9OverlaySettings.SaveLayout(LayoutSettings);" in overlay
             and "SaveLayoutAfterInteraction();" in overlay
-            and 'btnDx9OverlayAdjust.Text = "调整叠加位置和比例";' in dx9
-            and 'btnDx9OverlayFont.Text = "调整叠加字体和字号...";' in dx9
-            and 'btnDx9OverlayFontColor.Text = "调整叠加字体颜色...";' in dx9
-            and 'btnDx9OverlayReset.Text = "恢复叠加默认设置";' in dx9
+            and 'btnDx9OverlayAdjust.Text = "拖动并调整遮罩比例";' in dx9
+            and 'btnDx9OverlayFont.Text = "调整遮罩字体和字号...";' in dx9
+            and 'btnDx9OverlayFontColor.Text = "调整遮罩字体颜色...";' in dx9
+            and 'btnDx9OverlayReset.Text = "恢复遮罩默认设置";' in dx9
         ),
         "overlay controls are consolidated under one top-level settings menu": (
-            'btnDx9Overlay.Text = "游戏内信息叠加设置";' in dx9
-            and 'btnDx9OverlayEnabled.Text = "启用游戏内信息叠加（实验）";' in dx9
+            'btnDx9Overlay.Text = "OBS 独立遮罩窗口设置";' in dx9
+            and 'btnDx9OverlayEnabled.Text = "启用 OBS 独立遮罩窗口";' in dx9
             and "btnDx9Overlay.DropDownItems.AddRange(new ToolStripItem[]" in dx9
             and "btnDx9Overlay = form.NewMenuItem();" in dx9
             and "btnDx9OverlayEnabled = new ToolStripMenuItem();" in dx9
@@ -139,6 +150,22 @@ def main() -> int:
             and "ToggleDx9OverlayEnabled();" in custom_hotkey_method
             and "System.Threading" not in custom_hotkey_method
             and "ReadProcessMemory" not in custom_hotkey_method
+        ),
+        "OBS window style has a recoverable global toggle hotkey": (
+            "public Keys ToggleHotkey;" in obs_style_settings
+            and 'case "toggle_hotkey":' in obs_style_settings
+            and 'text.AppendLine("toggle_hotkey="' in obs_style_settings
+            and 'text.AppendLine("version=2")' in obs_style_settings
+            and "internal Keys ObsWindowStyleToggleHotkey" in gform
+            and "ToggleObsWindowStyleEnabled();" in gform
+            and "ActiveCustomHotkey = pressed;" in gform
+            and "GetCustomToggleHotkey()" in gform
+            and "public virtual Keys GetCustomToggleHotkey()" in timer_core
+            and "public override Keys GetCustomToggleHotkey()" in dx9
+            and "hotkey == form.ObsWindowStyleToggleHotkey" in dx9
+            and "btnObsWindowStyleHotkey" in gform_designer
+            and 'this.btnObsWindowStyleHotkey.Text = "配置样式开关快捷键...（未设置）";' in gform_designer
+            and gform.count("_keyboardHook.InstallHook(this.OnKeyPress);") == 1
         ),
         "normal mode stays click-through and edit mode is explicit and handle-based": (
             "if (!EditMode)" in overlay
