@@ -616,7 +616,7 @@ namespace Pal98Timer
                 string ChangedFile = "";
                 while (IsListenSave && ChangedFile == "")
                 {
-                    for (int i = 0; i <= 5; ++i)
+                    for (int i = 1; i <= 5; ++i)
                     {
                         string p = palfolder + i + ".RPG";
                         if (File.Exists(p))
@@ -653,12 +653,15 @@ namespace Pal98Timer
                 }
 
                 SRPGobj so = new SRPGobj();
-                so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
                 so.TimerStr = GetRStr();
 
                 string FilePath = fn;
                 try
                 {
+                    if (SRPGSaveBundleTransport.IsRequired(palfolder))
+                        SRPGSaveBundleTransport.Capture(palfolder, ChangedFile, so);
+                    else
+                        so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
                     SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
                     if (File.Exists(FilePath))
                     {
@@ -713,6 +716,16 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                if (so.Pal98SaveBundle != null)
+                {
+                    if (!GetPalHandle()) throw new Exception("请先启动相同内容包的 PAL.exe，再导入完整接力存档。");
+                    SRPGSaveBundleTransport.Import(GetPalFolder(), "1.RPG", so);
+                    SetTimerFromString(so.TimerStr);
+                    LoadedSrpgRequiresGameRestart = true;
+                    WillCopyRPG = "";
+                    return;
+                }
+                if (GetPalHandle()) SRPGSaveBundleTransport.ValidateLegacyTarget(GetPalFolder());
                 SRPGFlyingFlagSidecarSnapshot flyingFlagSnapshot =
                     SRPGSidecarTransport.ReadFlyingFlagSnapshot(so);
                 if (flyingFlagSnapshot != null && !GetPalHandle())
@@ -757,7 +770,7 @@ namespace Pal98Timer
         {
             if (LoadedSrpgRequiresGameRestart)
             {
-                return "存档和飞行旗完整快照已导入，计时器已自动暂停。请保持计时器开启，只关闭并重新启动PAL.exe；重启后再读取游戏中的“进度一”。重启前不要使用飞行旗。";
+                return "存档及附属快照已导入，计时器已自动暂停。请保持计时器开启，只关闭并重新启动PAL.exe；重启后再读取游戏中的“进度一”。重启前不要保存游戏或使用飞行旗。";
             }
             return "存档导入成功，计时器已自动暂停，请读取游戏中“进度一”后关闭此窗口";
         }
@@ -1681,6 +1694,7 @@ namespace Pal98Timer
             {
                 if (File.Exists(WillCopyRPG))
                 {
+                    SRPGSaveBundleTransport.ValidateLegacyTarget(GetPalFolder());
                     string palpath = PalProcess.MainModule.FileName;
                     string[] spli = palpath.Split('\\');
                     spli[spli.Length - 1] = "1.RPG";
@@ -1704,7 +1718,7 @@ namespace Pal98Timer
                     File.Move(WillCopyRPG, palpath);
                 }
             }
-            catch { }
+            catch (Exception error) { cryerror = "接力存档导入失败：" + error.Message; }
 
             WillCopyRPG = "";
         }

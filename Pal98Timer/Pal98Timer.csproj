@@ -235,6 +235,7 @@
     <Compile Include="SoundConfig.cs" />
     <Compile Include="SoundConfigForm.cs" />
     <Compile Include="SRPGSidecarTransport.cs" />
+    <Compile Include="SRPGSaveBundleTransport.cs" />
     <Compile Include="PalProcessOpenRetryPolicy.cs" />
     <Compile Include="TournamentLockInfoReader.cs" />
     <Compile Include="TournamentTimerCapability.cs" />

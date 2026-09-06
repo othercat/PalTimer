@@ -1552,6 +1552,8 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                if (so.Pal98SaveBundle != null)
+                    throw new InvalidDataException("此接力包包含新版 PALDLL 扩展角色数据，请使用仙剑98 DX9 对应内核导入。");
                 string tmppath = rn;
                 try
                 {
@@ -2498,6 +2500,9 @@ namespace Pal98Timer
     {
         public byte[] RPG;
         public string TimerStr;
+
+        [OptionalField(VersionAdded = 3)]
+        public byte[] Pal98SaveBundle;
 
         [OptionalField(VersionAdded = 2)]
         public int FlyingFlagSidecarEnvelopeVersion;
