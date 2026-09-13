@@ -8,7 +8,7 @@ namespace Pal98Timer
         public Pal98Dx9Fast800Speed(GForm form) : base(form)
         { CoreName = Dx9TimingCategory.SpeedCore; }
         protected override int TimingModeMs { get { return 800; } }
-        protected override int TimingMapSpeedTicks { get { return 8; } }
+        protected override int TimingMapSpeedTicks { get { return 9; } }
         protected override void InitCheckPoints()
         {
             base.InitCheckPoints();

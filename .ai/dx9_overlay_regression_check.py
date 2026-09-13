@@ -85,7 +85,7 @@ def main() -> int:
         ),
         "overlay defaults to the compact bottom-right panel and supports virtual-screen movement": (
             "private const float OverlayWidthLogicalPixels = 340.0F;" in overlay
-            and "private const float OverlayHeightLogicalPixels = 148.0F;" in overlay
+            and "private const float OverlayHeightLogicalPixels = 168.0F;" in overlay
             and "PositionX = 1.0F" in overlay
             and "PositionY = 1.0F" in overlay
             and "Rectangle movementBounds = SystemInformation.VirtualScreen;" in overlay

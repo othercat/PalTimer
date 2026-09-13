@@ -25,10 +25,13 @@ namespace Pal98Timer
         { return Traditional ? traditional : simplified; }
 
         internal static string Suffix(RuntimeTimingMode actual)
+        { return (actual == null ? " " : "-") + ModeLabel(actual); }
+
+        internal static string ModeLabel(RuntimeTimingMode actual)
         {
-            if (actual == null) return Text(" [时序模式未知]", " [時序模式未知]");
-            return actual.FadeMilliseconds == 1200 ? "-1.2秒" :
-                actual.MapSpeedTicks == 8 ? "-0.8秒&快走速" : "-0.8秒";
+            if (actual == null) return Text("[时序模式未知]", "[時序模式未知]");
+            return actual.FadeMilliseconds == 1200 ? "1.2秒" :
+                actual.MapSpeedTicks == 9 ? "0.8秒&快走速" : "0.8秒";
         }
         internal static string LeaderboardName(string core)
         {
@@ -64,7 +67,7 @@ namespace Pal98Timer
             else if (expected == 1200)
                 mismatch |= (selected != 0 && selected != 1200) ||
                     (actual != 0 && actual != 1200) || legacyFast;
-            int expectedSpeed = core == SpeedCore ? 8 : 10;
+            int expectedSpeed = core == SpeedCore ? 9 : 10;
             bool newFormat = record.HasValue("TimingRulesVersion") || record.HasValue("MapSpeedTicks") ||
                 record.HasValue("TimingMapSpeedTicks");
             if (newFormat)

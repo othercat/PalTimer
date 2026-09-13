@@ -50,6 +50,7 @@ namespace Pal98Timer
         public readonly Dx9OverlayTimelineEntry TimelineSecond;
         public readonly Dx9OverlayTimelineEntry TimelineThird;
         public readonly string State;
+        public readonly string TimingModeLabel;
         public readonly bool IsAntiCheatPaused;
         public readonly bool IsPaused;
 
@@ -66,7 +67,8 @@ namespace Pal98Timer
             Dx9OverlayTimelineEntry timelineThird,
             string state,
             bool isAntiCheatPaused,
-            bool isPaused)
+            bool isPaused,
+            string timingModeLabel = "")
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -79,6 +81,7 @@ namespace Pal98Timer
             TimelineSecond = timelineSecond;
             TimelineThird = timelineThird;
             State = state ?? "";
+            TimingModeLabel = timingModeLabel ?? "";
             IsAntiCheatPaused = isAntiCheatPaused;
             IsPaused = isPaused;
         }
@@ -463,9 +466,8 @@ namespace Pal98Timer
         internal const string ObsWindowTitle = "仙剑98自动计时器 - OBS独立遮罩";
         private const int RefreshIntervalMilliseconds = 100;
         private const float OverlayWidthLogicalPixels = 340.0F;
-        // Removing the estimate row shortens the bottom-anchored panel by one row,
-        // which moves the complete overlay down without changing row spacing.
-        private const float OverlayHeightLogicalPixels = 148.0F;
+        // The timing category has its own bottom row, with existing spacing.
+        private const float OverlayHeightLogicalPixels = 168.0F;
         private const int WM_NCHITTEST = 0x0084;
         private const int HTTRANSPARENT = -1;
         private const int WS_EX_TRANSPARENT = 0x00000020;
@@ -690,6 +692,10 @@ namespace Pal98Timer
                 DrawTimelineEntry(e.Graphics, snapshot.TimelineSecond, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
                 y += infoHeight + rowGap;
                 DrawTimelineEntry(e.Graphics, snapshot.TimelineThird, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
+
+                y += infoHeight + rowGap;
+                row = new RectangleF(margin, y, contentWidth, infoHeight);
+                DrawOutlinedText(e.Graphics, snapshot.TimingModeLabel, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
 
                 if (EditMode)
                 {
@@ -1060,7 +1066,7 @@ namespace Pal98Timer
         {
             float timerHeight = GetTimerHeightLogicalPixels();
             float infoHeight = GetInfoHeightLogicalPixels();
-            float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 4.0F * (infoHeight + 2.0F) + 9.0F;
+            float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 5.0F * (infoHeight + 2.0F) + 9.0F;
             return contentHeight + (EditMode ? EditHeaderLogicalPixels : 0.0F);
         }
 

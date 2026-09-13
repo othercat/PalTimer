@@ -29,11 +29,21 @@ internal static class Dx9TimingCategoryBehaviorTest
     }
     static void Confirm(TimerCore core, int ms, int speed)
     { typeof(仙剑98柔情DX9).GetField("lastConfirmedTimingMode", PrivateInstance).SetValue(core, Mode(ms, speed)); }
+    static object OverlaySnapshot(TimerCore core)
+    {
+        var formField = typeof(TimerCore).GetField("form", PrivateInstance);
+        var previous = formField.GetValue(core);
+        // The snapshot only needs ManualPauseCount; avoid starting the real
+        // form's process polling, global hotkeys and cloud initialization.
+        formField.SetValue(core, System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm)));
+        try { return typeof(仙剑98柔情DX9).GetMethod("CreateDx9OverlaySnapshot", PrivateInstance).Invoke(core, null); }
+        finally { formField.SetValue(core, previous); }
+    }
     static string RuntimeError(int expected, int? actual, int speed = 10, int actualSpeed = 10)
     { return (string)Policy.GetMethod("RuntimeError", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { expected, speed, actual.HasValue ? Mode(actual.Value, actualSpeed) : null }); }
     static HObj Record(TimerCore core, int mode)
     {
-        Confirm(core, mode, core.CoreName == "PAL98DX9_800_SPEED" ? 8 : 10);
+        Confirm(core, mode, core.CoreName == "PAL98DX9_800_SPEED" ? 9 : 10);
         HObj record = new HObj(core.GetRStr());
         record["PaletteFadeModeMs"] = mode;
         return record;
@@ -109,6 +119,17 @@ internal static class Dx9TimingCategoryBehaviorTest
         Assert(speedRecord.GetValue<string>("DX9Version").EndsWith("-0.8秒&快走速"), "Speed suffix missing");
         Assert(speedRecord.GetValue<string>("LeaderboardCategory") == "PC NewPatch Classic-0.8s+Speed", "English category missing");
         Assert(slowRecord.GetValue<string>("DX9Version").EndsWith("-1.2秒"), "Traditional suffix missing");
+        foreach (var entry in all)
+        {
+            var snapshot = OverlaySnapshot(entry.Item1);
+            string state = (string)snapshot.GetType().GetField("State").GetValue(snapshot);
+            string label = entry.Item1.CoreName == "PAL98DX9" ? "1.2秒" :
+                entry.Item1.CoreName == "PAL98DX9_800" ? "0.8秒" : "0.8秒&快走速";
+            Assert((string)snapshot.GetType().GetField("TimingModeLabel").GetValue(snapshot) == label,
+                "Overlay retained a version-prefix hyphen or lost the ampersand");
+            Assert(!state.Contains(label), "Mode label still crowds the timing/state row");
+            Assert(entry.Item3.GetValue<string>("DX9Version").EndsWith("-" + label), "Version/export separator changed with the overlay");
+        }
         Validate(slow.CoreName, 1200, slowRecord);
         Validate(fast.CoreName, 800, fastRecord);
         Rejected(() => Validate(slow.CoreName, 1200, fastRecord));
@@ -160,9 +181,9 @@ internal static class Dx9TimingCategoryBehaviorTest
             Assert(RuntimeError(expected, null).Contains("待确认"), "Unknown runtime treated as known");
         }
         Assert(RuntimeError(0, null) == "", "Other profile cores changed");
-        Assert(RuntimeError(800, 800, 8, 10).Contains("暂停"), "Speed mismatch not blocked");
-        Assert(RuntimeError(800, 800, 10, 8).Contains("暂停"), "Speed accepted as normal 800ms");
-        Confirm(speed, 800, 8);
+        Assert(RuntimeError(800, 800, 9, 10).Contains("暂停"), "Speed mismatch not blocked");
+        Assert(RuntimeError(800, 800, 10, 9).Contains("暂停"), "Speed accepted as normal 800ms");
+        Confirm(speed, 800, 9);
         speed.CheckPoints[0].Current = TimeSpan.FromSeconds(299);
         speed.SaveBest();
         var speedReopened = new Pal98Dx9Fast800Speed(null); Init(speedReopened);
@@ -172,7 +193,7 @@ internal static class Dx9TimingCategoryBehaviorTest
         bool blocked = false;
         try { unknown.SaveBest(); } catch (InvalidOperationException) { blocked = true; }
         Assert(blocked, "Public SaveBest bypassed timing validation");
-        Confirm(unknown, 800, 8);
+        Confirm(unknown, 800, 9);
         typeof(仙剑98柔情DX9).GetField("PalProcess", PrivateInstance).SetValue(unknown, System.Diagnostics.Process.GetCurrentProcess());
         Assert(unknown.GetScoreValidationError().Contains("待确认"), "Unknown attached process inherited old mode");
         typeof(仙剑98柔情DX9).GetField("PalProcess", PrivateInstance).SetValue(unknown, null);
@@ -180,12 +201,20 @@ internal static class Dx9TimingCategoryBehaviorTest
         blocked = false;
         try { unknown.ForCloudLiteData(); } catch (InvalidOperationException) { blocked = true; }
         Assert(blocked, "Unknown then exit enabled cloud data");
-        Confirm(fastReopened, 800, 8);
+        Confirm(fastReopened, 800, 9);
         Assert(fastReopened.GetScoreValidationError().Contains("重置"), "Observed class change after imported run was not latched");
         Confirm(fastReopened, 800, 10);
         Assert(fastReopened.GetScoreValidationError().Contains("重置"), "Returning to original class erased invalidation");
         fastReopened.Reset();
         Assert(!fastReopened.GetScoreValidationError().Contains("重置"), "Reset did not clear invalidation");
+        var oldEight = new HObj(speedRecord.ToJson());
+        oldEight["MapSpeedTicks"] = 8;
+        oldEight["TimingMapSpeedTicks"] = 8;
+        foreach (var target in all) Rejected(() => Validate(target.Item1.CoreName, target.Item2, oldEight));
+        var speedBefore = speed.CheckPoints.Select(p => p.Current).ToArray();
+        Rejected(() => speed.SetTimerFromString(oldEight.ToJson()));
+        Assert(speed.CheckPoints.Select(p => p.Current).SequenceEqual(speedBefore), "Old 8-tick import mutated the new run");
+        Rejected(() => typeof(仙剑98柔情DX9).GetMethod("ValidateBestReference", PrivateInstance).Invoke(speed, new object[] { oldEight }));
         Console.WriteLine("PASS: three independent categories, legacy preservation, best save/reopen, all six cross-import/relay paths before writes, speed/unknown gates and reset latch");
         return 0;
     }

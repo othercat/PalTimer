@@ -1611,8 +1611,7 @@ namespace Pal98Timer
             string timingError = GetScoreValidationError();
             bool paused = antiCheatPaused || IsPause || IsUIPause || timingError.Length != 0;
             string state = antiCheatPaused ? "反作弊暂停" : (paused ? "已暂停" : "");
-            state = Dx9TimingCategory.Suffix(RecordedTimingMode) + " " +
-                (timingError.Length == 0 ? state : timingError);
+            if (timingError.Length != 0) state = timingError;
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),
@@ -1626,7 +1625,8 @@ namespace Pal98Timer
                 timelineThird,
                 state,
                 antiCheatPaused,
-                paused);
+                paused,
+                Dx9TimingCategory.ModeLabel(RecordedTimingMode));
         }
 
         private string GetDx9OverlayFontFamily()

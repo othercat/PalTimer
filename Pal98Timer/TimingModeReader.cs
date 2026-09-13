@@ -57,7 +57,8 @@ namespace Pal98Timer
                 BitConverter.ToInt64(bytes, 16) != creation ||
                 BitConverter.ToUInt32(bytes, 24) < 0x01060300u) return null;
             uint fade = BitConverter.ToUInt32(bytes, 12), speed = BitConverter.ToUInt32(bytes, 28);
-            if ((fade != 800 && fade != 1200) || (speed != 8 && speed != 10) ||
+            // Reject the unreleased 8-tick runtime; it cannot verify 9-tick scores.
+            if ((fade != 800 && fade != 1200) || (speed != 9 && speed != 10) ||
                 (fade == 1200 && speed != 10)) return null;
             return new RuntimeTimingMode((int)fade, (int)speed);
         }

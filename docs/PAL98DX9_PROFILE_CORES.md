@@ -8,7 +8,7 @@
 |---|---|---|---|---:|
 | 仙剑98柔情DX9-1.2秒 | `PAL98DX9` | 仙剑98柔情 DX9 原版内容，继承旧成绩 | `bestPAL98DX9.txt` | 176528 |
 | 仙剑98柔情DX9-0.8秒 | `PAL98DX9_800` | 同一原版路线，独立成绩 | `bestPAL98DX9_800.txt` | 176528 |
-| 仙剑98柔情DX9-0.8秒&快走速 | `PAL98DX9_800_SPEED` | 同一原版路线，走速 8，独立成绩 | `bestPAL98DX9_800_SPEED.txt` | 176528 |
+| 仙剑98柔情DX9-0.8秒&快走速 | `PAL98DX9_800_SPEED` | 同一原版路线，走速 9，独立成绩 | `bestPAL98DX9_800_SPEED.txt` | 176528 |
 | 仙剑98柔情DX9魂牵 | `PAL98DX9HUNQIAN` | 魂牵 1.67 简单、困难、非人基础包 | `bestPAL98DX9HUNQIAN.txt` | 184688 |
 | 仙剑98柔情DX9梦幻22显血 | `DREAM220VISIBLE` | 梦幻2.2显血版 / Dream2.20 内容 | `bestDREAM220VISIBLE.txt` | 185872 |
 

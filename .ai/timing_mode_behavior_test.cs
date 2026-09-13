@@ -25,7 +25,7 @@ internal static class TimingModeBehaviorTest
         {
             int pid = process.Id;
             long creation = process.StartTime.ToUniversalTime().ToFileTimeUtc();
-            foreach (var values in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 8 } })
+            foreach (var values in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 } })
             {
                 byte[] bytes = Bytes(pid, creation, values[0], values[1]);
                 var mode = TimingModeReader.Decode(bytes, pid, creation);
@@ -39,23 +39,23 @@ internal static class TimingModeBehaviorTest
                     Assert(TimingModeReader.Decode(bad, pid, creation) == null, "Invalid header accepted");
                 }
             }
-            foreach (var values in new[] { new[] { 1200, 8 }, new[] { 800, 9 }, new[] { 800, 0 }, new[] { 1230, 10 } })
+            foreach (var values in new[] { new[] { 1200, 8 }, new[] { 1200, 9 }, new[] { 800, 8 }, new[] { 800, 7 }, new[] { 800, 0 }, new[] { 1230, 10 } })
                 Assert(TimingModeReader.Decode(Bytes(pid, creation, values[0], values[1]), pid, creation) == null, "Unsupported mode accepted");
             Assert(TimingModeReader.Decode(new byte[31], pid, creation) == null, "Truncated snapshot accepted");
             Assert(new TimingModeReader().Read(process) == null, "Absent timing interface guessed");
             using (var mapping = MemoryMappedFile.CreateNew("Local\\PAL98.TimingMode.v1." + pid, 32))
             using (var view = mapping.CreateViewAccessor())
             {
-                view.WriteArray(0, Bytes(pid, creation, 800, 8), 0, 32);
+                view.WriteArray(0, Bytes(pid, creation, 800, 9), 0, 32);
                 var reader = new TimingModeReader();
-                Assert(reader.Read(process).MapSpeedTicks == 8, "Live mode read failed");
+                Assert(reader.Read(process).MapSpeedTicks == 9, "Live mode read failed");
                 view.WriteArray(0, Bytes(pid, creation, 1200, 10), 0, 32);
-                Assert(reader.Read(process).MapSpeedTicks == 8, "Snapshot was not immutable");
+                Assert(reader.Read(process).MapSpeedTicks == 9, "Snapshot was not immutable");
                 Assert(reader.Read(null) == null, "Detach kept snapshot");
                 Assert(reader.Read(process).FadeMilliseconds == 1200, "Reattach did not refresh");
             }
         }
-        Console.WriteLine("PASS: three runtime modes, invalid/header/PID rejection, read-only mapping, immutable snapshot and reattach");
+        Console.WriteLine("PASS: three runtime modes, old 8-tick/header/PID rejection, read-only mapping, immutable snapshot and reattach");
         return 0;
     }
 }
