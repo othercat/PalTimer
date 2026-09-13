@@ -36,6 +36,7 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private readonly PaletteFadeModeReader paletteFadeMode = new PaletteFadeModeReader();
         private string TournamentDisplayName = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
@@ -379,14 +380,19 @@ namespace Pal98Timer
             {
                 if (!string.IsNullOrEmpty(TournamentDisplayName))
                 {
-                    return TournamentDisplayName;
+                    return FormatPaletteFadeVersion(TournamentDisplayName);
                 }
-                return "仙剑98原版 新补丁 " + DX9Version + " 不欢乐";
+                return FormatPaletteFadeVersion("仙剑98原版 新补丁 " + DX9Version + " 不欢乐");
             }
             else
             {
                 return "等待游戏运行";
             }
+        }
+
+        protected string FormatPaletteFadeVersion(string version)
+        {
+            return PaletteFadeModeReader.FormatVersion(version, paletteFadeMode.Read(PalProcess));
         }
 
         public override void Reset()
@@ -1950,7 +1956,8 @@ namespace Pal98Timer
             exdata["EarthPaper"] = MaxTLF;
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
-            exdata["DX9Version"] = DX9Version;
+            exdata["DX9Version"] = FormatPaletteFadeVersion(DX9Version);
+            exdata["PaletteFadeModeMs"] = paletteFadeMode.Read(PalProcess) ?? 0;
             exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
 
             string namedbattles = "";

@@ -84,7 +84,7 @@ namespace Pal98Timer
             string inherited = base.GetGameVersion();
             if (!string.IsNullOrEmpty(TournamentDisplayName))
             {
-                return TournamentDisplayName;
+                return inherited;
             }
             return string.Equals(inherited, "等待游戏运行", StringComparison.Ordinal)
                 ? inherited

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$CandidateName = 'paltimer-3.37.1-paldll162-gpl-candidate-20260907'
+    [string]$CandidateName = 'paltimer-3.37.2-paldll163-gpl-candidate-20260913'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,7 +82,7 @@ $metadata = @(
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $sourceStage 'SOURCE_SNAPSHOT_METADATA.txt'), $metadata + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 
-$sourceZip = Join-Path $candidateRoot 'PalTimer-3.37.1-source.zip'
+$sourceZip = Join-Path $candidateRoot 'PalTimer-3.37.2-source.zip'
 Compress-Archive -Path (Join-Path $sourceStage '*') -DestinationPath $sourceZip -CompressionLevel Optimal
 
 $resolvedStage = [IO.Path]::GetFullPath($sourceStage)
@@ -101,13 +101,13 @@ $payload = Get-ChildItem -LiteralPath $candidateRoot -File | Sort-Object Name | 
 $manifest = [ordered]@{
     schema = 'pal98.local-public-tool-release.v1'
     product = 'PalTimer'
-    version = '3.37.1'
+    version = '3.37.2'
     license = 'GPL-2.0-only'
     repository_owner = 'othercat'
     repository = 'https://github.com/othercat/PalTimer'
     build_configuration = 'Release|x64'
     source_revision = $head
-    source_snapshot_includes_uncommitted_changes = $true
+    source_snapshot_includes_uncommitted_changes = @(& git -C $repoRoot status --porcelain -- . ':!.agents' ':!.claude' ':!.codegraph' ':!artifacts' ':!AGENTS.md' ':!CLAUDE.md' ':!.ai/resume.md').Count -gt 0
     payload = $payload
 }
 [IO.File]::WriteAllText(

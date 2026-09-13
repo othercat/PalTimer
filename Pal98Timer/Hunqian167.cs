@@ -89,14 +89,14 @@ namespace Pal98Timer
             string inherited = base.GetGameVersion();
             if (!string.IsNullOrEmpty(TournamentDisplayName))
             {
-                return TournamentDisplayName;
+                return inherited;
             }
             if (string.Equals(inherited, "等待游戏运行", StringComparison.Ordinal))
             {
                 return inherited;
             }
             string edition = selectedProfile == null ? "profile 待确认" : selectedProfile.DisplayName;
-            return Hunqian167Profile.CoreDisplayName + " / " + edition;
+            return FormatPaletteFadeVersion(Hunqian167Profile.CoreDisplayName + " / " + edition);
         }
 
         public override string GetMoreInfo()

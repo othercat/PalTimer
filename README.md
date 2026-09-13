@@ -5,7 +5,11 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.2；需要 .NET Framework 4.7.2 框架**
+
+PALDLL v1.63 配套计时器现在明确区分黑屏模式：1.2 秒保持原版本/比赛名称，0.8 秒在名称末尾添加 `-0.8s`。适用于 DX9、魂牵、梦幻22显血和不欢乐内核。成绩额外数据中的 `DX9Version` 同步带有模式标记，`PaletteFadeModeMs` 为 800 或 1200。
+
+模式来自当前游戏进程实际加载的配置，不根据可能已被修改的磁盘 INI 猜测；游戏重启后重新读取。旧版 PALDLL 或接口不可用时显示 `[黑屏模式未知]`，记录值为 0，不把未知冒充 1.2 秒。计时算法、节点和权限检测不变。
 
 目前支持自动计时的游戏（点击主界面右上方的设置按钮可以选择切换）：
 
@@ -113,7 +117,7 @@ This repository is distributed under the [GNU General Public License version 2 o
 仓库中的 `Pal98TimerOBSPlugin` 只是 OBS 0.6xx 时代的 `CLROBS/CLRHost.Interop` x86 历史实现，不属于现代 OBS Studio 发布链，本版不编译、不部署，也不启动其本机 TCP 39263 通信。
 
 # 更新说明
-## v3.37.1 (2026-09-07)
+## v3.37.2 (2026-09-07)
 PALDLL v1.62 的 DX9 / 不欢乐模式接力与云存档使用游戏实际写出的 RPG，并携带角色 6–15 的附属状态及飞行旗快照，避免按旧内存宽度重组原版六人的存档。导入校验 PAL.dll、内容包与固定角色库身份，连同附属文件备份、恢复；中途写入失败时回滚。导入后保持计时器开启，仅重启游戏并读取进度 1。
 
 旧的不完整接力包不能直接导入 v1.62，需从原游戏进度用新版重新导出；完整剧情附属存档 Profile 仍保留拒绝边界。计时、F9、反作弊、路线和 OBS 逻辑不变。自动验证包含三种当前发布包、角色 0–15、存档配对延迟、拒绝失配与多文件失败恢复；真实跑线和云服务器往返仍需人工验证。

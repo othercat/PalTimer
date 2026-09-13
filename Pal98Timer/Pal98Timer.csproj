@@ -165,6 +165,7 @@
       <DependentUpon>GEditForm.cs</DependentUpon>
     </Compile>
     <Compile Include="GEX.cs" />
+    <Compile Include="PaletteFadeModeReader.cs" />
     <Compile Include="GForm.cs">
       <SubType>Form</SubType>
     </Compile>

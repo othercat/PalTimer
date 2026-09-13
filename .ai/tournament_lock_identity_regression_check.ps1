@@ -106,14 +106,35 @@ function Assert-TournamentGameVersion(
     [string]$expected) {
     $type = $assembly.GetType($typeName, $true)
     $instance = [Runtime.Serialization.FormatterServices]::GetUninitializedObject($type)
-    Set-InstanceField $instance @('PID') 123
+    $process = [Diagnostics.Process]::GetCurrentProcess()
+    Set-InstanceField $instance @('PID') $process.Id
+    Set-InstanceField $instance @('PalProcess') $process
     Set-InstanceField $instance @(
         'TournamentDisplayName',
         '<TournamentDisplayName>k__BackingField') $expected
-    $actual = $type.GetMethod('GetGameVersion').Invoke($instance, @())
-    if ($actual -ne $expected) {
-        throw "$typeName appended or replaced the signed tournament display name: $actual"
+    $readerType = $assembly.GetType('Pal98Timer.PaletteFadeModeReader', $true)
+    $mapping = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateNew(
+        ('Local\PAL98.PaletteFadeMode.v1.' + $process.Id), 32)
+    $view = $mapping.CreateViewAccessor()
+    try {
+        foreach ($mode in @(1200, 800)) {
+            $view.Write(0, [uint32]0x31464C50)
+            $view.Write(4, [uint16]1)
+            $view.Write(6, [uint16]32)
+            $view.Write(8, [uint32]$process.Id)
+            $view.Write(12, [uint32]$mode)
+            $view.Write(16, [int64]$process.StartTime.ToUniversalTime().ToFileTimeUtc())
+            $view.Write(24, [uint32]0x01060300)
+            $view.Write(28, [uint32]0)
+            Set-InstanceField $instance @('paletteFadeMode') ([Activator]::CreateInstance($readerType, $true))
+            $actual = $type.GetMethod('GetGameVersion').Invoke($instance, @())
+            $wanted = if ($mode -eq 800) { $expected + '-0.8s' } else { $expected }
+            if ($actual -ne $wanted) {
+                throw "$typeName tournament/mode display mismatch: $actual; expected $wanted"
+            }
+        }
     }
+    finally { $view.Dispose(); $mapping.Dispose(); $process.Dispose() }
 }
 
 try {
@@ -220,7 +241,7 @@ try {
         throw 'PAL98DX9 and PAL98UNHAPPY must both load the signed tournament identity once per attach.'
     }
 
-    Write-Output 'PASS: PalTimer publishes the v1 capability before its UI loop and every PAL98DX9-family core displays only the signed tournament name'
+    Write-Output 'PASS: PalTimer publishes the v1 capability before its UI loop and every PAL98DX9-family core preserves the signed tournament name and displays the effective 800/1200ms mode'
 }
 finally {
     if ([IO.Directory]::Exists($tempRoot)) {
