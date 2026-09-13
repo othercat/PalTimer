@@ -230,6 +230,8 @@
     <Compile Include="ObsWindowStyleSettings.cs" />
     <Compile Include="仙剑三.cs" />
     <Compile Include="仙剑98柔情DX9.cs" />
+    <Compile Include="Pal98Dx9Fast800.cs" />
+    <Compile Include="Dx9TimingCategory.cs" />
     <Compile Include="仙剑98柔情.cs" />
     <Compile Include="PalPackVersion.cs" />
     <Compile Include="Pal98WaterSpiritPearlSplit.cs" />

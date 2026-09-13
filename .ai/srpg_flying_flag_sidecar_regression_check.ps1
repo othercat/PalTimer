@@ -69,7 +69,8 @@ foreach ($entry in @(
         Assert-Contains -Text $entry.Text -Needle $needle -Area $entry.Name
     }
 
-    $loadStart = $entry.Text.IndexOf('private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")', [StringComparison]::Ordinal)
+    $loadStart = $entry.Text.IndexOf('private void LoadGame(string fn =', [StringComparison]::Ordinal)
+    if ($loadStart -lt 0) { throw "$($entry.Name) LoadGame block could not be located" }
     $loadEnd = $entry.Text.IndexOf('public void SetTimerFromString', $loadStart, [StringComparison]::Ordinal)
     if ($loadStart -lt 0 -or $loadEnd -lt 0) {
         throw "$($entry.Name) LoadGame block could not be located"

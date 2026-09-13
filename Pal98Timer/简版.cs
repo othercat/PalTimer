@@ -113,7 +113,7 @@ namespace Pal98Timer
               };
 
             btnSwitch = form.NewMenuItem();
-            btnSwitch.Text = "切换至98速通DX9版";
+            btnSwitch.Text = "切换至98速通DX9-1.2秒版";
             btnSwitch.Click += BtnSwitch_Click;
 
             /*form.pnMid.Visible = false;

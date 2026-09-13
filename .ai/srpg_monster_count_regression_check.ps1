@@ -23,7 +23,8 @@ foreach ($kernel in $kernelPaths) {
     $text = Get-Content -LiteralPath $kernel.Path -Raw -Encoding UTF8
     Assert-Contains -Text $text -Needle 'exdata["TotalMonsterCount"] = TotalMonsterCount;' -Area $kernel.Name
 
-    $loadStart = $text.IndexOf('private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")', [StringComparison]::Ordinal)
+    $loadStart = $text.IndexOf('private void LoadGame(string fn =', [StringComparison]::Ordinal)
+    if ($loadStart -lt 0) { throw "$($kernel.Name) LoadGame block could not be located" }
     $timerStart = $text.IndexOf('public void SetTimerFromString(string json)', $loadStart, [StringComparison]::Ordinal)
     $timerEnd = $text.IndexOf('private string GetTimeName()', $timerStart, [StringComparison]::Ordinal)
     if ($loadStart -lt 0 -or $timerStart -lt 0 -or $timerEnd -lt 0) {

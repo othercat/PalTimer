@@ -1054,36 +1054,15 @@ namespace Pal98Timer
         {
             try
             {
-                using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read))
-                {
-                    BinaryReader br = new BinaryReader(fs);
-
-                    byte[] buffer = br.ReadBytes(2);
-
-                    if (buffer[0] >= 0xEF)
-                    {
-                        if (buffer[0] == 0xEF && buffer[1] == 0xBB)
-                        {
-                            return Encoding.UTF8;
-                        }
-                        else if (buffer[0] == 0xFE && buffer[1] == 0xFF)
-                        {
-                            return Encoding.BigEndianUnicode;
-                        }
-                        else if (buffer[0] == 0xFF && buffer[1] == 0xFE)
-                        {
-                            return Encoding.Unicode;
-                        }
-                        else
-                        {
-                            return Encoding.Default;
-                        }
-                    }
-                    else
-                    {
-                        return Encoding.Default;
-                    }
-                }
+                byte[] buffer = File.ReadAllBytes(filename);
+                if (buffer.Length >= 2 && buffer[0] == 0xFE && buffer[1] == 0xFF)
+                    return Encoding.BigEndianUnicode;
+                if (buffer.Length >= 2 && buffer[0] == 0xFF && buffer[1] == 0xFE)
+                    return Encoding.Unicode;
+                // Modern editors also write UTF-8 without BOM. Validate strictly
+                // before falling back to the current system's legacy ANSI codepage.
+                new UTF8Encoding(false, true).GetCharCount(buffer);
+                return Encoding.UTF8;
             }
             catch
             {
