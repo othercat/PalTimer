@@ -166,6 +166,8 @@
     </Compile>
     <Compile Include="GEX.cs" />
     <Compile Include="PaletteFadeModeReader.cs" />
+    <Compile Include="TimingModeReader.cs" />
+    <Compile Include="Pal98Dx9Fast800Speed.cs" />
     <Compile Include="GForm.cs">
       <SubType>Form</SubType>
     </Compile>

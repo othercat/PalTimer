@@ -84,9 +84,11 @@ namespace Pal98Timer
             }
 
             TimerCoreDisplayNameAttribute display = attributes[0] as TimerCoreDisplayNameAttribute;
-            return display == null || string.IsNullOrWhiteSpace(display.DisplayName)
+            string text = display == null || string.IsNullOrWhiteSpace(display.DisplayName)
                 ? name
                 : display.DisplayName;
+            return Dx9TimingCategory.Traditional && (text.StartsWith("仙剑98柔情DX9", StringComparison.Ordinal))
+                ? text.Replace("仙剑", "仙劍") : text;
         }
         /// <summary>
         /// 创建对象实例
@@ -288,7 +290,9 @@ namespace Pal98Timer
                         beststr = streamReader.ReadToEnd();
                     }
                 }
-                List<object> tmp = (new HObj(beststr)).GetValue<HObj>("CheckPoints").ToList();
+                HObj reference = new HObj(beststr);
+                ValidateBestReference(reference);
+                List<object> tmp = reference.GetValue<HObj>("CheckPoints").ToList();
                 Best = new Dictionary<string, CheckPointNewer>();
                 foreach (object o in tmp)
                 {
@@ -361,6 +365,7 @@ namespace Pal98Timer
         /// <param name="str"></param>
         protected void SaveBest(string str)
         {
+            EnsureScoreValid();
             DateTime now = DateTime.Now;
             string filename = "best" + CoreName + ".txt";
             string snow= now.ToString("yyyyMMddHHmmss");
@@ -392,6 +397,7 @@ namespace Pal98Timer
 
         public void SaveBest()
         {
+            EnsureScoreValid();
             DateTime now = DateTime.Now;
             string filename = "best" + CoreName + ".txt";
             string snow = now.ToString("yyyyMMddHHmmss");
@@ -410,12 +416,38 @@ namespace Pal98Timer
             }
             SendPluginsEvent("SaveBest", filename);
         }
+
+        // Reference editing must work offline and must never turn the current
+        // unverified run into a claimed score merely to create an editor file.
+        public void CreateBestReferenceIfMissing()
+        {
+            string path = "best" + CoreName + ".txt";
+            if (File.Exists(path)) return;
+            HObj data = new HObj();
+            data["TimerCore"] = CoreName;
+            data["ReferenceTimeline"] = true;
+            data["TimingRulesVerified"] = false;
+            HObj points = new HObj();
+            foreach (CheckPoint point in CheckPoints)
+            {
+                HObj item = new HObj();
+                item["name"] = point.Name;
+                item["des"] = point.NickName;
+                item["time"] = TItem.TimeSpanToFullString(point.Best);
+                points.Add(item);
+            }
+            data["CheckPoints"] = points;
+            using (var stream = new FileStream(path, FileMode.CreateNew))
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                writer.Write(data.ToJson());
+        }
         /// <summary>
         /// 导出当前成绩
         /// </summary>
         /// <param name="str"></param>
         protected void ExportCurrent(string str)
         {
+            EnsureScoreValid();
             DateTime now = DateTime.Now;
             string filename = now.ToString("yyyyMMddHHmmss");
 
@@ -844,8 +876,14 @@ namespace Pal98Timer
         /// <summary>
         /// 重置
         /// </summary>
+        private long scoreRunSequence;
+        public long ScoreRunSequence { get { return System.Threading.Interlocked.Read(ref scoreRunSequence); } }
+        protected void AdvanceScoreRunSequence() { System.Threading.Interlocked.Increment(ref scoreRunSequence); }
+        protected virtual void ValidateBestReference(HObj reference) { }
+
         public virtual void Reset()
         {
+            AdvanceScoreRunSequence();
             AAction = "";
             IsUIPause = false;
             MT.Reset();
@@ -1107,6 +1145,7 @@ namespace Pal98Timer
         /// <returns></returns>
         public virtual string ForCloudLiteData()
         {
+            EnsureScoreValid();
             return MT.CurrentTS.Ticks.ToString();
         }
         /// <summary>
@@ -1115,7 +1154,15 @@ namespace Pal98Timer
         /// <returns></returns>
         public virtual string ForCloudBigData()
         {
+            EnsureScoreValid();
             return GetTimerJson();
+        }
+
+        public virtual string GetScoreValidationError() { return ""; }
+        public void EnsureScoreValid()
+        {
+            string error = GetScoreValidationError();
+            if (!string.IsNullOrEmpty(error)) throw new InvalidOperationException(error);
         }
         /// <summary>
         /// 获取计时器当前的所有状态json

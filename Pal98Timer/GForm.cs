@@ -116,7 +116,8 @@ namespace Pal98Timer
             foreach (string cn in cores)
             {
                 ToolStripMenuItem ti = new ToolStripMenuItem();
-                ti.Text = TimerCore.GetCoreDisplayName(cn);
+                // ToolStrip interprets '&' as a mnemonic marker; keep it visible.
+                ti.Text = TimerCore.GetCoreDisplayName(cn).Replace("&", "&&");
                 ti.Click += delegate (object sender, EventArgs e) {
                     if (Confirm("确定更换内核么？这将重置计时器"))
                     {
@@ -170,8 +171,14 @@ namespace Pal98Timer
             }
         }
 
-        private void InitCloud()
+        private void InitCloud(bool showValidationError = true)
         {
+            if (core == null || !string.IsNullOrEmpty(core.GetScoreValidationError()))
+            {
+                StopCloudWithInvalidScore(cloud);
+                if (showValidationError && core != null) Error(core.GetScoreValidationError());
+                return;
+            }
             if (cloud != null)
             {
                 cloud.Stop();
@@ -231,54 +238,94 @@ namespace Pal98Timer
                     });
                 }
             });
+            PCloud boundCloud = cloud;
+            TimerCore boundCore = core;
+            long boundRun = boundCore.ScoreRunSequence;
             cloud.OnCloudTickBefore = delegate (int NextDo)
             {
-                if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
+                if (!ReferenceEquals(core, boundCore) ||
+                    boundRun != boundCore.ScoreRunSequence ||
+                    !string.IsNullOrEmpty(boundCore.GetScoreValidationError()))
                 {
-                    cloud.PutPluginData("BL", core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL));
+                    StopCloudWithInvalidScore(boundCloud);
+                    return;
+                }
+                try
+                {
+                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
+                {
+                    boundCloud.PutPluginData("BL", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL));
                 }
 
-                if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
+                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
                 {
-                    cloud.PutPluginData("BR", core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR));
+                    boundCloud.PutPluginData("BR", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR));
                 }
 
-                if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title))
+                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title))
                 {
-                    cloud.PutPluginData("Title", core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title));
+                    boundCloud.PutPluginData("Title", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title));
                 }
 
 
-                cloud.PutIsC(rr.IsC);
+                boundCloud.PutIsC(rr.IsC);
 
                 switch (NextDo)
                 {
                     case 0:
-                        if (!core.CustomCloudLiteData())
+                        if (!boundCore.CustomCloudLiteData())
                         {
-                            cloud.PutLiteData(core.ForCloudLiteData());
+                            boundCloud.PutLiteData(boundCore.ForCloudLiteData());
                         }
                         break;
                     case 1:
-                        if (!core.CustomCloudBigData())
+                        if (!boundCore.CustomCloudBigData())
                         {
-                            cloud.PutBigData(core.ForCloudBigData());
+                            boundCloud.PutBigData(boundCore.ForCloudBigData());
                         }
                         break;
                     case 2:
-                        if (!core.CustomCloudBigData())
+                        if (!boundCore.CustomCloudBigData())
                         {
-                            cloud.PutBigData(core.ForCloudBigData());
+                            boundCloud.PutBigData(boundCore.ForCloudBigData());
                         }
-                        if (!core.CustomCloudLiteData())
+                        if (!boundCore.CustomCloudLiteData())
                         {
-                            cloud.PutLiteData(core.ForCloudLiteData());
+                            boundCloud.PutLiteData(boundCore.ForCloudLiteData());
                         }
                         break;
+                }
+                }
+                finally
+                {
+                    if (!ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence ||
+                        !string.IsNullOrEmpty(boundCore.GetScoreValidationError()))
+                        StopCloudWithInvalidScore(boundCloud);
                 }
             };
             cloud.Start();
         }
+        private void StopCloudWithInvalidScore(PCloud instance)
+        {
+            // PCloud.Stop is asynchronous and Before exceptions are swallowed.
+            // Clear cached scores before stopping; the last in-flight iteration
+            // may still send an empty payload, never a cached valid-looking score.
+            if (instance != null)
+            {
+                instance.PutLiteData("");
+                instance.PutBigData("");
+                instance.Stop();
+            }
+            if (ReferenceEquals(cloud, instance))
+            {
+                cloud = null;
+                UI(delegate {
+                    btnCloud.Text = "云";
+                    UISetBtnCloudInitEnable(true);
+                });
+            }
+        }
+
         public int CloudID()
         {
             if (cloud == null) return int.MinValue;
@@ -287,11 +334,15 @@ namespace Pal98Timer
         public void PutLiteData(string data)
         {
             if (cloud == null) return;
+            if (!string.IsNullOrEmpty(core.GetScoreValidationError()))
+            { StopCloudWithInvalidScore(cloud); return; }
             cloud.PutLiteData(data);
         }
         public void PutBigData(string data)
         {
             if (cloud == null) return;
+            if (!string.IsNullOrEmpty(core.GetScoreValidationError()))
+            { StopCloudWithInvalidScore(cloud); return; }
             cloud.PutBigData(data);
         }
 
@@ -304,6 +355,7 @@ namespace Pal98Timer
         }
         public void OUpload(string LocalFileName, string RemoteFileName = "")
         {
+            core.EnsureScoreValid();
             if (cloud == null || cloud.CloudID < 0) throw new Exception("版本不匹配");
             cloud.OUpload(LocalFileName, RemoteFileName);
         }
@@ -390,7 +442,6 @@ namespace Pal98Timer
             }
             catch { }
             this.core = core;
-            InitCloud();
             this.core.LoadCore = LoadCore;
             this.core.InitUI();
             this.core.OnCurrentStepChanged = delegate (int curidx)
@@ -465,6 +516,7 @@ namespace Pal98Timer
             MConfig.ins.LoadConfig();
             ShowConfigs();
             InitCheckPoints();
+            InitCloud(false);
         }
         public void ShowConfigs()
         {
@@ -802,6 +854,8 @@ namespace Pal98Timer
 
         public void CallCloudFinishOne()
         {
+            if (core == null || !string.IsNullOrEmpty(core.GetScoreValidationError()))
+            { StopCloudWithInvalidScore(cloud); return; }
             try
             {
                 cloud?.FinishOne();
@@ -1033,7 +1087,7 @@ namespace Pal98Timer
                 {
                     try
                     {
-                        core.SaveBest();
+                        core.CreateBestReferenceIfMissing();
                     }
                     catch (Exception ex)
                     {

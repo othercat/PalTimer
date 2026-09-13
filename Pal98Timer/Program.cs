@@ -17,6 +17,9 @@ namespace Pal98Timer
         [STAThread]
         static void Main()
         {
+            // Core-specific scores and settings belong beside the executable,
+            // including launches from another program or working directory.
+            Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
             AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
             using (EventWaitHandle tournamentCapability =
                 TournamentTimerCapability.Publish())

@@ -79,7 +79,7 @@ namespace Pal98Timer
         private string GetResult()
         {
             HObj b;
-            if (HObj.IsJson(beststr))
+            if (!HObj.IsJson(beststr))
             {
                 b = new HObj();
             }
@@ -88,6 +88,8 @@ namespace Pal98Timer
                 b = new HObj(beststr);
                 b.Remove("CheckPoints");
             }
+            b["ReferenceTimeline"] = true;
+            b["TimingRulesVerified"] = false;
 
             HObj cps = new HObj("[]");
             foreach(BestEditItem i in pnMain.Controls)

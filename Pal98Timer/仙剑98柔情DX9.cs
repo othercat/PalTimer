@@ -34,11 +34,14 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
-        private readonly PaletteFadeModeReader paletteFadeMode = new PaletteFadeModeReader();
-        private int? lastConfirmedTimingMode;
+        private readonly TimingModeReader paletteFadeMode = new TimingModeReader();
+        private RuntimeTimingMode lastConfirmedTimingMode;
+        private bool timingRunInvalidated;
+        private bool importedUnverifiedTiming;
         // Other derived content cores retain their existing rules and identities.
         protected virtual int TimingModeMs { get { return CoreName == "PAL98DX9" ? 1200 : 0; } }
-        private string RelayFileName { get { return TimingModeMs == 800 ? "SRPG.PAL98DX9_800.bin" : "SRPG.bin"; } }
+        protected virtual int TimingMapSpeedTicks { get { return TimingModeMs == 0 ? 0 : 10; } }
+        private string RelayFileName { get { return TimingModeMs == 800 ? "SRPG." + CoreName + ".bin" : "SRPG.bin"; } }
         protected string TournamentDisplayName { get; private set; } = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
@@ -468,9 +471,10 @@ namespace Pal98Timer
 
         public override string GetGameVersion()
         {
+            if (timingRunInvalidated) return GetScoreValidationError();
             if (PID != -1)
             {
-                string modeError = Dx9TimingCategory.RuntimeError(TimingModeMs, paletteFadeMode.Read(PalProcess));
+                string modeError = GetScoreValidationError();
                 if (modeError.Length != 0) return modeError;
                 if (!string.IsNullOrEmpty(TournamentDisplayName))
                 {
@@ -480,35 +484,76 @@ namespace Pal98Timer
             }
             else
             {
+                if (lastConfirmedTimingMode != null)
+                    return FormatPaletteFadeVersion("仙剑98原版 新补丁 " + DX9Version);
                 return "等待游戏运行";
             }
         }
 
         protected string FormatPaletteFadeVersion(string version)
         {
-            return PaletteFadeModeReader.FormatVersion(version, paletteFadeMode.Read(PalProcess));
+            return version + Dx9TimingCategory.Suffix(RecordedTimingMode);
         }
 
         private void ValidateTimerImport(string json)
         {
             Dx9TimingCategory.ValidateImport(CoreName, TimingModeMs, new HObj(json));
+            if (timingRunInvalidated)
+                throw new InvalidDataException(GetScoreValidationError());
         }
 
-        private int? RecordedTimingMode
+        private RuntimeTimingMode RecordedTimingMode
         {
-            get { return PalProcess == null ? lastConfirmedTimingMode : paletteFadeMode.Read(PalProcess); }
+            get
+            {
+                try
+                {
+                    if (PalProcess != null && !PalProcess.HasExited)
+                    {
+                        var current = paletteFadeMode.Read(PalProcess);
+                        // Attaching an unconfirmed runtime must not leave an older
+                        // process's valid snapshot available after this one exits.
+                        if (current == null) lastConfirmedTimingMode = null;
+                        return current;
+                    }
+                }
+                catch (InvalidOperationException) { }
+                return lastConfirmedTimingMode;
+            }
         }
 
-        private void ValidateScoreForSave()
+        public override string GetScoreValidationError()
         {
-            string error = Dx9TimingCategory.RuntimeError(TimingModeMs, RecordedTimingMode);
-            if (error.Length != 0) throw new InvalidOperationException(error);
+            RuntimeTimingMode actual = RecordedTimingMode;
+            string error = Dx9TimingCategory.RuntimeError(TimingModeMs, TimingMapSpeedTicks, actual);
+            if (TimingModeMs != 0 && actual != null && error.Length != 0 &&
+                (_HasGameStart || MT.CurrentTS.Ticks > 0)) timingRunInvalidated = true;
+            if (timingRunInvalidated)
+                return Dx9TimingCategory.Text("本局曾切换时序分类，成绩无效；请重置计时器后重新开始。",
+                    "本局曾切換時序分類，成績無效；請重置計時器後重新開始。");
+            if (TimingModeMs != 0 && importedUnverifiedTiming)
+                return Dx9TimingCategory.Text("历史成绩缺少走速证据，仅供参考；请重置后开始新成绩。",
+                    "歷史成績缺少走速證據，僅供參考；請重置後開始新成績。");
+            return error;
+        }
+
+        private void ValidateScoreForSave() { EnsureScoreValid(); }
+
+        protected override void ValidateBestReference(HObj reference)
+        {
+            if (TimingModeMs == 0) return;
+            if ((reference.HasValue("TimerCore") && reference.GetValue<string>("TimerCore") != CoreName) ||
+                (reference.HasValue("TimingModeMs") && reference.GetValue<int>("TimingModeMs") != TimingModeMs) ||
+                (reference.HasValue("TimingMapSpeedTicks") && reference.GetValue<int>("TimingMapSpeedTicks") != TimingMapSpeedTicks))
+                throw new InvalidDataException("最佳时间线与当前时序分类不一致。");
         }
 
         public override void Reset()
         {
             base.Reset();
             lastConfirmedTimingMode = null;
+            timingRunInvalidated = false;
+            importedUnverifiedTiming = false;
             MoveSpeed = 0;
             HasAlertMutiPal = false;
             HasUnCheated = false;
@@ -718,6 +763,14 @@ namespace Pal98Timer
             if (!GetPalHandle()) throw new Exception("游戏没有在运行，无法保存");
             ValidateScoreForSave();
             fn = fn ?? RelayFileName;
+            Process saveProcess = PalProcess;
+            long saveRun = ScoreRunSequence;
+            Action validatePendingSave = () =>
+            {
+                ValidateScoreForSave();
+                if (saveRun != ScoreRunSequence || !ReferenceEquals(saveProcess, PalProcess))
+                    throw new InvalidOperationException("等待存档期间游戏或跑次已改变，请重新导出。");
+            };
             IsListenSave = true;
             FormEx.Run(delegate ()
             {
@@ -773,16 +826,18 @@ namespace Pal98Timer
                 }
 
                 SRPGobj so = new SRPGobj();
-                so.TimerStr = GetRStr();
 
                 string FilePath = fn;
                 try
                 {
+                    validatePendingSave();
+                    so.TimerStr = GetRStr();
                     if (SRPGSaveBundleTransport.IsRequired(palfolder))
                         SRPGSaveBundleTransport.Capture(palfolder, ChangedFile, so);
                     else
                         so.RPG = CaptureRelaySaveBuffer();
                     SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
+                    validatePendingSave();
                     if (File.Exists(FilePath))
                     {
                         File.Delete(FilePath);
@@ -808,6 +863,8 @@ namespace Pal98Timer
                 {
                     f.UI(delegate ()
                     {
+                        try { validatePendingSave(); }
+                        catch (Exception ex) { cb(false, ex.Message); return; }
                         cb(true, "");
                     });
                 }
@@ -845,7 +902,7 @@ namespace Pal98Timer
                 ValidateTimerImport(so.TimerStr);
                 if (TimingModeMs != 0 && GetPalHandle())
                 {
-                    string modeError = Dx9TimingCategory.RuntimeError(TimingModeMs, paletteFadeMode.Read(PalProcess));
+                    string modeError = GetScoreValidationError();
                     if (modeError.Length != 0) throw new InvalidOperationException(modeError);
                 }
                 if (so.Pal98SaveBundle != null)
@@ -916,6 +973,10 @@ namespace Pal98Timer
         {
             ValidateTimerImport(json);
             HObj ho = new HObj(json);
+            if (TimingModeMs != 0 && GetPalHandle()) ValidateScoreForSave();
+            importedUnverifiedTiming = !ho.HasValue("TimingRulesVerified") ||
+                !ho.GetValue<bool>("TimingRulesVerified");
+            AdvanceScoreRunSequence();
             try
             {
                 MaxFC = ho.GetValue<short>("BeeHouse");
@@ -1197,6 +1258,8 @@ namespace Pal98Timer
             btnCloudSave.Click += delegate (object sender, EventArgs e) {
                 string tn = GetTimeName();
                 string fn = tn + ".bin";
+                Process uploadProcess = PalProcess;
+                long uploadRun = ScoreRunSequence;
                 UI_SaveGameEx(form,delegate ()
                 {
                     btnCloudSave.Enabled = false;
@@ -1208,6 +1271,9 @@ namespace Pal98Timer
                     {
                         try
                         {
+                            EnsureScoreValid();
+                            if (uploadRun != ScoreRunSequence || !ReferenceEquals(uploadProcess, PalProcess))
+                                throw new InvalidOperationException("导出后游戏或跑次已改变，请重新保存上传。");
                             form.OUpload(System.Environment.CurrentDirectory + "\\" + fn);
                             if (File.Exists(System.Environment.CurrentDirectory + "\\" + fn))
                             {
@@ -1542,8 +1608,11 @@ namespace Pal98Timer
             CreateDx9OverlayTimeline(out timelineFirst, out timelineSecond, out timelineThird);
 
             bool antiCheatPaused = IsInUnCheat;
-            bool paused = antiCheatPaused || IsPause || IsUIPause;
+            string timingError = GetScoreValidationError();
+            bool paused = antiCheatPaused || IsPause || IsUIPause || timingError.Length != 0;
             string state = antiCheatPaused ? "反作弊暂停" : (paused ? "已暂停" : "");
+            state = Dx9TimingCategory.Suffix(RecordedTimingMode) + " " +
+                (timingError.Length == 0 ? state : timingError);
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),
@@ -1634,8 +1703,8 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
-                int? actualMode = paletteFadeMode.Read(PalProcess);
-                if (Dx9TimingCategory.RuntimeError(TimingModeMs, actualMode).Length != 0)
+                RuntimeTimingMode actualMode = paletteFadeMode.Read(PalProcess);
+                if (GetScoreValidationError().Length != 0)
                 {
                     MT.Stop();
                     ST.Stop();
@@ -2623,9 +2692,17 @@ namespace Pal98Timer
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
             exdata["DX9Version"] = FormatPaletteFadeVersion(DX9Version);
-            exdata["PaletteFadeModeMs"] = RecordedTimingMode ?? 0;
+            RuntimeTimingMode timing = RecordedTimingMode;
+            exdata["PaletteFadeModeMs"] = timing == null ? 0 : timing.FadeMilliseconds;
             exdata["TimerCore"] = CoreName;
             exdata["TimingModeMs"] = TimingModeMs;
+            exdata["TimingMapSpeedTicks"] = TimingMapSpeedTicks;
+            exdata["MapSpeedTicks"] = timing == null ? 0 : timing.MapSpeedTicks;
+            exdata["TimingRulesVersion"] = 1;
+            exdata["TimingRulesVerified"] = TimingModeMs != 0 && !importedUnverifiedTiming && timing != null &&
+                GetScoreValidationError().Length == 0;
+            exdata["TimingValidationError"] = GetScoreValidationError();
+            exdata["LeaderboardCategory"] = Dx9TimingCategory.LeaderboardName(CoreName);
             exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
 
             string namedbattles = "";
@@ -2693,6 +2770,7 @@ namespace Pal98Timer
 
         public override string ForCloudLiteData()
         {
+            ValidateScoreForSave();
             return MT.CurrentTS.Ticks.ToString() + "," + ST.CurrentTS.Ticks.ToString() + "," + BattleLong.Ticks.ToString();
         }
 
