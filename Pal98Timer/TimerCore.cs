@@ -363,11 +363,13 @@ namespace Pal98Timer
         /// 保存最佳文件
         /// </summary>
         /// <param name="str"></param>
+        protected virtual string GetScoreSavePath(DateTime now) { return "best" + CoreName + ".txt"; }
+
         protected void SaveBest(string str)
         {
             EnsureScoreValid();
             DateTime now = DateTime.Now;
-            string filename = "best" + CoreName + ".txt";
+            string filename = GetScoreSavePath(now);
             string snow= now.ToString("yyyyMMddHHmmss");
             try
             {
@@ -399,7 +401,7 @@ namespace Pal98Timer
         {
             EnsureScoreValid();
             DateTime now = DateTime.Now;
-            string filename = "best" + CoreName + ".txt";
+            string filename = GetScoreSavePath(now);
             string snow = now.ToString("yyyyMMddHHmmss");
 
             if (File.Exists(filename))

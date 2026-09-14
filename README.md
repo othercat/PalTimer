@@ -1,3 +1,5 @@
+﻿> v3.37.3 使用 `PAL98.TimingMode.v2` 核对实际内容与时序。正式速通包仍严格对应三类；非速通内容允许四种组合（含 1.2秒&快走速），保存到 `Records`，不覆盖传统最佳线、不填写传统英文榜单名。新记录携带内容 ID、版本及哈希；跨内容/实际模式导入或接力被拒绝，运行中切换须重置。旧运行时不能核验新记录，旧成绩保留原文件及参考用途。
+
 # 自动计时器使用说明
 > Repository Owner and current maintainer: `othercat`. Historical upstream: `ihouou/PalTimer`; original authors and contributors remain credited in the application.
 
@@ -5,9 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.2；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.3；需要 .NET Framework 4.7.2 框架**
 
-PALDLL v1.63 配套计时器提供三个独立的原版 DX9 配置。右上角菜单选择对应时间线，游戏的黑屏与走速在配置工具中设置，保存后重启游戏生效；版本号相同的旧构建仍需更新本次配套程序。
+PALDLL v1.65 配套计时器提供三个独立的原版 DX9 配置。右上角菜单选择对应时间线，游戏的黑屏与走速在配置工具中设置，保存后重启游戏生效；版本号相同的旧构建仍需更新本次配套程序。
 
 | 配置 | 最佳成绩文件 | 默认接力文件 | 历史成绩 |
 |---|---|---|---|
@@ -17,9 +19,9 @@ PALDLL v1.63 配套计时器提供三个独立的原版 DX9 配置。右上角�
 
 三类分别为 1200/10、800/10、800/9（黑屏模式毫秒 / map_speed），后缀分别为 `-1.2秒`、`-0.8秒`、`-0.8秒&快走速`。英文榜单名依次为 `PC NewPatch Classic`、`PC NewPatch Classic-0.8s`、`PC NewPatch Classic-0.8s+Speed`。“1.2 秒”沿用传统名称，不改变等待实现。快走速 9 对应已核实的 v0.63 发布包及 v0.71 默认值；未发布的走速 8 运行时不能核验新成绩，旧 8 成绩和时间线不转换为 9，原文件保留。
 
-成绩 JSON 保存所选 `TimerCore`、`TimingModeMs`、`TimingMapSpeedTicks`，实际 `PaletteFadeModeMs`、`MapSpeedTicks`，以及 `LeaderboardCategory`、`TimingRulesVersion`、`TimingRulesVerified`、`TimingValidationError`。跨分类导入和接力在修改状态或 RPG/附属文件前拒绝。缺走速信息的历史成绩保持原归属，不能移入第三类或标记成新规则已验证成绩。离线编辑最佳线仍可用，标注为参考时间线。云请求使用各自身份；服务端是否接受新身份仍需配套验证，本次未登录验证云服务。
+成绩 JSON 保存所选 `TimerCore`、`TimingModeMs`、`TimingMapSpeedTicks`，实际 `PaletteFadeModeMs`、`MapSpeedTicks`，以及 `ContentId`、`ContentVersion`、`ContentHash`、`ContentDisplayName`、`OfficialSpeedrun`、`LeaderboardCategory`、`TimingRulesVersion`、`TimingRulesVerified`、`TimingValidationError`。`GameVersion` 和 `TournamentDisplayName` 保留完整显示身份，游戏结束后导出也保留已确认的比赛名称。跨分类、内容或实际模式的导入和接力在修改状态或 RPG/附属文件前拒绝。缺走速信息的历史成绩保持原归属，不能移入第三类或标记成新规则已验证成绩。离线编辑最佳线仍可用，标注为参考时间线。非速通成绩保存到 `Records`，不会替换三个速通核心的最佳时间线。云请求使用各自身份；服务端是否接受新身份仍需配套验证，本次未登录验证云服务。
 
-模式来自 `PAL98.TimingMode.v1` 实际运行时快照，校验 PID、创建时间、接口版本与有效组合，不根据磁盘 INI 猜测。三个核心在模式未知或不匹配时暂停，并拒绝有效成绩保存、导出和上传；开局后确认切换分类必须重置。版本文本、结束后导出及 OBS 状态使用同一快照。OBS 最下方新增一行靠右显示 `1.2秒`、`0.8秒` 或 `0.8秒&快走速`，不加前导横杠，避免与暂停、战斗和重启/关闭游戏耗时挤在同一行；版本与导出后缀继续保留横杠。旧黑屏接口不能证明走速，新计时器会提示更新配套程序；快走速运行时不发布旧接口，防止旧计时器误分类。该本机快照不构成防篡改认证。
+模式来自 `PAL98.TimingMode.v2` 的 592 字节实际运行时快照，校验 PID、创建时间、接口版本、内容身份与有效组合，不根据磁盘 INI 猜测。正式速通内容严格对应三个核心；非速通内容可在现有 DX9 核心下使用四种黑屏/走速组合。在模式未知或不匹配时暂停，并拒绝有效成绩保存、导出和上传；开局后确认切换内容或实际模式必须重置。版本文本、结束后导出及 OBS 状态使用同一快照。OBS 最下方新增一行靠右显示 `1.2秒`、`0.8秒`、`0.8秒&快走速` 或非速通内容的 `1.2秒&快走速`，不加前导横杠，避免与暂停、战斗和重启/关闭游戏耗时挤在同一行；版本与导出后缀继续保留横杠。旧快照和黑屏接口不能证明当前内容与走速，新计时器会提示更新配套程序，不将旧接口用于新规则的核验。该本机快照不构成防篡改认证。
 
 魂牵、梦幻22显血和不欢乐保留现有核心及各自分类边界。UTF-8 成绩和配置支持有 BOM 或无 BOM，便于简繁系统交换；旧 ANSI 文件按本机代码页读取，不能自动推断任意跨区 GBK/Big5 文件。
 
@@ -62,6 +64,7 @@ PALDLL v1.63 配套计时器提供三个独立的原版 DX9 配置。右上角�
 |仙剑98柔情|PAL98|
 |仙剑98柔情DX9-1.2秒|PAL98DX9|
 |仙剑98柔情DX9-0.8秒|PAL98DX9_800|
+|仙剑98柔情DX9-0.8秒&快走速|PAL98DX9_800_SPEED|
 |仙剑98柔情DX9魂牵|PAL98DX9HUNQIAN|
 |仙剑98柔情DX9梦幻22显血|DREAM220VISIBLE|
 |仙剑98不欢乐模式|PAL98UNHAPPY|
@@ -130,6 +133,12 @@ PALDLL v1.63 配套计时器提供三个独立的原版 DX9 配置。右上角�
 仓库中的 `Pal98TimerOBSPlugin` 只是 OBS 0.6xx 时代的 `CLROBS/CLRHost.Interop` x86 历史实现，不属于现代 OBS Studio 发布链，本版不编译、不部署，也不启动其本机 TCP 39263 通信。
 
 # 更新说明
+## v3.37.3 (2026-09-14)
+
+配套 PALDLL v1.65 的内容与时序快照，正式速通保持三条独立时间线，非速通允许四种组合并单独保存成绩。导入校验加入内容 ID、版本、哈希和实际模式；跨内容、跨模式的接力拒绝保留原计时状态及待处理存档状态。游戏结束后保留已确认的比赛名称和模式用于显示与导出。
+
+定向宿主验证通过 10 组、603 项断言，包含 24 张离屏遮罩布局检查；没有连接真实 PAL.exe、操作可见窗口或进行 OBS 捕获。重复运行方法、构建哈希与未验收范围见 [v1.65 计时验证记录](tests/README-v165.md)。
+
 ## v3.37.2 (2026-09-07)
 PALDLL v1.62 的 DX9 / 不欢乐模式接力与云存档使用游戏实际写出的 RPG，并携带角色 6–15 的附属状态及飞行旗快照，避免按旧内存宽度重组原版六人的存档。导入校验 PAL.dll、内容包与固定角色库身份，连同附属文件备份、恢复；中途写入失败时回滚。导入后保持计时器开启，仅重启游戏并读取进度 1。
 

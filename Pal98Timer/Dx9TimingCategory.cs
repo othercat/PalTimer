@@ -1,4 +1,4 @@
-using HFrame.ENT;
+﻿using HFrame.ENT;
 using System;
 using System.IO;
 
@@ -30,8 +30,8 @@ namespace Pal98Timer
         internal static string ModeLabel(RuntimeTimingMode actual)
         {
             if (actual == null) return Text("[时序模式未知]", "[時序模式未知]");
-            return actual.FadeMilliseconds == 1200 ? "1.2秒" :
-                actual.MapSpeedTicks == 9 ? "0.8秒&快走速" : "0.8秒";
+            return (actual.FadeMilliseconds == 1200 ? "1.2秒" : "0.8秒") +
+                (actual.MapSpeedTicks == 9 ? "&快走速" : "");
         }
         internal static string LeaderboardName(string core)
         {
@@ -42,10 +42,12 @@ namespace Pal98Timer
 
         internal static string RuntimeError(int expected, int speed, RuntimeTimingMode actual)
         {
-            if (expected == 0 || (actual != null && actual.FadeMilliseconds == expected && actual.MapSpeedTicks == speed)) return "";
-            if (actual == null)
-                return Text("黑屏与走速模式待确认，计时暂停；请更新本次 v1.63 完整包及配套计时器。",
-                    "黑屏與走速模式待確認，計時暫停；請更新本次 v1.63 完整包及配套計時器。");
+            if (expected == 0) return ""; // Other legacy cores retain their own profile validation.
+            if (actual != null && actual.HasContentIdentity && (!actual.OfficialSpeedrun ||
+                (actual.FadeMilliseconds == expected && actual.MapSpeedTicks == speed))) return "";
+            if (actual == null || !actual.HasContentIdentity)
+                return Text("内容、黑屏与走速模式待确认，计时暂停；请更新 v1.65 配套程序。",
+                    "內容、黑屏與走速模式待確認，計時暫停；請更新 v1.65 配套程式。");
             return Text("游戏实际为", "遊戲實際為") + Suffix(actual) +
                 Text("，与所选配置不一致，计时暂停。请切换配置或修改设置后重启游戏。",
                     "，與所選配置不一致，計時暫停。請切換配置或修改設定後重啟遊戲。");
@@ -53,8 +55,30 @@ namespace Pal98Timer
 
         // Run before any RPG/sidecar write, and at the direct timer-restore entry.
         // Legacy untagged records belong only to the existing Classic 1.2s line.
-        internal static void ValidateImport(string core, int expected, HObj record)
+        internal static void ValidateImport(string core, int expected, HObj record, RuntimeTimingMode current = null)
         {
+            if (expected != 0 && record.HasValue("TimingRulesVersion") && record.GetValue<int>("TimingRulesVersion") == 2)
+            {
+                bool valid = current != null && current.HasContentIdentity &&
+                    record.HasValue("ContentId") && record.GetValue<string>("ContentId") == current.ContentId &&
+                    record.HasValue("ContentVersion") && record.GetValue<string>("ContentVersion") == current.ContentVersion &&
+                    record.HasValue("ContentHash") && record.GetValue<string>("ContentHash") == current.ContentHash &&
+                    record.HasValue("OfficialSpeedrun") && record.GetValue<bool>("OfficialSpeedrun") == current.OfficialSpeedrun &&
+                    record.HasValue("PaletteFadeModeMs") && record.GetValue<int>("PaletteFadeModeMs") == current.FadeMilliseconds &&
+                    record.HasValue("MapSpeedTicks") && record.GetValue<int>("MapSpeedTicks") == current.MapSpeedTicks &&
+                    record.HasValue("TimingRulesVerified") && record.GetValue<bool>("TimingRulesVerified") &&
+                    (!record.HasValue("ReferenceTimeline") || !record.GetValue<bool>("ReferenceTimeline")) &&
+                    (!record.HasValue("TimingValidationError") || string.IsNullOrEmpty(record.GetValue<string>("TimingValidationError"))) &&
+                    record.HasValue("TimerCore") && record.GetValue<string>("TimerCore") == core &&
+                    record.HasValue("TimingModeMs") && record.GetValue<int>("TimingModeMs") == expected &&
+                    record.HasValue("TimingMapSpeedTicks") && record.GetValue<int>("TimingMapSpeedTicks") == (core == SpeedCore ? 9 : 10) &&
+                    RuntimeError(expected, core == SpeedCore ? 9 : 10, current).Length == 0;
+                if (!valid) throw new InvalidDataException(Text("内容或实际时序不一致，未导入计时状态或存档；请先连接对应游戏。",
+                    "內容或實際時序不一致，未匯入計時狀態或存檔；請先連接對應遊戲。"));
+                return;
+            }
+            if (expected != 0 && current != null && current.HasContentIdentity && !current.OfficialSpeedrun)
+                throw new InvalidDataException(Text("历史速通记录不能导入其它内容。", "歷史速通記錄不能匯入其它內容。"));
             string source = record.HasValue("TimerCore") ? record.GetValue<string>("TimerCore") : "";
             int selected = record.HasValue("TimingModeMs") ? record.GetValue<int>("TimingModeMs") : 0;
             int actual = record.HasValue("PaletteFadeModeMs") ? record.GetValue<int>("PaletteFadeModeMs") : 0;
