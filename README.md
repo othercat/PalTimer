@@ -9,6 +9,8 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 **当前版本：3.37.3；需要 .NET Framework 4.7.2 框架**
 
+计时器标题不再追加内容包名称，随机物品、随机技能不会使标题变长；保留原有版本/比赛名称和实际黑屏、走速模式。成绩中的 `ContentDisplayName` 及内容身份仍完整保存，时间线、导入校验和最佳成绩隔离保持原样。
+
 PALDLL v1.65 配套计时器提供三个独立的原版 DX9 配置。右上角菜单选择对应时间线，游戏的黑屏与走速在配置工具中设置，保存后重启游戏生效；版本号相同的旧构建仍需更新本次配套程序。
 
 | 配置 | 最佳成绩文件 | 默认接力文件 | 历史成绩 |

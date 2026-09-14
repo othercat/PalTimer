@@ -496,9 +496,8 @@ namespace Pal98Timer
         protected string FormatPaletteFadeVersion(string version)
         {
             var mode = RecordedTimingMode;
-            string content = mode != null && mode.HasContentIdentity && !mode.OfficialSpeedrun
-                ? " [" + mode.DisplayName + "]" : "";
-            return version + content + Dx9TimingCategory.Suffix(mode);
+            // Keep the caption compact; records retain the full content identity separately.
+            return version + Dx9TimingCategory.Suffix(mode);
         }
 
         private void ValidateTimerImport(string json)

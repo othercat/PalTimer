@@ -328,7 +328,16 @@ internal static class V165TimingBehavior
                 Check(ended.GetValue<string>("GameVersion")==core.GetGameVersion()&&ended.GetValue<string>("TournamentDisplayName")=="秋季杯比赛专用","Completed export preserves tournament identity");
             }
             var nonformal=Core(0);Attach(nonformal,Mode(1200,9,false,"pal98.package.random",name:"完全隨機物品&快走速"));
-            Check(nonformal.GetGameVersion().Contains("完全隨機物品&快走速")&&nonformal.GetGameVersion().EndsWith("-1.2秒&快走速"),"Nonformal name/mode displayed");
+            Check(nonformal.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Nonformal caption retains only version and actual mode");
+            foreach(string contentName in new[]{"完全随机物品","完全隨機物品","全随机技能","全隨機技能","完全随机物品+全随机技能"})
+            {
+                var random=Core(0);Attach(random,Mode(1200,9,false,"pal98.package.random",name:contentName));
+                Check(random.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Random labels do not lengthen caption");
+                var randomRecord=new HObj(random.GetRStr());
+                Check(randomRecord.GetValue<string>("ContentDisplayName")==contentName&&randomRecord.GetValue<string>("ContentId")=="pal98.package.random","Compact caption preserves record identity");
+                Set(random,"PalProcess",null);Set(random,"PID",-1);
+                Check(random.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Completed random caption stays compact");
+            }
             Check((string)Field(Snapshot(nonformal),"TimingModeLabel")=="1.2秒&快走速","Fourth combination in overlay");
             string menu=TimerCore.GetCoreDisplayName("Pal98Dx9Fast800Speed");
             Check(menu.EndsWith("0.8秒&快走速")&&(culture!="zh-TW"||menu.StartsWith("仙劍")),"Traditional/simplified menu");
