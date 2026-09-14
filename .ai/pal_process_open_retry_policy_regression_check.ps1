@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $policyPath = Join-Path $repoRoot 'Pal98Timer\PalProcessOpenRetryPolicy.cs'
-$policySource = Get-Content -Raw -LiteralPath $policyPath
+$policySource = Get-Content -Raw -LiteralPath $policyPath -Encoding UTF8
 
 $harnessSource = @'
 namespace Pal98Timer
@@ -45,6 +45,29 @@ namespace Pal98Timer
                 "invalid PID must fail closed and publish");
             Assert(policy.ShouldPublish(202, 5, 22000, 0),
                 "invalid timestamp frequency must fail closed and publish");
+
+            const string elevated = "elevation mismatch";
+            foreach (bool? target in new bool?[] { null, false, true })
+            foreach (bool? timer in new bool?[] { null, false, true })
+            {
+                string message = PalProcessOpenRetryPolicy.DescribeFailure(5, false, target, timer, elevated);
+                Assert((message == elevated) == (target == true && timer == false), "only confirmed token mismatch can request elevation");
+                Assert(PalProcessOpenRetryPolicy.DescribeFailure(5, true, target, timer, elevated) == "", "exited process must stay silent");
+            }
+            Assert(PalProcessOpenRetryPolicy.DescribeFailure(87, false, true, false, elevated) != elevated,
+                "other errors are never elevation mismatches");
+            using (var self = System.Diagnostics.Process.GetCurrentProcess())
+            {
+                string message = policy.DescribeFailure(self.Id, 5, elevated);
+                Assert(message.Length > 0 && message != elevated, "actual self process token cannot mismatch itself");
+                policy.ClearPublishedMessage(ref message);
+                Assert(message == "", "successful attach clears pending access error");
+                policy.DescribeFailure(self.Id, 5, elevated);
+                message = "unrelated profile error";
+                policy.ClearPublishedMessage(ref message);
+                Assert(message == "unrelated profile error", "do not clear unrelated diagnostics");
+            }
+            Assert(policy.DescribeFailure(int.MaxValue, 5, elevated) == "", "nonexistent PID is silent");
         }
     }
 }

@@ -19,8 +19,10 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
         "private bool HasAlertPalOpenProcessError = false;" in text
         and "private bool TryOpenPalProcess(Process process)" in text
         and "private bool CanOpenPalProcess(Process process)" in text
-        and "private string BuildOpenPalProcessError(int errorCode)" in text
-        and "Kernel32.ERROR_ACCESS_DENIED" in text
+        and "private string BuildOpenPalProcessError(int processId, int errorCode)" in text
+        and "PalOpenRetryPolicy.DescribeFailure(processId, errorCode, TimerCore.ElevatedPalProcessErrorMessage)" in text
+        and text.count("PalOpenRetryPolicy.ClearPublishedMessage(ref cryerror);") >= 3
+        and text.count("HasAlertPalOpenProcessError = cryerror.Length != 0;") == 2
         and "TimerCore.ElevatedPalProcessErrorMessage" in text
         and "private readonly PalProcessOpenRetryPolicy PalOpenRetryPolicy" in text
         and text.count("PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode)") == 2
@@ -102,7 +104,7 @@ def main() -> int:
             print(f"- {path.relative_to(ROOT)}")
         return 1
 
-    print("PASS: PAL98 kernels show the short elevated Pal.exe message and close PalTimer after acknowledgement.")
+    print("PASS: all PAL98 kernels verify process tokens before an elevation warning and clear stale attach errors.")
     return 0
 
 

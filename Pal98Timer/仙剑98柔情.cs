@@ -941,6 +941,7 @@ namespace Pal98Timer
             {
                 PalHandle = new IntPtr(handle);
                 HasAlertPalOpenProcessError = false;
+                PalOpenRetryPolicy.ClearPublishedMessage(ref cryerror);
                 PalOpenRetryPolicy.Reset();
                 return true;
             }
@@ -949,8 +950,8 @@ namespace Pal98Timer
             int errorCode = Kernel32.GetLastWin32Error();
             if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
-                cryerror = BuildOpenPalProcessError(errorCode);
-                HasAlertPalOpenProcessError = true;
+                cryerror = BuildOpenPalProcessError(process.Id, errorCode);
+                HasAlertPalOpenProcessError = cryerror.Length != 0;
             }
             return false;
         }
@@ -961,6 +962,7 @@ namespace Pal98Timer
             if (handle != 0)
             {
                 Kernel32.CloseHandle(handle);
+                PalOpenRetryPolicy.ClearPublishedMessage(ref cryerror);
                 PalOpenRetryPolicy.Reset();
                 return true;
             }
@@ -968,21 +970,15 @@ namespace Pal98Timer
             int errorCode = Kernel32.GetLastWin32Error();
             if (PalOpenRetryPolicy.ShouldPublish(process.Id, errorCode) && !HasAlertPalOpenProcessError)
             {
-                cryerror = BuildOpenPalProcessError(errorCode);
-                HasAlertPalOpenProcessError = true;
+                cryerror = BuildOpenPalProcessError(process.Id, errorCode);
+                HasAlertPalOpenProcessError = cryerror.Length != 0;
             }
             return false;
         }
 
-        private string BuildOpenPalProcessError(int errorCode)
+        private string BuildOpenPalProcessError(int processId, int errorCode)
         {
-            if (errorCode == Kernel32.ERROR_ACCESS_DENIED)
-            {
-                return TimerCore.ElevatedPalProcessErrorMessage;
-            }
-
-            string errorText = errorCode > 0 ? "（Windows 错误码 " + errorCode + "）" : "";
-            return "无法打开 Pal.exe 进程" + errorText + "。普通速通和 pal98autotest 自动化测试建议让 PAL.exe 和 PalTimer 都用普通权限运行；如果 PAL.exe 因其他补丁必须管理员运行，请也以管理员权限启动 PalTimer，保持两者权限级别一致。";
+            return PalOpenRetryPolicy.DescribeFailure(processId, errorCode, TimerCore.ElevatedPalProcessErrorMessage);
         }
 
         /// <summary>
@@ -997,6 +993,7 @@ namespace Pal98Timer
             PID = -1;
             GMD5 = "none";
             HasAlertPalOpenProcessError = false;
+            PalOpenRetryPolicy.ClearPublishedMessage(ref cryerror);
             PalOpenRetryPolicy.Reset();
         }
 
