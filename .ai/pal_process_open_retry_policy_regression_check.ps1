@@ -24,9 +24,9 @@ namespace Pal98Timer
 
             Assert(!policy.ShouldPublish(101, 5, 10000, frequency),
                 "first access denial must be deferred");
-            Assert(!policy.ShouldPublish(101, 5, 11499, frequency),
+            Assert(!policy.ShouldPublish(101, 5, 19499, frequency),
                 "same-PID access denial must remain deferred inside the grace period");
-            Assert(policy.ShouldPublish(101, 5, 11500, frequency),
+            Assert(policy.ShouldPublish(101, 5, 19500, frequency),
                 "persistent same-PID access denial must publish at the grace boundary");
 
             policy.Reset();

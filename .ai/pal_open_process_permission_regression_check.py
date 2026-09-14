@@ -40,7 +40,7 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
 def _retry_policy_is_bounded() -> bool:
     text = POLICY.read_text(encoding="utf-8-sig")
     return (
-        "internal const int AccessDeniedGraceMilliseconds = 1500;" in text
+        "internal const int AccessDeniedGraceMilliseconds = 9500;" in text
         and "Stopwatch.GetTimestamp()" in text
         and "errorCode != AccessDeniedErrorCode" in text
         and "PendingProcessId != processId" in text

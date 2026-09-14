@@ -12,7 +12,7 @@ namespace Pal98Timer
     internal sealed class PalProcessOpenRetryPolicy
     {
         internal const int AccessDeniedErrorCode = 5;
-        internal const int AccessDeniedGraceMilliseconds = 1500;
+        internal const int AccessDeniedGraceMilliseconds = 9500;
 
         private bool HasPendingAccessDenied;
         private int PendingProcessId = -1;
