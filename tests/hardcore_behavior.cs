@@ -37,6 +37,13 @@ internal static class HardcoreBehavior
         if(state==4)Text(b,458,"规则校验拒绝");return b;
     }
     static HardcoreSnapshot Decode(byte[] b) { return HardcoreModeReader.Decode(b,host.Id,creation,2,2); }
+    static byte[] NewBytes(uint state=2, bool ps2=false, bool confirmation=false, uint dc=0, uint rc=0, ulong qpc=100)
+    {
+        var b=Bytes(state,dc,rc,qpc);U32(b,12,0x01060701);
+        if(ps2){U32(b,68,2);U16(b,64,0);U16(b,66,0);Array.Clear(b,202,256);Text(b,202,"本地PS/2键盘");}
+        if(confirmation){U32(b,28,1);U32(b,40,15);U32(b,44,11);Text(b,458,"请在本地键盘按下并松开一个键");}
+        return b;
+    }
     static HObj Record(HardcoreRunEvidence run) { var d=new HObj();run.Fill(d);return d; }
     static bool Verified(HardcoreRunEvidence run) { return Record(run).GetValue<bool>("HardcoreRunVerified"); }
     static HardcoreRunEvidence Started()
@@ -54,7 +61,7 @@ internal static class HardcoreBehavior
         Check(HardcoreModeReader.Decode(Bytes(),host.Id,creation+1,2,2)==null,"creation mismatch rejected");
         Invalid("magic",b=>b[0]=0);Invalid("version",b=>U16(b,4,2));Invalid("size",b=>U16(b,6,1023));
         Invalid("old producer",b=>U32(b,12,0x01060600));Invalid("rules",b=>U32(b,32,2));Invalid("blacklist",b=>U32(b,36,2));
-        Invalid("reserved0",b=>b[68]=1);Invalid("reserved tail",b=>b[1023]=1);Invalid("state",b=>U32(b,28,6));
+        Invalid("unknown transport",b=>b[68]=1);Invalid("reserved tail",b=>b[1023]=1);Invalid("state",b=>U32(b,28,6));
         Invalid("unknown flags",b=>U32(b,40,31));Invalid("Active without focus",b=>U32(b,40,7));Invalid("Active bad reason",b=>U32(b,44,8));
         Invalid("reconnect greater than disconnect",b=>U32(b,52,1));Invalid("empty VID",b=>U16(b,64,0));Invalid("empty PID",b=>U16(b,66,0));
         Invalid("uppercase hash",b=>b[72]=(byte)'A');Invalid("nonzero string padding",b=>b[450]=1);
@@ -62,6 +69,65 @@ internal static class HardcoreBehavior
         var rejected=Bytes(4);Array.Clear(rejected,72,65);Array.Clear(rejected,137,65);Array.Clear(rejected,202,256);U16(rejected,64,0);U16(rejected,66,0);
         Check(Decode(rejected)!=null,"Rejected may lack binding identity");
         Array.Clear(rejected,458,256);Check(Decode(rejected)==null,"Rejected requires reason text");
+    }
+
+    static void TransportAndConfirmation()
+    {
+        var legacy=Decode(Bytes());
+        Check(legacy.KeyboardTransport==HardcoreKeyboardTransport.Usb&&legacy.DeviceLabel.StartsWith("VID:1234 PID:5678 "),"old producer zero transport remains USB");
+        foreach(bool ps2 in new[]{false,true})
+        {
+            string kind=ps2?"PS/2":"USB";
+            foreach(uint state in new uint[]{1,2,3,4,5})
+                Check(Decode(NewBytes(state,ps2,dc:state==3?1u:0))!=null,"new "+kind+" valid state "+state);
+            foreach(uint flags in new uint[]{7,15})
+            {
+                var waiting=NewBytes(ps2:ps2,confirmation:true,dc:2,rc:1);U32(waiting,40,flags);
+                var s=Decode(waiting);
+                Check(s!=null&&s.State==HardcoreState.Waiting&&s.Requested&&s.StateLabel=="硬核待本地按键确认",
+                    kind+" confirmation remains Waiting with counts and flags "+flags);
+                U32(waiting,12,0x01060700);Check(Decode(waiting)==null,"old producer cannot publish confirmation "+kind+" flags "+flags);
+            }
+        }
+        var ps2Active=NewBytes(ps2:true);
+        Check(Decode(ps2Active).DeviceLabel=="PS/2 本地PS/2键盘","PS/2 label has no fictitious VID/PID");
+        U32(ps2Active,12,0x01060700);Check(Decode(ps2Active)==null,"old producer cannot publish PS/2");
+        foreach(uint transport in new uint[]{1,3,uint.MaxValue})
+        {var b=NewBytes();U32(b,68,transport);Check(Decode(b)==null,"unsupported transport rejected "+transport);}
+        foreach(int offset in new[]{64,66})
+        {
+            var b=NewBytes(ps2:true);U16(b,offset,1);Check(Decode(b)==null,"PS/2 nonzero identity rejected "+offset);
+            b=NewBytes();U16(b,offset,0);Check(Decode(b)==null,"new USB missing identity rejected "+offset);
+        }
+        var missing=NewBytes(1,true,dc:1);Check(Decode(missing)==null,"device-missing Waiting still forbids disconnect counts");
+        var bad=NewBytes(confirmation:true);Array.Clear(bad,458,256);Check(Decode(bad)==null,"confirmation requires explanation");
+        foreach(uint flags in new uint[]{0,1,3,9,11})
+        {bad=NewBytes(confirmation:true);U32(bad,40,flags);Check(Decode(bad)==null,"confirmation requires matched device flags "+flags);}
+        foreach(uint state in new uint[]{0,2,3,4,5})
+        {bad=NewBytes(confirmation:true);U32(bad,28,state);Check(Decode(bad)==null,"confirmation cannot masquerade as state "+state);}
+        bad=NewBytes(ps2:true,confirmation:true,dc:1,rc:2);Check(Decode(bad)==null,"confirmation reconnect bound retained");
+        bad=NewBytes(ps2:true);bad[714]=1;Check(Decode(bad)==null,"new transport retains zero tail requirement");
+
+        var waitingPs2=Decode(NewBytes(ps2:true,confirmation:true));var activePs2=Decode(NewBytes(ps2:true));
+        var r=new HardcoreRunEvidence();r.Observe(waitingPs2,false);r.Observe(waitingPs2,true);
+        Check(!Verified(r)&&Record(r).GetValue<string>("HardcoreKeyboardTransport")=="unknown","waiting start has no certified run transport");
+        r.Observe(activePs2,true);r.Observe(activePs2,true);Check(!Verified(r),"local confirmation after start cannot upgrade waiting run");
+        r.Reset();r.Observe(waitingPs2,false);r.Observe(activePs2,true);Check(!Verified(r),"confirmation at start lacks continuous Active evidence");
+        r.Reset();r.Observe(waitingPs2,false);r.Observe(activePs2,false);r.Observe(activePs2,true);
+        Check(Verified(r)&&Record(r).GetValue<string>("HardcoreKeyboardTransport")=="ps2","confirmation before start permits own PS/2 run identity");
+        r.Observe(Decode(NewBytes(3,true,dc:1,qpc:200)),true);r.Observe(Decode(NewBytes(ps2:true,dc:1,rc:1,qpc:300)),true);
+        Check(Verified(r)&&Record(r).GetValue<uint>("HardcoreReconnectCount")==1,"confirmed PS/2 reconnect preserves run and count");
+        Check(Record(r).GetValue<string>("HardcoreHardwareReview")=="unknown","PS/2 hardware review remains manual unknown");
+        r.Observe(Decode(NewBytes(dc:1,rc:1,qpc:400)),true);
+        Check(!Verified(r)&&Record(r).GetValue<string>("HardcoreKeyboardTransport")=="ps2","transport change invalidates and retains original run identity");
+        r.Reset();Check(Record(r).GetValue<string>("HardcoreKeyboardTransport")=="unknown","Reset discards run transport");
+        r.ImportUnverified();r.Observe(activePs2,false);r.Observe(activePs2,true);
+        Check(!Verified(r)&&Record(r).GetValue<string>("HardcoreKeyboardTransport")=="unknown","import cannot inherit or upgrade transport");
+        r=Started();Check(Record(r).GetValue<string>("HardcoreKeyboardTransport")=="usb","legacy USB run exports USB transport");
+        r=new HardcoreRunEvidence();var newUsb=Decode(NewBytes());r.Observe(newUsb,false);r.Observe(newUsb,true);
+        r.Observe(Decode(NewBytes(confirmation:true,dc:1,rc:1,qpc:200)),true);
+        Check(!Verified(r),"confirmed run returning to Waiting confirmation becomes unverified");
+        Check(!newUsb.SameRun(activePs2),"USB and PS/2 bindings are different run identities");
     }
 
     static void Runs()
@@ -136,6 +202,12 @@ internal static class HardcoreBehavior
                 Check(timer.IsRunning,c.CoreName+" observation does not pause timer");
                 timer.Stop();view.WriteArray(0,Bytes(2,1,1,300),0,1024);ObserveCore(c,true);Check(new HObj(c.GetTimerJson()).GetValue<bool>("HardcoreRunVerified"),c.CoreName+" reconnect retained");
                 c.Reset();Check(!new HObj(c.GetTimerJson()).GetValue<bool>("HardcoreRunVerified"),c.CoreName+" Reset clears verification");
+                view.WriteArray(0,NewBytes(ps2:true,confirmation:true),0,1024);ObserveCore(c,false);ObserveCore(c,true);
+                view.WriteArray(0,NewBytes(ps2:true),0,1024);ObserveCore(c,true);
+                data=new HObj(c.GetTimerJson());
+                Check(!data.GetValue<bool>("HardcoreRunVerified")&&data.GetValue<string>("HardcoreKeyboardTransport")=="unknown",c.CoreName+" waiting start cannot upgrade through real mapping");
+                c.Reset();ObserveCore(c,false);ObserveCore(c,true);data=new HObj(c.GetTimerJson());
+                Check(data.GetValue<bool>("HardcoreRunVerified")&&data.GetValue<string>("HardcoreKeyboardTransport")=="ps2",c.CoreName+" confirmed PS/2 identity exported through common core");
             }
         }
     }
@@ -236,7 +308,7 @@ internal static class HardcoreBehavior
     [STAThread]
     static int Main()
     {
-        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();Runs();Guard();Cores();
+        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();TransportAndConfirmation();Runs();Guard();Cores();
             foreach(string operation in new[]{"export","reset","finish","import"})ConcurrentBoundary(operation);Display();
             Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}
         catch(Exception e){Console.WriteLine(e);return 1;}

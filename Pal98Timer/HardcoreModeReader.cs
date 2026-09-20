@@ -8,6 +8,7 @@ using System.Threading;
 namespace Pal98Timer
 {
     internal enum HardcoreState { Off, Waiting, Active, Disconnected, Rejected, Unfocused }
+    internal enum HardcoreKeyboardTransport { Usb = 0, Ps2 = 2 }
 
     // Immutable facts from PAL98.HardcoreMode.v1, never from config.ini or a best file.
     internal sealed class HardcoreSnapshot
@@ -18,6 +19,7 @@ namespace Pal98Timer
         internal readonly ulong LastChangeQpc;
         internal readonly ushort VendorId, ProductId;
         internal readonly HardcoreState State;
+        internal readonly HardcoreKeyboardTransport KeyboardTransport;
         internal readonly string ConfigurationHash, BindingHash, DeviceName, ReasonText;
         internal bool Requested { get { return (Flags & 1) != 0; } }
 
@@ -30,6 +32,7 @@ namespace Pal98Timer
             DisconnectCount = BitConverter.ToUInt32(bytes, 48); ReconnectCount = BitConverter.ToUInt32(bytes, 52);
             LastChangeQpc = BitConverter.ToUInt64(bytes, 56);
             VendorId = BitConverter.ToUInt16(bytes, 64); ProductId = BitConverter.ToUInt16(bytes, 66);
+            KeyboardTransport = (HardcoreKeyboardTransport)BitConverter.ToUInt32(bytes, 68);
             ConfigurationHash = config; BindingHash = binding; DeviceName = name; ReasonText = reason;
         }
 
@@ -38,7 +41,8 @@ namespace Pal98Timer
             return other != null && Pid == other.Pid && ProcessCreation == other.ProcessCreation &&
                 ProducerVersion == other.ProducerVersion && RulesVersion == other.RulesVersion &&
                 BlacklistVersion == other.BlacklistVersion && ConfigurationHash == other.ConfigurationHash &&
-                BindingHash == other.BindingHash && VendorId == other.VendorId && ProductId == other.ProductId;
+                BindingHash == other.BindingHash && VendorId == other.VendorId && ProductId == other.ProductId &&
+                KeyboardTransport == other.KeyboardTransport;
         }
 
         internal string StateLabel
@@ -48,7 +52,7 @@ namespace Pal98Timer
                 switch (State)
                 {
                     case HardcoreState.Off: return "普通模式";
-                    case HardcoreState.Waiting: return "硬核等待键盘";
+                    case HardcoreState.Waiting: return Reason == 11 ? "硬核待本地按键确认" : "硬核等待键盘";
                     case HardcoreState.Active: return "硬核生效";
                     case HardcoreState.Disconnected: return "硬核键盘断开";
                     case HardcoreState.Rejected: return "硬核已拒绝";
@@ -63,6 +67,7 @@ namespace Pal98Timer
             {
                 if (!Requested) return "";
                 string name = DeviceName.Length == 0 ? "键盘未知" : SingleLine(DeviceName);
+                if (KeyboardTransport == HardcoreKeyboardTransport.Ps2) return "PS/2 " + name;
                 return "VID:" + VendorId.ToString("X4") + " PID:" + ProductId.ToString("X4") + " " + name;
             }
         }
@@ -83,6 +88,7 @@ namespace Pal98Timer
     internal sealed class HardcoreModeReader : IHardcoreModeReader
     {
         internal const int SnapshotSize = 1024;
+        internal const uint LocalConfirmationProducerVersion = 0x01060701u;
         internal const string MappingPrefix = "Local\\PAL98.HardcoreMode.v1.";
 
         public HardcoreSnapshot Read(Process process)
@@ -124,15 +130,18 @@ namespace Pal98Timer
                 BitConverter.ToUInt32(bytes, 0) != 0x31484350u || BitConverter.ToUInt16(bytes, 4) != 1 ||
                 BitConverter.ToUInt16(bytes, 6) != SnapshotSize || BitConverter.ToUInt32(bytes, 8) != (uint)pid ||
                 BitConverter.ToUInt32(bytes, 12) < 0x01060700u || BitConverter.ToInt64(bytes, 16) != creation ||
-                BitConverter.ToUInt32(bytes, 32) != 1 || BitConverter.ToUInt32(bytes, 36) != 1 ||
-                BitConverter.ToUInt32(bytes, 68) != 0) return null;
+                BitConverter.ToUInt32(bytes, 32) != 1 || BitConverter.ToUInt32(bytes, 36) != 1) return null;
             for (int i = 714; i < SnapshotSize; ++i) if (bytes[i] != 0) return null;
             uint state = BitConverter.ToUInt32(bytes, 28), flags = BitConverter.ToUInt32(bytes, 40),
                 reason = BitConverter.ToUInt32(bytes, 44), disconnected = BitConverter.ToUInt32(bytes, 48),
-                reconnected = BitConverter.ToUInt32(bytes, 52);
-            if (state > 5 || flags > 15 || reason > 10 || reconnected > disconnected) return null;
+                reconnected = BitConverter.ToUInt32(bytes, 52), transport = BitConverter.ToUInt32(bytes, 68),
+                producer = BitConverter.ToUInt32(bytes, 12);
+            if (state > 5 || flags > 15 || reason > 11 || reconnected > disconnected ||
+                transport != 0 && transport != 2 ||
+                (transport == 2 || reason == 11) && producer < LocalConfirmationProducerVersion) return null;
             bool validState = state == 0 ? flags == 0 && reason == 0 && disconnected == 0 && reconnected == 0 :
-                state == 1 ? (flags == 3 || flags == 11) && reason == 7 && disconnected == 0 && reconnected == 0 :
+                state == 1 ? ((flags == 3 || flags == 11) && reason == 7 && disconnected == 0 && reconnected == 0 ||
+                    (flags == 7 || flags == 15) && reason == 11) :
                 state == 2 ? flags == 15 && reason == 0 :
                 state == 3 ? (flags == 3 || flags == 11) && reason == 7 && disconnected >= 1 :
                 state == 4 ? (flags == 1 || flags == 3 || flags == 9 || flags == 11) &&
@@ -144,6 +153,7 @@ namespace Pal98Timer
                 string config = ReadText(bytes, 72, 65), binding = ReadText(bytes, 137, 65),
                     name = ReadText(bytes, 202, 256), text = ReadText(bytes, 458, 256);
                 ushort vid = BitConverter.ToUInt16(bytes, 64), product = BitConverter.ToUInt16(bytes, 66);
+                if (transport == 2 && (vid != 0 || product != 0) || reason == 11 && text.Length == 0) return null;
                 if (state == 0)
                 {
                     if (config.Length != 0 || binding.Length != 0 || name.Length != 0 || vid != 0 || product != 0)
@@ -154,7 +164,8 @@ namespace Pal98Timer
                     if (text.Length == 0 || config.Length != 0 && !IsHash(config) || binding.Length != 0 && !IsHash(binding))
                         return null;
                 }
-                else if (!IsHash(config) || !IsHash(binding) || name.Length == 0 || vid == 0 || product == 0)
+                else if (!IsHash(config) || !IsHash(binding) || name.Length == 0 ||
+                    transport == 0 && (vid == 0 || product == 0))
                     return null;
                 return new HardcoreSnapshot(bytes, config, binding, name, text);
             }

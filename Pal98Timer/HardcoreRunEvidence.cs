@@ -111,6 +111,8 @@ namespace Pal98Timer
                 data["HardcoreConfigurationSha256"] = identity == null ? "" : identity.ConfigurationHash;
                 data["HardcoreBindingSha256"] = identity == null ? "" : identity.BindingHash;
                 data["HardcoreDeviceName"] = identity == null ? "" : identity.DeviceName;
+                data["HardcoreKeyboardTransport"] = identity == null ? "unknown" :
+                    identity.KeyboardTransport == HardcoreKeyboardTransport.Ps2 ? "ps2" : "usb";
                 data["HardcoreVendorId"] = identity == null ? 0 : identity.VendorId;
                 data["HardcoreProductId"] = identity == null ? 0 : identity.ProductId;
                 data["HardcoreDisconnectCount"] = disconnectCount;
