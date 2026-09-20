@@ -7,6 +7,7 @@ using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Runtime.Serialization;
 using System.Windows.Forms;
 using HFrame.ENT;
 using Pal98Timer;
@@ -60,7 +61,7 @@ internal static class HardcoreBehavior
         Check(HardcoreModeReader.Decode(Bytes(),host.Id+1,creation,2,2)==null,"PID mismatch rejected");
         Check(HardcoreModeReader.Decode(Bytes(),host.Id,creation+1,2,2)==null,"creation mismatch rejected");
         Invalid("magic",b=>b[0]=0);Invalid("version",b=>U16(b,4,2));Invalid("size",b=>U16(b,6,1023));
-        Invalid("old producer",b=>U32(b,12,0x01060600));Invalid("rules",b=>U32(b,32,2));Invalid("blacklist",b=>U32(b,36,2));
+        Invalid("old producer",b=>U32(b,12,0x01060600));Invalid("zero rules",b=>U32(b,32,0));Invalid("zero blacklist",b=>U32(b,36,0));
         Invalid("unknown transport",b=>b[68]=1);Invalid("reserved tail",b=>b[1023]=1);Invalid("state",b=>U32(b,28,6));
         Invalid("unknown flags",b=>U32(b,40,31));Invalid("Active without focus",b=>U32(b,40,7));Invalid("Active bad reason",b=>U32(b,44,8));
         Invalid("reconnect greater than disconnect",b=>U32(b,52,1));Invalid("empty VID",b=>U16(b,64,0));Invalid("empty PID",b=>U16(b,66,0));
@@ -69,6 +70,106 @@ internal static class HardcoreBehavior
         var rejected=Bytes(4);Array.Clear(rejected,72,65);Array.Clear(rejected,137,65);Array.Clear(rejected,202,256);U16(rejected,64,0);U16(rejected,66,0);
         Check(Decode(rejected)!=null,"Rejected may lack binding identity");
         Array.Clear(rejected,458,256);Check(Decode(rejected)==null,"Rejected requires reason text");
+    }
+
+    static void RuleVersions()
+    {
+        foreach(uint version in new uint[]{1,2,3,4,uint.MaxValue})
+        foreach(uint blacklist in new uint[]{1,2})
+        {
+            var bytes=NewBytes();U32(bytes,12,0x01060703);U32(bytes,32,version);U32(bytes,36,blacklist);
+            var snapshot=Decode(bytes);bool supported=version<=3&&blacklist==1;
+            Check(snapshot!=null&&snapshot.Requested&&snapshot.RulesSupported==supported,"rule request retained "+version+"/"+blacklist);
+            var guard=new HardcoreKeyChangerGuard(()=>snapshot.Requested);
+            Check(guard.BeginAutoStart()<0&&guard.BeginRequest()<0&&!guard.TryRun(()=>{throw new Exception("remap ran");}),
+                "known and future rules block every remap request "+version+"/"+blacklist);
+            var run=new HardcoreRunEvidence();run.Observe(snapshot,false);run.Observe(snapshot,true);
+            Check(Verified(run)==supported,"only supported rules certify a run "+version+"/"+blacklist);
+            Check(run.CaptureDisplay().Visible&&(supported?run.CaptureDisplay().Status.Contains("生效"):
+                run.CaptureDisplay().Status.Contains("请更新计时器")),"rule status is visible "+version+"/"+blacklist);
+        }
+    }
+
+    static void ToolVersions()
+    {
+        foreach(uint reason in new uint[]{12,13})
+        {
+            var bytes=Bytes(reason==12?4u:1u);U32(bytes,12,0x01060705);U32(bytes,44,reason);
+            Array.Clear(bytes,458,256);Text(bytes,458,"关闭旧工具，更新后按 P 重启");
+            var snapshot=Decode(bytes);
+            Check(snapshot!=null&&snapshot.Requested&&snapshot.StateLabel.Contains("工具"),"tool gate decoded and displayed "+reason);
+            var guard=new HardcoreKeyChangerGuard(()=>snapshot.Requested);
+            Check(guard.BeginAutoStart()<0&&guard.BeginRequest()<0,"tool gate never reopens remapping "+reason);
+            var run=Started();run.Observe(snapshot,true);Check(!Verified(run),"tool gate invalidates current run "+reason);
+            U32(bytes,12,0x01060704);Check(Decode(bytes)==null,"old producer cannot claim new tool gate reason "+reason);
+            U32(bytes,12,0x01060705);U32(bytes,28,2);U32(bytes,40,15);
+            Check(Decode(bytes)==null,"tool gate cannot report Active "+reason);
+        }
+    }
+
+    static void PublishedRequestProtection()
+    {
+        Func<Process[]> processes=()=>new[]{Process.GetProcessById(host.Id)};
+        Check(!new HardcoreRequestedProcesses(processes).Read(),"no publication preserves ordinary behavior");
+        using(var mapping=MemoryMappedFile.CreateNew(HardcoreModeReader.MappingPrefix+host.Id,1024))
+        using(var view=mapping.CreateViewAccessor())
+        {
+            foreach(uint version in new uint[]{1,2,3,4})
+            {
+                var b=NewBytes();U32(b,32,version);view.WriteArray(0,b,0,1024);
+                Check(new HardcoreRequestedProcesses(processes).Read(),"first published request blocks remapping rules "+version);
+            }
+            view.Write(24,3);
+            Check(new HardcoreRequestedProcesses(processes).Read(),"first torn publication blocks remapping");
+            view.WriteArray(0,Bytes(0),0,1024);
+            Check(!new HardcoreRequestedProcesses(processes).Read(),"validated Off publication preserves ordinary behavior");
+        }
+    }
+
+    static void KeyChangerExecution()
+    {
+        // No form constructor/global hook, no native keyboard injection. Exercise
+        // the real helper callback and restore handlers with a controlled reader.
+        var assembly=Assembly.LoadFrom("KeyChanger.exe");var type=assembly.GetType("KeyChanger.MainForm");
+        var form=FormatterServices.GetUninitializedObject(type);
+        var kcType=assembly.GetType("KeyChanger.KC");
+        var kc=Activator.CreateInstance(kcType,new object[]{"1\n65:66"});
+        Action<string,object> set=(name,value)=>type.GetField(name,BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public).SetValue(form,value);
+        Func<string,object[],object> call=(name,args)=>type.GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public|BindingFlags.DeclaredOnly).Invoke(form,args);
+        bool blocked=true;int injections=0;
+        set("kc",kc);set("KeyStat",new int[2020]);
+        set("readHardcoreRequested",(Func<bool>)(()=>blocked));
+        set("injectKey",(Action<int,int>)((key,flags)=>++injections));
+        set("btnEnable",new ToolStripMenuItem());set("btnBlockCE",new ToolStripMenuItem());
+        var packetType=assembly.GetType("KeyChanger.KeyboardLib+HookStruct");
+        foreach(int key in new[]{65,13})foreach(int flags in new[]{0,128})
+        {
+            kcType.GetField("IsEnable").SetValue(kc,true);set("BlockCtrlEnter",true);set("OnCtrlDown",true);
+            var packet=Activator.CreateInstance(packetType);packetType.GetField("vkCode").SetValue(packet,key);packetType.GetField("flags").SetValue(packet,flags);
+            object[] args={packet,true};call("OnKeyPress",args);
+            Check(!(bool)args[1]&&injections==0&&!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper blocked callback never swallows or injects "+key+"/"+flags);
+        }
+        call("btnEnable_Click",new object[]{null,EventArgs.Empty});
+        Check(!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper tray cannot enable while requested");
+        File.WriteAllText("keychange.txt","1\n65:66");call("ApplyKeyChange",new object[0]);
+        kc=type.GetField("kc",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(form);
+        Check(!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper old settings save cannot restore enable");
+        blocked=false;call("RefreshHardcoreProtection",new object[0]);
+        Check(!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper does not auto-enable after hardcore ends");
+        call("btnEnable_Click",new object[]{null,EventArgs.Empty});
+        var normal=Activator.CreateInstance(packetType);packetType.GetField("vkCode").SetValue(normal,65);
+        object[] normalArgs={normal,false};call("OnKeyPress",normalArgs);
+        Check((bool)normalArgs[1]&&injections==1,"ordinary explicit enable retains remapping through controlled output");
+    }
+
+    static void NativeSnapshot(string path)
+    {
+        var bytes=File.ReadAllBytes(path);
+        var s=HardcoreModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),
+            BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));
+        Check(s!=null&&s.Requested&&s.RulesSupported&&s.RulesVersion==3,"current native host snapshot accepted by actual timer consumer");
+        var run=new HardcoreRunEvidence();run.Observe(s,false);
+        Check(run.CaptureDisplay().Visible,"actual native waiting snapshot has a hardcore display");
     }
 
     static void TransportAndConfirmation()
@@ -306,9 +407,10 @@ internal static class HardcoreBehavior
         }
     }
     [STAThread]
-    static int Main()
+    static int Main(string[] args)
     {
-        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();TransportAndConfirmation();Runs();Guard();Cores();
+        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();
+            if(args.Length==1)NativeSnapshot(args[0]);
             foreach(string operation in new[]{"export","reset","finish","import"})ConcurrentBoundary(operation);Display();
             Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}
         catch(Exception e){Console.WriteLine(e);return 1;}

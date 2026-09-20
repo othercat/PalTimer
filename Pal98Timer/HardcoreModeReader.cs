@@ -22,6 +22,10 @@ namespace Pal98Timer
         internal readonly HardcoreKeyboardTransport KeyboardTransport;
         internal readonly string ConfigurationHash, BindingHash, DeviceName, ReasonText;
         internal bool Requested { get { return (Flags & 1) != 0; } }
+        // The wire contract and the gameplay rule revision are independent.
+        // Unknown rules still carry a request that must disable key changing,
+        // but cannot certify a run until this consumer supports those rules.
+        internal bool RulesSupported { get { return RulesVersion >= 1 && RulesVersion <= 3 && BlacklistVersion == 1; } }
 
         internal HardcoreSnapshot(byte[] bytes, string config, string binding, string name, string reason)
         {
@@ -49,6 +53,9 @@ namespace Pal98Timer
         {
             get
             {
+                if (Requested && !RulesSupported) return "硬核规则未支持，请更新计时器";
+                if (Reason == 12) return "硬核工具版本不合格";
+                if (Reason == 13) return "硬核正在检查工具版本";
                 switch (State)
                 {
                     case HardcoreState.Off: return "普通模式";
@@ -91,6 +98,18 @@ namespace Pal98Timer
         internal const uint LocalConfirmationProducerVersion = 0x01060701u;
         internal const string MappingPrefix = "Local\\PAL98.HardcoreMode.v1.";
 
+        internal static bool HasPublishedSnapshot(int pid)
+        {
+            try
+            {
+                using (MemoryMappedFile.OpenExisting(MappingPrefix + pid, MemoryMappedFileRights.Read)) return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            // A published but unreadable/incompatible state must not reopen remapping.
+            catch (IOException) { return true; }
+            catch (UnauthorizedAccessException) { return true; }
+        }
+
         public HardcoreSnapshot Read(Process process)
         {
             if (process == null) return null;
@@ -130,22 +149,24 @@ namespace Pal98Timer
                 BitConverter.ToUInt32(bytes, 0) != 0x31484350u || BitConverter.ToUInt16(bytes, 4) != 1 ||
                 BitConverter.ToUInt16(bytes, 6) != SnapshotSize || BitConverter.ToUInt32(bytes, 8) != (uint)pid ||
                 BitConverter.ToUInt32(bytes, 12) < 0x01060700u || BitConverter.ToInt64(bytes, 16) != creation ||
-                BitConverter.ToUInt32(bytes, 32) != 1 || BitConverter.ToUInt32(bytes, 36) != 1) return null;
+                BitConverter.ToUInt32(bytes, 32) == 0 || BitConverter.ToUInt32(bytes, 36) == 0) return null;
             for (int i = 714; i < SnapshotSize; ++i) if (bytes[i] != 0) return null;
             uint state = BitConverter.ToUInt32(bytes, 28), flags = BitConverter.ToUInt32(bytes, 40),
                 reason = BitConverter.ToUInt32(bytes, 44), disconnected = BitConverter.ToUInt32(bytes, 48),
                 reconnected = BitConverter.ToUInt32(bytes, 52), transport = BitConverter.ToUInt32(bytes, 68),
                 producer = BitConverter.ToUInt32(bytes, 12);
-            if (state > 5 || flags > 15 || reason > 11 || reconnected > disconnected ||
+            if (state > 5 || flags > 15 || reason > 13 || reconnected > disconnected ||
                 transport != 0 && transport != 2 ||
+                reason >= 12 && producer < 0x01060705u ||
                 (transport == 2 || reason == 11) && producer < LocalConfirmationProducerVersion) return null;
             bool validState = state == 0 ? flags == 0 && reason == 0 && disconnected == 0 && reconnected == 0 :
                 state == 1 ? ((flags == 3 || flags == 11) && reason == 7 && disconnected == 0 && reconnected == 0 ||
-                    (flags == 7 || flags == 15) && reason == 11) :
+                    (flags == 7 || flags == 15) && reason == 11 ||
+                    (flags == 3 || flags == 7 || flags == 11 || flags == 15) && reason == 13) :
                 state == 2 ? flags == 15 && reason == 0 :
                 state == 3 ? (flags == 3 || flags == 11) && reason == 7 && disconnected >= 1 :
                 state == 4 ? (flags == 1 || flags == 3 || flags == 9 || flags == 11) &&
-                    (reason >= 1 && reason <= 6 || reason == 9 || reason == 10) :
+                    (reason >= 1 && reason <= 6 || reason == 9 || reason == 10 || reason == 12) :
                 flags == 7 && reason == 8;
             if (!validState) return null;
             try
@@ -153,7 +174,7 @@ namespace Pal98Timer
                 string config = ReadText(bytes, 72, 65), binding = ReadText(bytes, 137, 65),
                     name = ReadText(bytes, 202, 256), text = ReadText(bytes, 458, 256);
                 ushort vid = BitConverter.ToUInt16(bytes, 64), product = BitConverter.ToUInt16(bytes, 66);
-                if (transport == 2 && (vid != 0 || product != 0) || reason == 11 && text.Length == 0) return null;
+                if (transport == 2 && (vid != 0 || product != 0) || reason >= 11 && text.Length == 0) return null;
                 if (state == 0)
                 {
                     if (config.Length != 0 || binding.Length != 0 || name.Length != 0 || vid != 0 || product != 0)

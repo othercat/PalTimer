@@ -29,6 +29,7 @@ namespace KeyChanger
                 switch (m.WParam.ToInt32())
                 {
                     case TSTAT:
+                        RefreshHardcoreProtection();
                         m.Result = (IntPtr)(kc.IsEnable ? 1 : 0);
                         break;
                     case TEDIT:
@@ -38,7 +39,7 @@ namespace KeyChanger
                         Exit();
                         break;
                     case TENABLE:
-                        kc.IsEnable = true;
+                        kc.IsEnable = !RefreshHardcoreProtection();
                         ShowKCEnable();
                         break;
                     case TDISABLE:
@@ -46,7 +47,7 @@ namespace KeyChanger
                         ShowKCEnable();
                         break;
                     case TBLOCKCTRLENTER:
-                        bool val = (dt == 1);
+                        bool val = (dt == 1) && !RefreshHardcoreProtection();
                         if (BlockCtrlEnter != val)
                         {
                             BlockCtrlEnter = val;
@@ -60,6 +61,16 @@ namespace KeyChanger
         private KeyboardLib _keyboardHook = null;
         private bool IsKeyInEdit = false;
         private KC kc = new KC("");
+        private Func<bool> readHardcoreRequested = new Pal98Timer.HardcoreRequestedProcesses().Read;
+        private Action<int, int> injectKey = (value, flags) => KeyboardLib.keybd_event(value, KeyboardLib.MapVirtualKey((uint)value, 0), flags, 0);
+        private bool RefreshHardcoreProtection()
+        {
+            if (!readHardcoreRequested()) return false;
+            kc.IsEnable = false;
+            BlockCtrlEnter = OnCtrlDown = OnCtrlDown2 = false;
+            Array.Clear(KeyStat, 0, KeyStat.Length);
+            return true;
+        }
         public int CurrentKeyCode = -1;
         public bool BlockCtrlEnter = false;
         public bool OnCtrlDown = false;
@@ -115,6 +126,7 @@ namespace KeyChanger
             }
             catch
             { }
+            RefreshHardcoreProtection();
         }
         private Thread thdp = null;
         private Image bg = null;
@@ -260,6 +272,9 @@ namespace KeyChanger
         public void OnKeyPress(KeyboardLib.HookStruct hookStruct, out bool handle)
         {
             handle = false; //预设不拦截任何键 
+            // Recheck at the actual swallow/injection boundary, including a
+            // helper opened independently or an old settings dialog just saved.
+            if (RefreshHardcoreProtection()) return;
             int flag = 0;
             if (hookStruct.flags >= 128)
             {
@@ -291,7 +306,7 @@ namespace KeyChanger
                             Pull(c, v);
                         }
                         handle = true;
-                        KeyboardLib.keybd_event(v, KeyboardLib.MapVirtualKey((uint)v, 0), flag, 0);
+                        injectKey(v, flag);
                     }
                     else
                     {
@@ -367,6 +382,7 @@ namespace KeyChanger
 
         private void OpenSetting()
         {
+            if (RefreshHardcoreProtection()) { ShowKCEnable(); ShowBCEEnable(); return; }
             if (!IsKeyInEdit)
             {
                 IsKeyInEdit = true;
@@ -437,18 +453,19 @@ namespace KeyChanger
 
         private void btnEnable_Click(object sender, EventArgs e)
         {
-            kc.IsEnable = !kc.IsEnable;
+            kc.IsEnable = !RefreshHardcoreProtection() && !kc.IsEnable;
             ShowKCEnable();
         }
 
         private void btnBlockCE_Click(object sender, EventArgs e)
         {
-            BlockCtrlEnter = !BlockCtrlEnter;
+            BlockCtrlEnter = !RefreshHardcoreProtection() && !BlockCtrlEnter;
             ShowBCEEnable();
         }
 
         private void tmMain_Tick(object sender, EventArgs e)
         {
+            if (RefreshHardcoreProtection()) { ShowKCEnable(); ShowBCEEnable(); }
             if(drawok)
             {
                 drawok = false;

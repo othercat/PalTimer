@@ -37,6 +37,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
+    <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
@@ -44,6 +45,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Pal98Timer\HardcoreModeReader.cs"><Link>HardcoreModeReader.cs</Link></Compile>
+    <Compile Include="..\Pal98Timer\HardcoreKeyChangerGuard.cs"><Link>HardcoreKeyChangerGuard.cs</Link></Compile>
     <Compile Include="KeyAddForm.cs">
       <SubType>Form</SubType>
     </Compile>

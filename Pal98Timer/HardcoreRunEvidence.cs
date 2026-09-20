@@ -49,10 +49,11 @@ namespace Pal98Timer
                 {
                     started = true;
                     // First confirmation after timing began cannot certify the earlier portion.
-                    if (snapshot != null && snapshot.State == HardcoreState.Active &&
+                    if (snapshot != null && snapshot.RulesSupported && snapshot.State == HardcoreState.Active &&
                         previous != null && previous.SameRun(snapshot) && previous.State == HardcoreState.Active)
                         identity = snapshot;
-                    else { invalid = true; error = "跑次开始时缺少连续硬核生效证据"; }
+                    else { invalid = true; error = snapshot != null && snapshot.Requested && !snapshot.RulesSupported ?
+                        "硬核规则版本不受支持，请更新计时器" : "跑次开始时缺少连续硬核生效证据"; }
                 }
                 if (started && identity != null)
                 {

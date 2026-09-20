@@ -1,4 +1,4 @@
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [string]$NativeSnapshotFile)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo ('artifacts\hardcore-behavior-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
@@ -28,14 +28,19 @@ $exe = Join-Path $out 'HardcoreBehavior.exe'
 if ($LASTEXITCODE -ne 0) { throw "Hardcore host compilation failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($exe + '.config')
+Copy-Item -LiteralPath (Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe') -Destination $out
+$hostArgs = @()
+if ($NativeSnapshotFile) { $hostArgs += (Resolve-Path -LiteralPath $NativeSnapshotFile).Path }
 Push-Location -LiteralPath $out
-try { & $exe 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.log'); $result = $LASTEXITCODE }
+try { & $exe @hostArgs 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.log'); $result = $LASTEXITCODE }
 finally { Pop-Location }
 $receipt = [ordered]@{
     schema='PalTimer.HardcoreBehavior.v1'; timestamp=(Get-Date).ToString('o'); hostExitCode=$result;
     repository=$repo; head=(& git -C $repo rev-parse HEAD); realGameUsed=$false; networkUsed=$false; visibleGuiUsed=$false;
     testHostSha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash;
     releaseExeSha256=(Get-FileHash -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Algorithm SHA256).Hash;
+    keyChangerSha256=(Get-FileHash -LiteralPath (Join-Path $out 'KeyChanger.exe') -Algorithm SHA256).Hash;
+    nativeSnapshotSha256=$(if ($NativeSnapshotFile) { (Get-FileHash -LiteralPath $NativeSnapshotFile).Hash } else { $null });
     sourceHashes=@($sources | ForEach-Object { [ordered]@{path=$_; sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash} });
     results=(Join-Path $out 'result.log'); renderMain=(Join-Path $out 'hardcore-main.png'); renderObs=(Join-Path $out 'hardcore-obs.png')
 }

@@ -61,13 +61,16 @@ namespace Pal98Timer
     internal sealed class HardcoreRequestedProcesses
     {
         private readonly HardcoreModeReader reader = new HardcoreModeReader();
+        private readonly Func<Process[]> enumerate;
         private readonly Dictionary<int, long> requested = new Dictionary<int, long>();
+        internal HardcoreRequestedProcesses(Func<Process[]> enumerate = null)
+        { this.enumerate = enumerate ?? (() => Process.GetProcessesByName("Pal")); }
         internal bool Read()
         {
             var retained = new Dictionary<int, long>();
             try
             {
-                foreach (Process process in Process.GetProcessesByName("Pal"))
+                foreach (Process process in enumerate())
                 {
                     using (process)
                     {
@@ -79,7 +82,8 @@ namespace Pal98Timer
                             if (process.HasExited) continue;
                             long creation = process.StartTime.ToUniversalTime().ToFileTimeUtc();
                             HardcoreSnapshot snapshot = reader.Read(process);
-                            if (snapshot != null ? snapshot.Requested : known && previousCreation == creation)
+                            if (snapshot != null ? snapshot.Requested :
+                                known && previousCreation == creation || HardcoreModeReader.HasPublishedSnapshot(pid))
                                 retained[pid] = creation;
                         }
                         catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
