@@ -6,13 +6,12 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
-using PalCloudLib;
 
 namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.3";
+        public const string CurrentVersion = "3.37.4";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -36,7 +35,11 @@ namespace Pal98Timer
         private GRender.GBtn btnCloud;
         private ContextMenuStrip cmCloud;
         private ToolStripMenuItem btnCloudInit;
-        private PCloud cloud;
+        private CloudSession cloud;
+        private CloudSessionRunner cloudRunner;
+        private TimerCore cloudBoundCore;
+        private long cloudBoundRun;
+        private ToolStripMenuItem cloudStatusItem;
         private KeyboardLib _keyboardHook = null;
         private Keys ActiveCustomHotkey = Keys.None;
         private int locx = 0;
@@ -99,6 +102,8 @@ namespace Pal98Timer
             btnCloudInit.Text = "重新验证";
             btnCloudInit.Enabled = false;
             cmCloud.Items.Add(btnCloudInit);
+            cloudStatusItem = new ToolStripMenuItem("等待游戏身份") { Enabled = false };
+            cmCloud.Items.Add(cloudStatusItem);
 
             btnPause = rr.AddBtn("暂停", delegate (int x, int y, GRender.GBtn btn) { UIPause(); }, 9);
             btnReset = rr.AddBtn("重置", delegate (int x, int y, GRender.GBtn btn) { btnReset_Click(null, null); }, 10);
@@ -173,159 +178,74 @@ namespace Pal98Timer
 
         private void InitCloud(bool showValidationError = true)
         {
-            if (core == null || !string.IsNullOrEmpty(core.GetScoreValidationError()))
-            {
-                StopCloudWithInvalidScore(cloud);
-                if (showValidationError && core != null) Error(core.GetScoreValidationError());
-                return;
-            }
-            if (cloud != null)
-            {
-                cloud.Stop();
-            }
-            cloud = new PCloud(this.core.CoreName, delegate (int cid)
-            {
-                if (cid < 0)
-                {
-                    switch (cid)
-                    {
-                        case -2:
-                            btnCloud.Text = "正在初始化";
-                            UISetBtnCloudInitEnable(false);
-                            UI(delegate () {
-                                try
-                                {
-                                    core?.OnCloudPending();
-                                }
-                                catch { }
-                            });
-                            break;
-                        case -3:
-                            btnCloud.Text = "云";
-                            UISetBtnCloudInitEnable(true);
-                            UI(delegate () {
-                                try
-                                {
-                                    core?.OnCloudFail();
-                                }
-                                catch { }
-                                //Error(cloud.LastError);
-                            });
-                            break;
-                        default:
-                            btnCloud.Text = "云";
-                            UISetBtnCloudInitEnable(true);
-                            UI(delegate () {
-                                try
-                                {
-                                    core?.OnCloudFail();
-                                }
-                                catch { }
-                            });
-                            break;
-                    }
-                }
-                else
-                {
-                    btnCloud.Text = "云ID:" + cid;
-                    UISetBtnCloudInitEnable(false);
-                    UI(delegate () {
-                        try
-                        {
-                            core?.OnCloudOK();
-                        }
-                        catch { }
-                    });
-                }
-            });
-            PCloud boundCloud = cloud;
+            if (cloudRunner == null) cloudRunner = new CloudSessionRunner(name => new LegacyCloudStepClient(name));
+            if (core == null) { StopCloudWithInvalidScore(cloud); return; }
             TimerCore boundCore = core;
             long boundRun = boundCore.ScoreRunSequence;
-            cloud.OnCloudTickBefore = delegate (int NextDo)
-            {
-                if (!ReferenceEquals(core, boundCore) ||
-                    boundRun != boundCore.ScoreRunSequence ||
-                    !string.IsNullOrEmpty(boundCore.GetScoreValidationError()))
-                {
-                    StopCloudWithInvalidScore(boundCloud);
-                    return;
-                }
-                try
-                {
-                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
-                {
-                    boundCloud.PutPluginData("BL", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL));
-                }
-
-                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
-                {
-                    boundCloud.PutPluginData("BR", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR));
-                }
-
-                if (boundCore.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title))
-                {
-                    boundCloud.PutPluginData("Title", boundCore.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title));
-                }
-
-
-                boundCloud.PutIsC(rr.IsC);
-
-                switch (NextDo)
-                {
-                    case 0:
-                        if (!boundCore.CustomCloudLiteData())
-                        {
-                            boundCloud.PutLiteData(boundCore.ForCloudLiteData());
-                        }
-                        break;
-                    case 1:
-                        if (!boundCore.CustomCloudBigData())
-                        {
-                            boundCloud.PutBigData(boundCore.ForCloudBigData());
-                        }
-                        break;
-                    case 2:
-                        if (!boundCore.CustomCloudBigData())
-                        {
-                            boundCloud.PutBigData(boundCore.ForCloudBigData());
-                        }
-                        if (!boundCore.CustomCloudLiteData())
-                        {
-                            boundCloud.PutLiteData(boundCore.ForCloudLiteData());
-                        }
-                        break;
-                }
-                }
-                finally
-                {
-                    if (!ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence ||
-                        !string.IsNullOrEmpty(boundCore.GetScoreValidationError()))
-                        StopCloudWithInvalidScore(boundCloud);
-                }
-            };
-            cloud.Start();
+            string validation = boundCore.GetScoreValidationError();
+            if (showValidationError && !string.IsNullOrEmpty(validation)) Error(validation);
+            cloudBoundCore = boundCore;
+            cloudBoundRun = boundRun;
+            btnCloud.Text = "等待云验证";
+            cloudStatusItem.Text = string.IsNullOrEmpty(validation) ? "等待云初始化" : validation;
+            btnCloudInit.Enabled = true;
+            cloud = cloudRunner.Start(boundCore.CoreName,
+                () => ReferenceEquals(core, boundCore) && boundRun == boundCore.ScoreRunSequence &&
+                    string.IsNullOrEmpty(boundCore.GetScoreValidationError()),
+                nextDo => CaptureCloudPayload(boundCore, boundRun, nextDo),
+                (session, status) => SyncContext.Post(delegate(object ignored) {
+                    if (IsDisposed || !ReferenceEquals(cloud, session) || session.Cancelled ||
+                        !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence) return;
+                    btnCloud.Text = status.State == "online" ? "云ID:" + status.Id :
+                        status.State == "pending" ? "正在初始化" : status.State == "waiting" ? "等待云验证" :
+                        status.State == "retry" ? "云重试中" : "云验证失败";
+                    cloudStatusItem.Text = status.State == "online" ? "云连接正常" : status.Message;
+                    cloudStatusItem.ToolTipText = status.Message;
+                    btnCloudInit.Enabled = status.State == "failed" || status.State == "waiting";
+                    try {
+                        if (status.State == "online") boundCore.OnCloudOK();
+                        else if (status.State == "pending" || status.State == "waiting") boundCore.OnCloudPending();
+                        else boundCore.OnCloudFail();
+                    } catch { }
+                }, null));
         }
-        private void StopCloudWithInvalidScore(PCloud instance)
+
+        private CloudPayload CaptureCloudPayload(TimerCore boundCore, long boundRun, int nextDo)
         {
-            // PCloud.Stop is asynchronous and Before exceptions are swallowed.
-            // Clear cached scores before stopping; the last in-flight iteration
-            // may still send an empty payload, never a cached valid-looking score.
-            if (instance != null)
-            {
-                instance.PutLiteData("");
-                instance.PutBigData("");
-                instance.Stop();
-            }
-            if (ReferenceEquals(cloud, instance))
-            {
-                cloud = null;
-                UI(delegate {
-                    btnCloud.Text = "云";
-                    UISetBtnCloudInitEnable(true);
-                });
-            }
+            CloudPayload payload = null;
+            Exception error = null;
+            // Capture on the UI thread, so reset/core selection cannot split one
+            // payload. No UI thread is held while performing a network request.
+            SyncContext.Send(delegate(object ignored) {
+                if (IsDisposed || !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence ||
+                    !string.IsNullOrEmpty(boundCore.GetScoreValidationError())) return;
+                try {
+                    payload = new CloudPayload { IsC = rr.IsC };
+                    foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
+                        TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
+                        if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = boundCore.GetPluginResult(position);
+                    if ((nextDo == 0 || nextDo == 2) && !boundCore.CustomCloudLiteData())
+                        payload.Lite = boundCore.ForCloudLiteData();
+                    if ((nextDo == 1 || nextDo == 2) && !boundCore.CustomCloudBigData())
+                        payload.Big = boundCore.ForCloudBigData();
+                } catch (Exception ex) { error = ex; }
+            }, null);
+            if (error != null) throw error;
+            return payload;
         }
 
+        private void StopCloudWithInvalidScore(CloudSession instance)
+        {
+            cloudRunner?.Stop(instance);
+            if (!ReferenceEquals(cloud, instance)) return;
+            cloud = null;
+            SyncContext.Post(delegate(object ignored) {
+                if (IsDisposed || cloud != null) return;
+                btnCloud.Text = "等待云验证";
+                btnCloudInit.Enabled = true;
+                cloudStatusItem.Text = "等待有效游戏身份";
+            }, null);
+        }
         public int CloudID()
         {
             if (cloud == null) return int.MinValue;
@@ -357,13 +277,13 @@ namespace Pal98Timer
         {
             core.EnsureScoreValid();
             if (cloud == null || cloud.CloudID < 0) throw new Exception("版本不匹配");
-            cloud.OUpload(LocalFileName, RemoteFileName);
+            cloudRunner.TransferFile(cloud, true, LocalFileName, RemoteFileName);
         }
 
         public void ODownload(string RemoteFileName, string LocalFileName)
         {
             if (cloud == null || cloud.CloudID < 0) throw new Exception("版本不匹配");
-            cloud.ODownload(RemoteFileName, LocalFileName);
+            cloudRunner.TransferFile(cloud, false, LocalFileName, RemoteFileName);
         }
 
         private int HandPauseCount = 0;
@@ -728,6 +648,13 @@ namespace Pal98Timer
                     handle = core.NeedBlockFunctionKey(10);
                     break;
                 case Keys.F11:
+                    if (KeyChangerDel.IsHardcoreBlocked)
+                    {
+                        KeyChangerDel.RefreshHardcoreProtection();
+                        ShowKCEnable();
+                        handle = true;
+                        break;
+                    }
                     if (hookStruct.flags >= 128)
                     {
                         if (KeyChangerDel.IsEnable())
@@ -738,14 +665,15 @@ namespace Pal98Timer
                         }
                         else
                         {
+                            long keyChangerRequest = KeyChangerDel.BeginEnableRequest();
                             Run(delegate() {
-                                KeyChangerDel.Open();
+                                KeyChangerDel.Open(keyChangerRequest);
                                 // Wait for the KeyChanger window to be ready (up to 3 seconds)
-                                for (int i = 0; i < 30 && !KeyChangerDel.IsWindowOpen(); i++)
+                                for (int i = 0; i < 30 && KeyChangerDel.IsEnableRequestCurrent(keyChangerRequest) && !KeyChangerDel.IsWindowOpen(); i++)
                                 {
                                     System.Threading.Thread.Sleep(100);
                                 }
-                                KeyChangerDel.Enable();
+                                KeyChangerDel.Enable(keyChangerRequest);
                                 UI(delegate() { ShowKCEnable(); });
                             });
                         }
@@ -771,6 +699,9 @@ namespace Pal98Timer
         }
         private void ShowKCEnable()
         {
+            bool blocked = KeyChangerDel.IsHardcoreBlocked;
+            btnKeyChange.Enabled = !blocked;
+            btnKeyChange.ToolTipText = blocked ? "已请求硬核模式，改键器不可开启或编辑" : "";
             /*if (kc != null && kc.IsEnable)
             {
                 btnData.Orange();
@@ -779,7 +710,7 @@ namespace Pal98Timer
             {
                 btnData.White();
             }*/
-            if (KeyChangerDel.IsEnable())
+            if (!blocked && KeyChangerDel.IsEnable())
             {
                 btnData.Orange();
             }
@@ -791,6 +722,7 @@ namespace Pal98Timer
 
         private void GForm_FormClosed(object sender, FormClosedEventArgs e)
         {
+            cloudRunner?.Dispose();
             _keyboardHook.UninstallHook();
             KeyChangerDel.Close();
             Environment.Exit(0);
@@ -858,20 +790,20 @@ namespace Pal98Timer
             { StopCloudWithInvalidScore(cloud); return; }
             try
             {
-                cloud?.FinishOne();
-            }
-            catch { }
-            try
-            {
-                InitCloud();
+                cloudRunner?.FinishOne(cloud);
             }
             catch { }
         }
 
         private void tmMain_Tick(object sender, EventArgs e)
         {
+            KeyChangerDel.RefreshHardcoreProtection();
+            KeyChangerDel.TryAutoOpen();
+            ShowKCEnable();
             if (core != null)
             {
+                if (cloud == null || !ReferenceEquals(cloudBoundCore, core) || cloudBoundRun != core.ScoreRunSequence)
+                    InitCloud(false);
                 /*if (core.CurrentStep >= 0 && core.CurrentStep < core.CheckPoints.Count)
                 {
                     core.CheckPoints[core.CurrentStep].Current = core.GetMainWatch();
@@ -890,6 +822,8 @@ namespace Pal98Timer
                     }
                 }
                 rr.SetGameVersion(core.GetGameVersion());
+                var dx9Core = core as 仙剑98柔情DX9;
+                rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());
                 rr.SetWillClear(core.GetPointEnd());
                 rr.SetPointSpan(core.GetPointSpan());
                 rr.SetSubTimer(core.GetSmallWatch());
@@ -929,7 +863,7 @@ namespace Pal98Timer
                 rr.IsInCheck = false;
                 try
                 {
-                    cloud?.PutIsC(false);
+                    StopCloudWithInvalidScore(cloud);
                 }
                 catch { }
             }
@@ -965,6 +899,8 @@ namespace Pal98Timer
         
         private void btnKeyChange_Click(object sender, EventArgs e)
         {
+            if (KeyChangerDel.IsHardcoreBlocked) { ShowKCEnable(); return; }
+            long keyChangerRequest = KeyChangerDel.BeginEnableRequest();
             /*IsKeyInEdit = true;
             KeysForm kf = new KeysForm(this);
             kf.ShowDialog(this);
@@ -972,6 +908,7 @@ namespace Pal98Timer
             ShowKCEnable();
             IsKeyInEdit = false;*/
             Run(delegate () {
+                if (!KeyChangerDel.IsEnableRequestCurrent(keyChangerRequest)) return;
                 string ps = this.DesktopBounds.X + "," + this.DesktopBounds.Y + "," + this.DesktopBounds.Width + "," + this.DesktopBounds.Height;
                 using (FileStream fs = new FileStream("trect",FileMode.Create,FileAccess.ReadWrite))
                 {
@@ -980,7 +917,7 @@ namespace Pal98Timer
                         sw.Write(ps);
                     }
                 }
-                KeyChangerDel.Edit();
+                KeyChangerDel.Edit(keyChangerRequest);
                 UI(delegate () {
                     ShowKCEnable();
                 });
@@ -1097,6 +1034,7 @@ namespace Pal98Timer
                 }
                 BestEditForm bef = new BestEditForm(core.CoreName);
                 bef.ShowDialog(this);
+                if (bef.Saved) core.RefreshBestReference();
             }
             else
             {

@@ -34,7 +34,15 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private PalLiveProcessIdentity attachedProcessIdentity;
+        private PalLiveProcessIdentity rejectedProfileIdentity;
+        // Keep the successfully attached installation across P/exit/restart.
+        // Another directory's PAL.exe is a bystander, never the replacement.
+        private string attachedExecutablePath;
         private readonly TimingModeReader paletteFadeMode = new TimingModeReader();
+        private readonly IHardcoreModeReader hardcoreReader = new HardcoreModeReader();
+        private readonly HardcoreRunEvidence hardcoreRun = new HardcoreRunEvidence();
+        private readonly object hardcoreObservationSync = new object();
         private RuntimeTimingMode lastConfirmedTimingMode;
         private string lastConfirmedTournamentDisplayName = "";
         private RuntimeTimingMode runTimingMode;
@@ -473,6 +481,16 @@ namespace Pal98Timer
 
         public override string GetGameVersion()
         {
+            return GetTimingGameVersion();
+        }
+
+        internal HardcoreDisplaySnapshot GetHardcoreDisplay()
+        {
+            return TimingModeMs == 0 ? HardcoreDisplaySnapshot.Empty : hardcoreRun.CaptureDisplay();
+        }
+
+        private string GetTimingGameVersion()
+        {
             if (timingRunInvalidated) return GetScoreValidationError();
             if (PID != -1)
             {
@@ -580,12 +598,18 @@ namespace Pal98Timer
 
         public override void Reset()
         {
+            lock (hardcoreObservationSync) ResetCoreState();
+        }
+
+        private void ResetCoreState()
+        {
             base.Reset();
             lastConfirmedTimingMode = null;
             lastConfirmedTournamentDisplayName = "";
             runTimingMode = null;
             timingRunInvalidated = false;
             importedUnverifiedTiming = false;
+            hardcoreRun.Reset();
             MoveSpeed = 0;
             HasAlertMutiPal = false;
             HasUnCheated = false;
@@ -1002,6 +1026,11 @@ namespace Pal98Timer
 
         public void SetTimerFromString(string json)
         {
+            lock (hardcoreObservationSync) SetTimerFromStringCore(json);
+        }
+
+        private void SetTimerFromStringCore(string json)
+        {
             ValidateTimerImport(json);
             HObj ho = new HObj(json);
             if (TimingModeMs != 0 && GetPalHandle()) ValidateScoreForSave();
@@ -1009,6 +1038,7 @@ namespace Pal98Timer
                 !ho.HasValue("TimingRulesVerified") || !ho.GetValue<bool>("TimingRulesVerified");
             runTimingMode = RecordedTimingMode;
             AdvanceScoreRunSequence();
+            hardcoreRun.ImportUnverified();
             try
             {
                 MaxFC = ho.GetValue<short>("BeeHouse");
@@ -1644,6 +1674,7 @@ namespace Pal98Timer
             bool paused = antiCheatPaused || IsPause || IsUIPause || timingError.Length != 0;
             string state = antiCheatPaused ? "反作弊暂停" : (paused ? "已暂停" : "");
             if (timingError.Length != 0) state = timingError;
+            HardcoreDisplaySnapshot hardcore = GetHardcoreDisplay();
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),
@@ -1658,7 +1689,9 @@ namespace Pal98Timer
                 state,
                 antiCheatPaused,
                 paused,
-                Dx9TimingCategory.ModeLabel(RecordedTimingMode));
+                Dx9TimingCategory.ModeLabel(RecordedTimingMode),
+                hardcore.Status,
+                hardcore.Device);
         }
 
         private string GetDx9OverlayFontFamily()
@@ -1735,6 +1768,7 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
+                ObserveHardcoreRuntime(PalProcess);
                 RuntimeTimingMode actualMode = paletteFadeMode.Read(PalProcess);
                 if (GetScoreValidationError().Length != 0)
                 {
@@ -1798,6 +1832,7 @@ namespace Pal98Timer
 
                 if (HasStartGame())
                 {
+                    ObserveHardcoreRuntime(PalProcess, true);
                     ST.Stop();
                     if (!_IsFirstStarted)
                     {
@@ -1833,6 +1868,7 @@ namespace Pal98Timer
             }
             else
             {
+                ObserveHardcoreRuntime(null);
                 _HasGameStart = false;
                 MT.Stop();
 
@@ -1843,6 +1879,28 @@ namespace Pal98Timer
             }
 
             PreData();
+        }
+
+        private void ObserveHardcoreRuntime(Process process, bool beginning = false)
+        {
+            if (TimingModeMs == 0) return;
+            // Sampling and submission are one operation. A cloud/export read
+            // must not submit an older frame after the timer thread's new one.
+            lock (hardcoreObservationSync)
+                hardcoreRun.Observe(hardcoreReader.Read(process), beginning || _IsFirstStarted || MT.CurrentTS.Ticks > 0);
+        }
+
+        protected override void OnCheckPointEnd()
+        {
+            if (TimingModeMs != 0)
+            {
+                lock (hardcoreObservationSync)
+                {
+                    ObserveHardcoreRuntime(PalProcess);
+                    hardcoreRun.Complete();
+                }
+            }
+            base.OnCheckPointEnd();
         }
 
         private void PreData()
@@ -1868,18 +1926,24 @@ namespace Pal98Timer
 
         private bool GetPalHandle()
         {
-            Process[] res = Process.GetProcessesByName("Pal");
-
-            // 过滤已退出的进程
-            var aliveProcesses = res.Where(p => {
-                try { return !p.HasExited; }
-                catch { return true; }
-            }).ToArray();
+            Process[] enumerated = Process.GetProcessesByName("Pal");
+            try
+            {
+            var identities = new Dictionary<int, PalLiveProcessIdentity>();
+            foreach (Process process in enumerated)
+            {
+                PalLiveProcessIdentity identity = PalLiveProcessIdentity.Read(process);
+                if (identity != null && (attachedExecutablePath == null || identity.SamePath(attachedExecutablePath)))
+                    identities[process.Id] = identity;
+            }
+            var aliveProcesses = enumerated.Where(process => identities.ContainsKey(process.Id)).ToArray();
+            Process[] res;
             LastPalProcessCount = aliveProcesses.Length;
 
             // 游戏关闭后的静默等待期
             if (_GameWasRunning && aliveProcesses.Length == 0)
             {
+                ClearGameState();
                 RecordAttachProbe("game_closed_silent_wait");
                 // 游戏曾经运行过但现在没有进程，进入静默等待
                 if (_GameClosedTime == DateTime.MinValue)
@@ -2060,8 +2124,8 @@ namespace Pal98Timer
                         }
                         
                         // A selected profile cannot be hot-swapped into a running PAL.exe.
-                        // Cache a rejection by PID so an invalid profile does not cause 70ms file/hash polling.
-                        if (LastRejectedProfileProcessId == res[0].Id)
+                        // Cache only this kernel process instance; PID reuse must revalidate.
+                        if (rejectedProfileIdentity != null && rejectedProfileIdentity.SameInstance(identities[res[0].Id]))
                         {
                             RecordAttachProbe("profile_rejected_cached", res[0]);
                             return false;
@@ -2071,24 +2135,35 @@ namespace Pal98Timer
                         if (!TryValidateAttachedGameProfile(res[0], out profileError))
                         {
                             RecordAttachProbe("profile_rejected", res[0]);
-                            if (LastRejectedProfileProcessId != res[0].Id ||
+                            if (rejectedProfileIdentity == null || !rejectedProfileIdentity.SameInstance(identities[res[0].Id]) ||
                                 !string.Equals(LastRejectedProfileMessage, profileError, StringComparison.Ordinal))
                             {
                                 cryerror = profileError;
                                 LastRejectedProfileProcessId = res[0].Id;
                                 LastRejectedProfileMessage = profileError;
                             }
+                            rejectedProfileIdentity = identities[res[0].Id];
                             return false;
                         }
 
                         LastRejectedProfileProcessId = -1;
+                        rejectedProfileIdentity = null;
                         LastRejectedProfileMessage = "";
                         if (!TryOpenPalProcess(res[0]))
                         {
                             return false;
                         }
 
+                        var openedIdentity = PalLiveProcessIdentity.ReadHandle(PalHandle, res[0].Id);
+                        if (!identities[res[0].Id].SameInstance(openedIdentity))
+                        {
+                            ClearGameState();
+                            return false;
+                        }
+
                         PalProcess = res[0];
+                        attachedProcessIdentity = openedIdentity;
+                        attachedExecutablePath = openedIdentity.ExecutablePath;
                         TournamentDisplayName = TournamentLockInfoReader
                             .LoadForProcessExecutable(PalProcess.MainModule.FileName)
                             .CompetitionDisplayName;
@@ -2163,7 +2238,9 @@ namespace Pal98Timer
                 }
                 else
                 {
-                    if (PID == res[0].Id)
+                    if (PID == res[0].Id && attachedProcessIdentity != null &&
+                        attachedProcessIdentity.SameInstance(identities[res[0].Id]) &&
+                        attachedProcessIdentity.SameInstance(PalLiveProcessIdentity.ReadHandle(PalHandle, PID)))
                     {
                         // 检查进程是否真的还在运行
                         try
@@ -2181,7 +2258,8 @@ namespace Pal98Timer
                         }
                         catch
                         {
-                            // 无法检查进程状态，可能是权限问题
+                            ClearGameState();
+                            return false;
                         }
 
                         // 已连接到游戏，但如果还没确认DX9，继续检查标题
@@ -2252,6 +2330,12 @@ namespace Pal98Timer
                 }
                 ClearGameState();
                 return false;
+            }
+            }
+            finally
+            {
+                foreach (Process process in enumerated)
+                    if (!ReferenceEquals(process, PalProcess)) process.Dispose();
             }
         }
 
@@ -2409,7 +2493,12 @@ namespace Pal98Timer
         private void ClearGameState()
         {
             WaterSpiritPearlSplit.Detach();
+            PalLiveProcessIdentity.Close(PalHandle);
             PalHandle = IntPtr.Zero;
+            attachedProcessIdentity = null;
+            rejectedProfileIdentity = null;
+            LastRejectedProfileProcessId = -1;
+            LastRejectedProfileMessage = "";
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
             TournamentDisplayName = string.Empty;
@@ -2742,6 +2831,14 @@ namespace Pal98Timer
             exdata["LeaderboardCategory"] = timing != null && timing.OfficialSpeedrun
                 ? Dx9TimingCategory.LeaderboardName(CoreName) : "";
             exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
+            if (TimingModeMs != 0)
+            {
+                lock (hardcoreObservationSync)
+                {
+                    ObserveHardcoreRuntime(PalProcess);
+                    hardcoreRun.Fill(exdata);
+                }
+            }
 
             string namedbattles = "";
             foreach (string nmb in NamedBattleRes)

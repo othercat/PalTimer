@@ -51,6 +51,8 @@ namespace Pal98Timer
         public readonly Dx9OverlayTimelineEntry TimelineThird;
         public readonly string State;
         public readonly string TimingModeLabel;
+        public readonly string HardcoreStatus;
+        public readonly string HardcoreDevice;
         public readonly bool IsAntiCheatPaused;
         public readonly bool IsPaused;
 
@@ -68,7 +70,9 @@ namespace Pal98Timer
             string state,
             bool isAntiCheatPaused,
             bool isPaused,
-            string timingModeLabel = "")
+            string timingModeLabel = "",
+            string hardcoreStatus = "",
+            string hardcoreDevice = "")
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -82,6 +86,8 @@ namespace Pal98Timer
             TimelineThird = timelineThird;
             State = state ?? "";
             TimingModeLabel = timingModeLabel ?? "";
+            HardcoreStatus = hardcoreStatus ?? "";
+            HardcoreDevice = hardcoreDevice ?? "";
             IsAntiCheatPaused = isAntiCheatPaused;
             IsPaused = isPaused;
         }
@@ -697,6 +703,16 @@ namespace Pal98Timer
                 row = new RectangleF(margin, y, contentWidth, infoHeight);
                 DrawOutlinedText(e.Graphics, snapshot.TimingModeLabel, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
 
+                if (snapshot.HardcoreStatus.Length != 0)
+                {
+                    y += infoHeight + rowGap;
+                    row = new RectangleF(margin, y, contentWidth, infoHeight);
+                    DrawOutlinedText(e.Graphics, snapshot.HardcoreStatus, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
+                    y += infoHeight + rowGap;
+                    row = new RectangleF(margin, y, contentWidth, infoHeight);
+                    DrawOutlinedText(e.Graphics, snapshot.HardcoreDevice, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
+                }
+
                 if (EditMode)
                 {
                     using (StringFormat leftFormat = new StringFormat())
@@ -1067,6 +1083,7 @@ namespace Pal98Timer
             float timerHeight = GetTimerHeightLogicalPixels();
             float infoHeight = GetInfoHeightLogicalPixels();
             float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 5.0F * (infoHeight + 2.0F) + 9.0F;
+            if (CurrentSnapshot != null && CurrentSnapshot.HardcoreStatus.Length != 0) contentHeight += 2.0F * (infoHeight + 2.0F);
             return contentHeight + (EditMode ? EditHeaderLogicalPixels : 0.0F);
         }
 

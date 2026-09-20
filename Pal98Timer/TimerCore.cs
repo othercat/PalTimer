@@ -367,29 +367,16 @@ namespace Pal98Timer
 
         protected void SaveBest(string str)
         {
-            EnsureScoreValid();
-            DateTime now = DateTime.Now;
-            string filename = GetScoreSavePath(now);
-            string snow= now.ToString("yyyyMMddHHmmss");
             try
             {
-                if (File.Exists(filename))
-                {
-                    File.Move(filename, "best" + CoreName + snow + ".txt");
-                }
-                using (FileStream fileStream = new FileStream(filename, FileMode.Create))
-                {
-                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
-                    {
-                        streamWriter.Write(str);
-                        //streamWriter.Flush();
-                    }
-                }
-                if (form.Confirm("保存成功，确定要重置计时器么？"))
+                string filename = SaveBestValue(str);
+                bool active = IsActiveBestPath(filename);
+                string message = active ? "已保存并更新当前核心的最佳时间线。" :
+                    "已导出非速通成绩到 Records，未替换速通最佳时间线。";
+                if (form.Confirm(message + "\r\n" + Path.GetFullPath(filename) + "\r\n确定要重置计时器么？"))
                 {
                     form._ResetAll();
                 }
-                SendPluginsEvent("SaveBest", filename);
             }
             catch (Exception ex)
             {
@@ -400,23 +387,38 @@ namespace Pal98Timer
         public void SaveBest()
         {
             EnsureScoreValid();
-            DateTime now = DateTime.Now;
-            string filename = GetScoreSavePath(now);
-            string snow = now.ToString("yyyyMMddHHmmss");
+            SaveBestValue(GetRStr());
+        }
 
-            if (File.Exists(filename))
-            {
-                File.Move(filename, "best" + CoreName + snow + ".txt");
-            }
-            using (FileStream fileStream = new FileStream(filename, FileMode.Create))
-            {
-                using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
-                {
-                    streamWriter.Write(GetRStr());
-                    //streamWriter.Flush();
-                }
-            }
+        private bool IsActiveBestPath(string filename)
+        {
+            return string.Equals(Path.GetFullPath(filename),
+                Path.GetFullPath("best" + CoreName + ".txt"), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string SaveBestValue(string contents)
+        {
+            EnsureScoreValid();
+            string filename = GetScoreSavePath(DateTime.Now);
+            // Validate reference identity before replacing the active file.
+            if (IsActiveBestPath(filename)) ValidateBestReference(new HObj(contents));
+            BestTimelineStorage.Write(filename, contents);
+            if (IsActiveBestPath(filename)) RefreshBestReference();
             SendPluginsEvent("SaveBest", filename);
+            return filename;
+        }
+
+        public void RefreshBestReference()
+        {
+            // Update only reference fields. Never recreate checkpoints, jump,
+            // reset the run, or import score/runtime identity from the best line.
+            LoadBest();
+            if (Best == null || CheckPoints == null) return;
+            foreach (CheckPoint point in CheckPoints)
+            {
+                CheckPointNewer reference;
+                if (Best.TryGetValue(point.Name, out reference)) point.SetBestReference(reference);
+            }
         }
 
         // Reference editing must work offline and must never turn the current
@@ -439,9 +441,7 @@ namespace Pal98Timer
                 points.Add(item);
             }
             data["CheckPoints"] = points;
-            using (var stream = new FileStream(path, FileMode.CreateNew))
-            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
-                writer.Write(data.ToJson());
+            BestTimelineStorage.Write(path, data.ToJson(), false);
         }
         /// <summary>
         /// 导出当前成绩
@@ -1734,6 +1734,12 @@ namespace Pal98Timer
         public void SetUIItem(GRender.GItem i)
         {
             _uiItem = i;
+        }
+        internal void SetBestReference(CheckPointNewer reference)
+        {
+            NickName = reference.NickName;
+            Best = reference.BestTS;
+            if (_uiItem != null) _uiItem.SetReference(GetNickName(), Best);
         }
         public void SetCurrentTSForLoad(TimeSpan ts)
         {

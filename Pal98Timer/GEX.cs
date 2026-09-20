@@ -178,6 +178,16 @@ namespace Pal98Timer
         }
 
         private string Version;
+        private HardcoreDisplaySnapshot hardcoreDisplay = HardcoreDisplaySnapshot.Empty;
+        private bool isHardcoreChanged;
+        internal void SetHardcoreDisplay(HardcoreDisplaySnapshot value)
+        {
+            value = value ?? HardcoreDisplaySnapshot.Empty;
+            if (hardcoreDisplay.Status == value.Status && hardcoreDisplay.Device == value.Device) return;
+            if (hardcoreDisplay.Visible != value.Visible) isSizeChanged = true;
+            hardcoreDisplay = value;
+            isHardcoreChanged = true;
+        }
         private bool isVersionChanged = false;
         public void SetVersion(string val)
         {
@@ -888,6 +898,14 @@ namespace Pal98Timer
                 isDirty = true;
             }
             private TimeSpan _cha = new TimeSpan(0);
+            public void SetReference(string name, TimeSpan best)
+            {
+                _name = name;
+                _best = best;
+                _cha = _cur - _best;
+                isDirty = true;
+                isTimeDirty = true;
+            }
             public TimeSpan Cha
             {
                 get { return _cha; }
@@ -1162,6 +1180,9 @@ namespace Pal98Timer
         private Rectangle rcTitle = new Rectangle();
         private Rectangle rcGameVersion = new Rectangle();
         private Rectangle rcVersion = new Rectangle();
+        private Rectangle rcHardcoreStatus = new Rectangle();
+        private Rectangle rcHardcoreDevice = new Rectangle();
+        private int HardcoreHeight { get { return hardcoreDisplay.Visible ? 44 : 0; } }
         private Rectangle rcBL = new Rectangle();
         private Rectangle rcBR = new Rectangle();
         private Rectangle rcMoreInfo = new Rectangle();
@@ -1192,6 +1213,8 @@ namespace Pal98Timer
             ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
             ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.7F), 26);
             ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - 2 * rcGameVersion.X - rcGameVersion.Width, rcGameVersion.Height);
+            ModifyRect(ref rcHardcoreStatus, 5, 57, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
+            ModifyRect(ref rcHardcoreDevice, 5, 79, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
             ModifyRect(ref rcBL, 5, Height - 26, GEX.GDIMulti(Width, 0.4F), 26);
             ModifyRect(ref rcBR, rcBL.X + rcBL.Width, rcBL.Y, Width - 2 * rcBL.X - rcBL.Width, rcBL.Height);
 
@@ -1221,7 +1244,7 @@ namespace Pal98Timer
                 ModifyRect(ref rcWillClear, 10, Height - 200, Width - 20, 26);
             }
 
-            ModifyRect(ref rcDots, 0, 60, Width, 30);
+            ModifyRect(ref rcDots, 0, 60 + HardcoreHeight, Width, 30);
 
             /*ModifyRect(ref rcItems, 5, 95, Width - 10, Height - 200 - 95);
             ModifyRect(ref rcIName, rcItems.X, 0, rcItems.Width - 170, GItem.Height);
@@ -1233,14 +1256,16 @@ namespace Pal98Timer
 
         private void BuildRects_Item(bool showScroll)
         {
+            int itemHeight = Height - 200 - 95 - HardcoreHeight;
+            if (hardcoreDisplay.Visible) itemHeight = Math.Max(0, itemHeight);
             if (showScroll)
             {
-                ModifyRect(ref rcItems, 0, 95, Width - 10, Height - 200 - 95);
+                ModifyRect(ref rcItems, 0, 95 + HardcoreHeight, Width - 10, itemHeight);
                 ModifyRect(ref rcItemScroll, Width - 6, rcItems.Y, 3, rcItems.Height);
             }
             else
             {
-                ModifyRect(ref rcItems, 0, 95, Width, Height - 200 - 95);
+                ModifyRect(ref rcItems, 0, 95 + HardcoreHeight, Width, itemHeight);
                 ModifyRect(ref rcItemScroll, 0, 0, 0, 0);
             }
             ModifyRect(ref rcIName, rcItems.X, 0, rcItems.Width - 170, bb.ItemHeight);
@@ -2285,6 +2310,7 @@ namespace Pal98Timer
             bool btnc = DrawButtons(CG, ur);
             DrawTitle(CG, ur);
             DrawGameVersion(CG, ur);
+            DrawHardcore(CG, ur);
             DrawVersion(CG, ur);
             DrawBL(CG, ur);
             DrawBR(CG, ur);
@@ -2316,6 +2342,7 @@ namespace Pal98Timer
                 (isDotsChanged) ||
                 (isDotScroll) ||
                 (isGameVersionChanged) ||
+                (isHardcoreChanged) ||
                 (isItemsChanged) ||
                 (isItemScroll) ||
                 (isMainTimerChanged) ||
@@ -2342,6 +2369,7 @@ namespace Pal98Timer
             isDotsChanged = false;
             isDotScroll = false;
             isGameVersionChanged = false;
+            isHardcoreChanged = false;
             isItemsChanged = false;
             isItemScroll = false;
             isMainTimerChanged = false;
@@ -2441,6 +2469,26 @@ namespace Pal98Timer
                 }
             }
         }
+        private void DrawHardcore(Graphics g, delUpdateRect ur)
+        {
+            if (!hardcoreDisplay.Visible || !(isSizeChanged || isBGChanged || isBBChanged || isHardcoreChanged)) return;
+            if (!isSizeChanged && !isBGChanged)
+            {
+                GEX.ClearRect(g, rcHardcoreStatus, bg, Width, Height, bgOpacity);
+                GEX.ClearRect(g, rcHardcoreDevice, bg, Width, Height, bgOpacity);
+            }
+            using (var font = new Font(bb.GVersionFont.FontFamily, Math.Max(12F, Math.Min(16F, bb.GVersionFont.Size)), bb.GVersionFont.Style))
+            using (var format = new StringFormat(StringFormatFlags.NoWrap))
+            {
+                format.LineAlignment = StringAlignment.Center;
+                format.Trimming = StringTrimming.EllipsisCharacter;
+                GEX.DrawText(g, hardcoreDisplay.Status, font, bb.GVersionFill, bb.GVersionBorder, rcHardcoreStatus, format);
+                GEX.DrawText(g, hardcoreDisplay.Device, font, bb.GVersionFill, bb.GVersionBorder, rcHardcoreDevice, format);
+            }
+            ur?.Invoke(rcHardcoreStatus);
+            ur?.Invoke(rcHardcoreDevice);
+        }
+
         private void DrawVersion(Graphics g, delUpdateRect ur = null)
         {
             //v2.34

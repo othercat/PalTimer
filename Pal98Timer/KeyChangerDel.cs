@@ -9,6 +9,21 @@ namespace Pal98Timer
 {
     public class KeyChangerDel
     {
+        private static readonly HardcoreRequestedProcesses hardcoreProcesses = new HardcoreRequestedProcesses();
+        private static readonly HardcoreKeyChangerGuard hardcoreGuard = new HardcoreKeyChangerGuard(hardcoreProcesses.Read);
+        public static bool IsHardcoreBlocked { get { return hardcoreGuard.Refresh(); } }
+        internal static long BeginEnableRequest() { return hardcoreGuard.BeginRequest(); }
+        internal static bool IsEnableRequestCurrent(long request) { return hardcoreGuard.IsCurrent(request); }
+        public static void RefreshHardcoreProtection()
+        {
+            // Disabling never changes a timer or automatically enables the helper again.
+            if (hardcoreGuard.Refresh()) Disable();
+        }
+        public static void TryAutoOpen()
+        {
+            long request = hardcoreGuard.BeginAutoStart();
+            if (request >= 0) Open(request);
+        }
         [DllImport("User32.dll", EntryPoint = "SendMessage")]
         private static extern IntPtr SendMessage(int hWnd, int msg, IntPtr wParam, IntPtr lParam);
         [DllImport("User32.dll", EntryPoint = "FindWindow")]
@@ -40,6 +55,11 @@ namespace Pal98Timer
 
         private static Process kcp = null;
         public static void Open()
+        {
+            hardcoreGuard.TryRun(OpenCore, revoke: Disable);
+        }
+        internal static void Open(long request) { hardcoreGuard.TryRun(OpenCore, request, Disable); }
+        private static void OpenCore()
         {
             if (kcp == null)
             {
@@ -109,16 +129,18 @@ namespace Pal98Timer
         }
         public static void Edit()
         {
-            call(TEDIT);
+            hardcoreGuard.TryRun(() => call(TEDIT), revoke: Disable);
         }
+        internal static void Edit(long request) { hardcoreGuard.TryRun(() => call(TEDIT), request, Disable); }
         public static void BlockCtrlEnter(bool isenable)
         {
             call(TBLOCKCTRLENTER, (isenable ? 1 : 0));
         }
         public static void Enable()
         {
-            call(TENABLE);
+            hardcoreGuard.TryRun(() => call(TENABLE), revoke: Disable);
         }
+        internal static void Enable(long request) { hardcoreGuard.TryRun(() => call(TENABLE), request, Disable); }
         public static void Disable()
         {
             call(TDISABLE);

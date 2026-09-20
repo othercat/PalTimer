@@ -165,8 +165,13 @@
       <DependentUpon>GEditForm.cs</DependentUpon>
     </Compile>
     <Compile Include="GEX.cs" />
+    <Compile Include="CloudSessionRunner.cs" />
+    <Compile Include="LegacyCloudStepClient.cs" />
     <Compile Include="PaletteFadeModeReader.cs" />
     <Compile Include="TimingModeReader.cs" />
+    <Compile Include="HardcoreModeReader.cs" />
+    <Compile Include="HardcoreRunEvidence.cs" />
+    <Compile Include="HardcoreKeyChangerGuard.cs" />
     <Compile Include="Pal98Dx9Fast800Speed.cs" />
     <Compile Include="GForm.cs">
       <SubType>Form</SubType>
@@ -242,11 +247,13 @@
     <Compile Include="SRPGSidecarTransport.cs" />
     <Compile Include="SRPGSaveBundleTransport.cs" />
     <Compile Include="PalProcessOpenRetryPolicy.cs" />
+    <Compile Include="PalLiveProcessIdentity.cs" />
     <Compile Include="TournamentLockInfoReader.cs" />
     <Compile Include="TournamentTimerCapability.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TimerCore.cs" />
+    <Compile Include="BestTimelineStorage.cs" />
     <Compile Include="TSSet.cs">
       <SubType>Form</SubType>
     </Compile>

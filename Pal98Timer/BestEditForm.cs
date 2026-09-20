@@ -14,6 +14,7 @@ namespace Pal98Timer
     {
         private string tarfile;
         private string beststr = "";
+        public bool Saved { get; private set; }
         public BestEditForm(string bestFile)
         {
             if (string.IsNullOrEmpty(bestFile)) throw new Exception();
@@ -114,8 +115,16 @@ namespace Pal98Timer
             switch (MessageBox.Show(this, sb.ToString(), "确认修改", MessageBoxButtons.YesNoCancel))
             {
                 case DialogResult.Yes:
-                    SaveToTarFile();
-                    this.Dispose();
+                    try
+                    {
+                        SaveToTarFile();
+                        this.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(this, "保存失败，原最佳线和本次编辑已保留：\r\n" + ex.Message,
+                            "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                     break;
                 case DialogResult.No:
                     this.Dispose();
@@ -125,18 +134,8 @@ namespace Pal98Timer
 
         private void SaveToTarFile()
         {
-            if (File.Exists(tarfile))
-            {
-                File.Delete(tarfile);
-            }
-            using (FileStream fs = new FileStream(tarfile, FileMode.Create, FileAccess.ReadWrite))
-            {
-                using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                {
-                    sw.Write(GetResult());
-                    sw.Flush();
-                }
-            }
+            BestTimelineStorage.Write(tarfile, GetResult());
+            Saved = true;
         }
 
         private void btnAdd_Click(object sender, EventArgs e)

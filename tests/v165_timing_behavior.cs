@@ -274,6 +274,55 @@ internal static class V165TimingBehavior
         var oldEight=Record(Core(2),Mode(800,9,true));oldEight["TimingRulesVersion"]=1;oldEight["MapSpeedTicks"]=8;oldEight["TimingMapSpeedTicks"]=8;
         for(int i=0;i<3;++i)Reject(()=>Validate(Core(i).CoreName,Fade(i),oldEight,Mode(Fade(i),Speed(i),true)),"Old 8-tick records not converted");
     }
+    static void StorageTransactions()
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            var core = Core(i);
+            Attach(core, Mode(Fade(i), Speed(i), true));
+            var point = core.CheckPoints[0];
+            var checker = point.Check;
+            string name = point.Name;
+            long run = core.ScoreRunSequence;
+            point.NickName = "自定义节点" + i;
+            point.Current = TimeSpan.FromSeconds(111 + i);
+            var item = new GRender.GItem(0, name, TimeSpan.Zero);
+            item.Cur = point.Current;
+            point.SetUIItem(item);
+            string active = "best" + core.CoreName + ".txt";
+            for (int n = 0; n < 4; ++n) core.SaveBest();
+            Check(Directory.GetFiles(".", "best" + core.CoreName + "-*.txt").Length == 3,
+                "Repeated saves have unique recoverable archives " + i);
+            Check(point.Best == point.Current && item.Best == point.Current && item.Name == point.NickName,
+                "Successful save immediately refreshes current reference and UI " + i);
+            Check(point.Name == name && ReferenceEquals(point.Check, checker) && core.ScoreRunSequence == run,
+                "Reference refresh preserves route and run identity " + i);
+            var reopened = Core(i);
+            Check(reopened.CheckPoints[0].GetNickName() == point.NickName && reopened.CheckPoints[0].Name == name,
+                "UTF8 nickname reopens without changing route key " + i);
+            byte[] before = File.ReadAllBytes(active);
+            TimeSpan reference = point.Best;
+            point.Current = TimeSpan.FromSeconds(222 + i);
+            Action mustFail = () => {
+                bool rejected = false;
+                try { core.SaveBest(); }
+                catch (IOException) { rejected = true; }
+                catch (UnauthorizedAccessException) { rejected = true; }
+                Check(rejected, "Failed replacement is reported " + i);
+                Check(core.ScoreRunSequence == run && point.Current == TimeSpan.FromSeconds(222 + i) && point.Best == reference,
+                    "Failed save retains running time and old reference " + i);
+            };
+            using (var locked = new FileStream(active, FileMode.Open, FileAccess.Read, FileShare.Read)) mustFail();
+            Check(File.ReadAllBytes(active).SequenceEqual(before), "Locked target preserves bytes " + i);
+            File.SetAttributes(active, FileAttributes.ReadOnly);
+            try { mustFail(); }
+            finally { File.SetAttributes(active, FileAttributes.Normal); }
+            Check(File.ReadAllBytes(active).SequenceEqual(before), "Read-only target preserves bytes " + i);
+            core.SaveBest();
+            Check(Core(i).CheckPoints[0].Best == point.Current, "Retry after failure saves the same run " + i);
+        }
+    }
+
     static void StorageIsolation()
     {
         var cores=Enumerable.Range(0,3).Select(Core).ToArray();
@@ -351,7 +400,7 @@ internal static class V165TimingBehavior
     static object RenderData(string font,string label)
     {
         return Activator.CreateInstance(Product.GetType("Pal98Timer.Dx9OverlaySnapshot"),new object[]{IntPtr.Zero,font,"00:11:28.34","123.45s","00:12:34","蜂0 蜜0 火0 血0 观0 剑0 钱0",3,
-            Timeline("见石碑",true),Timeline("李大娘",false),Timeline("上船",false),"已暂停",false,true,label});
+            Timeline("见石碑",true),Timeline("李大娘",false),Timeline("上船",false),"已暂停",false,true,label,"",""});
     }
     static Bitmap Render(Form form,object data)
     {
@@ -396,6 +445,7 @@ internal static class V165TimingBehavior
             Scenario("snapshot_contract",SnapshotContract);Scenario("live_reader",LiveReader);Scenario("category_matrix",CategoryMatrix);
             Scenario("cross_imports",CrossImports);Scenario("content_imports",ContentImports);Scenario("run_identity",RunIdentity);
             Scenario("legacy_records",LegacyRecords);Scenario("storage_isolation",StorageIsolation);
+            Scenario("storage_transactions",StorageTransactions);
             Scenario("presentation_completion",PresentationAndCompletion);Scenario("overlay_layout",OverlayLayout);
         }
         HObj result=new HObj();result["scenariosPassed"]=Passed;result["scenariosFailed"]=Failed;result["assertions"]=Assertions;
