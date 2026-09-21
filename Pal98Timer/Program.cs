@@ -23,6 +23,7 @@ namespace Pal98Timer
             AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
             using (EventWaitHandle tournamentCapability =
                 TournamentTimerCapability.Publish())
+            using (var presetCapability = TournamentTimerCapability.Publish(@"Local\PAL98.PalTimer.TournamentLock.v2"))
             {
                 ClearTmpBG();
                 UpdateBestFiles();

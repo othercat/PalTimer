@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -32,8 +32,22 @@ namespace Pal98Timer
         public string sha256 { get; set; }
     }
 
+    internal sealed class TournamentTimerDependency
+    {
+        public string path { get; set; }
+        public long size { get; set; }
+        public string sha256 { get; set; }
+    }
     internal sealed class TournamentTimerManifest
     {
+        public string configuration_id { get; set; }
+        public string configuration_sha256 { get; set; }
+        public string producer_version { get; set; }
+        public string settings_contract { get; set; }
+        public string minimum_runtime { get; set; }
+        public string minimum_timer { get; set; }
+        public TournamentTimerDependency[] dependencies { get; set; }
+        public string[] absent_files { get; set; }
         public string schema { get; set; }
         public int version { get; set; }
         public bool locked { get; set; }
@@ -53,7 +67,7 @@ namespace Pal98Timer
         private const string IntegrityKeyResourceName =
             "Pal98Timer.TournamentIntegrityKey.txt";
         private const string RelativeDirectory = "palmod\\TournamentLock\\v1";
-        private const int MaximumManifestBytes = 128 * 1024;
+        private const int MaximumManifestBytes = 4 * 1024 * 1024;
         private const int MaximumSnapshotBytes = 4 * 1024 * 1024;
         private static readonly Regex LockerName = new Regex(
             "\\A[A-Za-z0-9\\u3400-\\u9FFF]{1,8}\\z",
@@ -79,6 +93,7 @@ namespace Pal98Timer
             {
                 if (string.IsNullOrWhiteSpace(gameDirectory))
                     return Invalid("game directory is empty");
+                if (File.Exists(Path.Combine(gameDirectory, "hardcore-transaction.pending"))) return Invalid("配置事务未完成，请重开配置工具恢复。");
                 string active = Path.Combine(gameDirectory, RelativeDirectory);
                 string manifestPath = Path.Combine(active, "manifest.json");
                 string signaturePath = Path.Combine(active, "manifest.sig");
@@ -116,6 +131,10 @@ namespace Pal98Timer
                 var serializer = new JavaScriptSerializer { MaxJsonLength = MaximumManifestBytes };
                 TournamentTimerManifest manifest = serializer.Deserialize<TournamentTimerManifest>(
                     new UTF8Encoding(false, true).GetString(bytes));
+                Guid selectionId;
+                if (manifest != null && manifest.schema == "PAL98.TournamentSelection.v1" && manifest.version == 1 && !manifest.locked &&
+                    Guid.TryParseExact(manifest.configuration_id, "D", out selectionId) && Regex.IsMatch(manifest.configuration_sha256 ?? "", "^[0-9a-f]{64}$"))
+                    return new TournamentLockInfo { State = TournamentLockReadState.Unlocked, CompetitionDisplayName = "", Diagnostic = "unlocked preset" };
                 string error;
                 if (!Validate(active, manifest, out error)) return Invalid(error);
                 return new TournamentLockInfo
@@ -156,7 +175,7 @@ namespace Pal98Timer
             out string error)
         {
             error = string.Empty;
-            if (manifest == null || manifest.schema != Schema || manifest.version != 1 || !manifest.locked)
+            if (manifest == null || (manifest.schema != Schema || manifest.version != 1) && (manifest.schema != "PAL98.TournamentLock.v2" || manifest.version != 2) || !manifest.locked)
             {
                 error = "tournament lock schema is invalid";
                 return false;
@@ -200,7 +219,7 @@ namespace Pal98Timer
                 error = "tournament lock display identity is invalid";
                 return false;
             }
-            if (manifest.files == null || manifest.files.Length != ExpectedFiles.Length)
+            if (manifest.files == null || (manifest.version == 1 ? manifest.files.Length != ExpectedFiles.Length : manifest.files.Length < 3 || manifest.files.Length > 256))
             {
                 error = "tournament lock file set is invalid";
                 return false;
@@ -212,7 +231,7 @@ namespace Pal98Timer
             foreach (TournamentTimerLockedFile file in manifest.files)
             {
                 if (file == null ||
-                    !ExpectedFiles.Contains(file.name, StringComparer.OrdinalIgnoreCase) ||
+                    !AllowedSnapshot(file.name, manifest.version) ||
                     !seen.Add(file.name) ||
                     !string.Equals(
                         file.snapshot,
@@ -246,9 +265,46 @@ namespace Pal98Timer
                     return false;
                 }
             }
-            return seen.Count == ExpectedFiles.Length;
+            if (!ExpectedFiles.All(seen.Contains)) return false;
+            if (manifest.version == 2)
+            {
+                Guid id;
+                if (!Guid.TryParseExact(manifest.configuration_id, "D", out id) || !Regex.IsMatch(manifest.configuration_sha256 ?? "", "^[0-9a-f]{64}$") ||
+                    manifest.producer_version != "1.6.8.1" || manifest.settings_contract != "PAL98.Settings.v1" ||
+                    manifest.minimum_runtime != "1.6.8.1" || manifest.minimum_timer != "3.37.4.4" || manifest.dependencies == null || manifest.absent_files == null || manifest.absent_files.Length > 256)
+                { error = "比赛配置版本或身份不匹配，请更新配套工具。"; return false; }
+                string root = Path.GetFullPath(Path.Combine(activeDirectory, "..", "..", ".."));
+                foreach (string absent in manifest.absent_files) {
+                    if (!AllowedSnapshot(absent, 2) || !seen.Add(absent) || File.Exists(Path.Combine(root, absent)) || Directory.Exists(Path.Combine(root, absent)))
+                    { error = "比赛配置缺失文件证明不匹配：" + absent; return false; }
+                }
+                var dependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var dependency in manifest.dependencies)
+                {
+                    if (dependency == null || !SafeRelative(dependency.path) || !dependencies.Add(dependency.path) || dependency.size < 0 || !Regex.IsMatch(dependency.sha256 ?? "", "^[0-9a-f]{64}$"))
+                    { error = "比赛资源身份无效。"; return false; }
+                    if (dependency.path.StartsWith("Musics/", StringComparison.OrdinalIgnoreCase) || dependency.path.StartsWith("Voices/", StringComparison.OrdinalIgnoreCase)) continue;
+                    string path = Path.Combine(root, dependency.path);
+                    if (!File.Exists(path) || IsReparsePoint(path) || new FileInfo(path).Length != dependency.size || HashFile(path) != dependency.sha256)
+                    { error = "比赛资源缺失或不匹配：" + dependency.path; return false; }
+                }
+                if (Directory.Exists(Path.Combine(root, "copymen_scripts"))) foreach (string path in Directory.GetFiles(Path.Combine(root, "copymen_scripts"))) {
+                    string name = "copymen_scripts/" + Path.GetFileName(path);
+                    if (Regex.IsMatch(name, @"^copymen_scripts/[^/]+\.(json|rule|txt)$", RegexOptions.IgnoreCase) && !seen.Contains(name) && !dependencies.Contains(name))
+                    { error = "比赛配置出现未允许的脚本入口：" + name; return false; }
+                }
+            }
+            return true;
         }
 
+        private static bool SafeRelative(string path) => !string.IsNullOrEmpty(path) && !Path.IsPathRooted(path) && path.Length <= 220 &&
+            path.IndexOfAny(new[] { '\\', ':', '\r', '\n', '\0' }) < 0 && path.Split('/').All(p => p.Length > 0 && p != "." && p != ".." && p.TrimEnd(' ', '.') == p && p.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
+        private static bool AllowedSnapshot(string path, int version) => SafeRelative(path) && (ExpectedFiles.Contains(path, StringComparer.OrdinalIgnoreCase) || version == 2 &&
+            (path == "palmod/random-skill-selection.v1.json" || path == "palmod/common-tools.v1.json" || Regex.IsMatch(path, @"^Graphics/Presets/[^/]+\.ini$", RegexOptions.IgnoreCase) || Regex.IsMatch(path, @"^copymen_scripts/[^/]+\.module\.json$", RegexOptions.IgnoreCase)));
+        private static string HashFile(string path)
+        {
+            using (var file = File.OpenRead(path)) using (var sha = SHA256.Create()) return ToHex(sha.ComputeHash(file));
+        }
         private static byte[] ReadBounded(string path, int maximumBytes)
         {
             var info = new FileInfo(path);

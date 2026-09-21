@@ -20,6 +20,9 @@ namespace KeyChanger
         private const int TENABLE = 4;
         private const int TDISABLE = 5;
         private const int TBLOCKCTRLENTER = 6;
+        private const int TSHOW = 7;
+        private readonly bool showKeyboardOnStart;
+        private bool wasHardcore;
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
@@ -28,6 +31,9 @@ namespace KeyChanger
                 int dt = m.LParam.ToInt32();
                 switch (m.WParam.ToInt32())
                 {
+                    case TSHOW:
+                        ShowKeyboard(); m.Result = (IntPtr)1;
+                        break;
                     case TSTAT:
                         RefreshHardcoreProtection();
                         m.Result = (IntPtr)(kc.IsEnable ? 1 : 0);
@@ -65,18 +71,21 @@ namespace KeyChanger
         private Action<int, int> injectKey = (value, flags) => KeyboardLib.keybd_event(value, KeyboardLib.MapVirtualKey((uint)value, 0), flags, 0);
         private bool RefreshHardcoreProtection()
         {
-            if (!readHardcoreRequested()) return false;
+            if (!readHardcoreRequested()) { wasHardcore = false; return false; }
             kc.IsEnable = false;
             BlockCtrlEnter = OnCtrlDown = OnCtrlDown2 = false;
-            Array.Clear(KeyStat, 0, KeyStat.Length);
+            if (!wasHardcore) { Array.Clear(KeyStat, 0, KeyStat.Length); _hasmodify = 100; }
+            wasHardcore = true;
             return true;
         }
         public int CurrentKeyCode = -1;
         public bool BlockCtrlEnter = false;
         public bool OnCtrlDown = false;
         public bool OnCtrlDown2 = false;
-        public MainForm()
+        public MainForm() : this(false) { }
+        public MainForm(bool showKeyboard)
         {
+            showKeyboardOnStart = showKeyboard;
             _keyboardHook = new KeyboardLib();
             _keyboardHook.InstallHook(this.OnKeyPress);
             ApplyKeyChange();
@@ -85,7 +94,6 @@ namespace KeyChanger
 
             ShowKCEnable();
             ShowBCEEnable();
-            niMain.ShowBalloonTip(1000, "改键器", "已启动，双击图标打开按键展示，右键设置", ToolTipIcon.Info);
             try
             {
                 initForPaint();
@@ -274,7 +282,14 @@ namespace KeyChanger
             handle = false; //预设不拦截任何键 
             // Recheck at the actual swallow/injection boundary, including a
             // helper opened independently or an old settings dialog just saved.
-            if (RefreshHardcoreProtection()) return;
+            if (RefreshHardcoreProtection()) {
+                int physical = hookStruct.vkCode;
+                if (physical == 13 && (hookStruct.flags == 1 || hookStruct.flags == 129)) physical = 1013;
+                if (physical >= 0 && physical < KeyStat.Length) {
+                    if (hookStruct.flags >= 128) Pull(physical, physical); else Push(physical, physical);
+                }
+                return; // Visualization only: never swallow or inject input.
+            }
             int flag = 0;
             if (hookStruct.flags >= 128)
             {
@@ -410,13 +425,16 @@ namespace KeyChanger
 
         private void MainForm_Shown(object sender, EventArgs e)
         {
-            this.Hide();
+            if (showKeyboardOnStart) ShowKeyboard(); else this.Hide();
             this.Opacity = 1;
+        }
+        private void ShowKeyboard()
+        {
+            ShowInTaskbar = true; Opacity = 1; Show(); WindowState = FormWindowState.Normal; Activate();
         }
 
         private void Exit()
         {
-            niMain.ShowBalloonTip(1000, "改键器", "已退出", ToolTipIcon.Warning);
             _keyboardHook.UninstallHook();
             niMain.Dispose();
             Environment.Exit(0);

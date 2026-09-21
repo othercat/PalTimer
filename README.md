@@ -7,7 +7,11 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.3；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.4.4；需要 .NET Framework 4.7.2 框架**
+
+配套 PALDLL / 配置工具 1.6.8.1 的多配置比赛包，支持逐配置比赛身份和新版比赛锁，同时保留旧锁兼容。硬核模式期间，计时器菜单、F11 和改键器托盘均不能启用改键；KeyChanger 1.0.0.3 可以单独显示实际按键，不吞键、不注入。硬核状态及键盘确认来自目标 PAL 进程，工具目录与游戏目录分别解析。
+
+配套改键器启动和退出不再发送 Windows 通知。托盘图标、右键菜单、按键展示及普通模式改键保持可用；本次通知调整不改变计时、暂停、路线、成绩或云功能。
 
 按 P 重启时，访问拒绝提示前的宽限期由 1.5 秒延长为 9.5 秒（增加 8 秒）；期间持续重试，成功即连接，不额外等待。
 

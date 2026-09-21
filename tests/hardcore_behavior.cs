@@ -148,6 +148,10 @@ internal static class HardcoreBehavior
             var packet=Activator.CreateInstance(packetType);packetType.GetField("vkCode").SetValue(packet,key);packetType.GetField("flags").SetValue(packet,flags);
             object[] args={packet,true};call("OnKeyPress",args);
             Check(!(bool)args[1]&&injections==0&&!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper blocked callback never swallows or injects "+key+"/"+flags);
+            var shown=(int[])type.GetField("KeyStat",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(form);
+            Check(shown[key]==(flags>=128?0:key),"hardcore still renders physical press/release "+key+"/"+flags);
+            call("RefreshHardcoreProtection",new object[0]);
+            Check(shown[key]==(flags>=128?0:key),"repeated hardcore check preserves display state");
         }
         call("btnEnable_Click",new object[]{null,EventArgs.Empty});
         Check(!(bool)kcType.GetField("IsEnable").GetValue(kc),"helper tray cannot enable while requested");
