@@ -372,7 +372,7 @@ namespace Pal98Timer
                 string filename = SaveBestValue(str);
                 bool active = IsActiveBestPath(filename);
                 string message = active ? "已保存并更新当前核心的最佳时间线。" :
-                    "已导出非速通成绩到 Records，未替换速通最佳时间线。";
+                    "成绩已保存。";
                 if (form.Confirm(message + "\r\n" + Path.GetFullPath(filename) + "\r\n确定要重置计时器么？"))
                 {
                     form._ResetAll();
@@ -875,6 +875,8 @@ namespace Pal98Timer
         /// </summary>
         /// <returns></returns>
         public abstract string GetGameVersion();
+        // Display/export diagnostics only; never used by score validation.
+        public virtual string GetRuntimeIntegrityStatus() { return ""; }
         /// <summary>
         /// 重置
         /// </summary>

@@ -33,6 +33,7 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
 
@@ -500,6 +501,12 @@ namespace Pal98Timer
 
         public override string GetGameVersion()
         {
+            string title = GetBaseGameVersion();
+            return runtimeIntegrity == null ? title : runtimeIntegrity.Append(title, form != null && form.CloudID() >= 0);
+        }
+
+        private string GetBaseGameVersion()
+        {
             if (PID != -1)
             {
                 return "游戏版本：" + PalPackVersion.ins.GetPalPackVersion(GMD5);
@@ -509,6 +516,9 @@ namespace Pal98Timer
                 return "等待游戏运行";
             }
         }
+
+        public override string GetRuntimeIntegrityStatus()
+        { return runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0); }
 
         public override string GetPointEnd()
         {
@@ -681,6 +691,7 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
+                runtimeIntegrity.Observe(PalProcess);
                 CopyRPGIfHas();
 
                 JudgePause();
@@ -878,6 +889,7 @@ namespace Pal98Timer
                     }
 
                     PalProcess = res[0];
+                    runtimeIntegrity?.SelectTarget(PalProcess);
                     GameWindowHandle = tempHandle;
                     PID = PalProcess.Id;
                     CalcPalMD5();
@@ -990,6 +1002,7 @@ namespace Pal98Timer
             PalHandle = IntPtr.Zero;
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
+            runtimeIntegrity?.SelectTarget(null);
             PID = -1;
             GMD5 = "none";
             HasAlertPalOpenProcessError = false;
@@ -1290,6 +1303,7 @@ namespace Pal98Timer
             exdata["EarthPaper"] = MaxTLF;
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
+            runtimeIntegrity?.Fill(exdata, form != null && form.CloudID() >= 0);
             exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
 
             string namedbattles = "";
@@ -1711,6 +1725,7 @@ namespace Pal98Timer
 
         public override void Unload()
         {
+            runtimeIntegrity?.Dispose();
             base.Unload();
         }
         public override string GetCriticalError()

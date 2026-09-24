@@ -96,7 +96,7 @@ namespace Pal98Timer
                 return inherited;
             }
             string edition = selectedProfile == null ? "profile 待确认" : selectedProfile.DisplayName;
-            return FormatPaletteFadeVersion(Hunqian167Profile.CoreDisplayName + " / " + edition);
+            return FormatIntegrityGameVersion(FormatPaletteFadeVersion(Hunqian167Profile.CoreDisplayName + " / " + edition));
         }
 
         public override string GetMoreInfo()

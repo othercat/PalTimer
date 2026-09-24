@@ -34,6 +34,7 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private PalLiveProcessIdentity attachedProcessIdentity;
         private PalLiveProcessIdentity rejectedProfileIdentity;
         // Keep the successfully attached installation across P/exit/restart.
@@ -481,7 +482,20 @@ namespace Pal98Timer
 
         public override string GetGameVersion()
         {
-            return GetTimingGameVersion();
+            string title = GetTimingGameVersion();
+            return FormatIntegrityGameVersion(title);
+        }
+
+        protected string FormatIntegrityGameVersion(string title)
+        { return runtimeIntegrity == null ? title : runtimeIntegrity.Append(title, form != null && form.CloudID() >= 0); }
+
+        public override string GetRuntimeIntegrityStatus()
+        { return runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0); }
+
+        public override void Unload()
+        {
+            runtimeIntegrity?.Dispose();
+            base.Unload();
         }
 
         internal HardcoreDisplaySnapshot GetHardcoreDisplay()
@@ -500,13 +514,13 @@ namespace Pal98Timer
                 {
                     return FormatPaletteFadeVersion(TournamentDisplayName);
                 }
-                return FormatPaletteFadeVersion("仙剑98原版 新补丁 " + DX9Version);
+                return FormatPaletteFadeVersion(Dx9TimingCategory.ClassicCaption(DX9Version));
             }
             else
             {
                 if (lastConfirmedTimingMode != null)
                     return FormatPaletteFadeVersion(string.IsNullOrEmpty(lastConfirmedTournamentDisplayName)
-                        ? "仙剑98原版 新补丁 " + DX9Version : lastConfirmedTournamentDisplayName);
+                        ? Dx9TimingCategory.ClassicCaption(DX9Version) : lastConfirmedTournamentDisplayName);
                 return "等待游戏运行";
             }
         }
@@ -574,22 +588,12 @@ namespace Pal98Timer
 
         private void ValidateScoreForSave() { EnsureScoreValid(); }
 
-        protected override string GetScoreSavePath(DateTime now)
-        {
-            var actual = RecordedTimingMode;
-            if (TimingModeMs == 0 || actual == null || actual.OfficialSpeedrun) return base.GetScoreSavePath(now);
-            // Records are exports, never an additional best timeline/core.
-            Directory.CreateDirectory("Records");
-            return Path.Combine("Records", "PAL98-" + actual.ContentHash.Substring(0, 12) + "-" +
-                actual.FadeMilliseconds + "-" + actual.MapSpeedTicks + "-" + now.ToString("yyyyMMdd-HHmmss-fff") + "-" +
-                Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
-        }
-
         protected override void ValidateBestReference(HObj reference)
         {
             if (TimingModeMs == 0) return;
-            if (reference.HasValue("OfficialSpeedrun") && !reference.GetValue<bool>("OfficialSpeedrun"))
-                throw new InvalidDataException("非速通内容不能作为传统速通最佳时间线。");
+            // A best line is a local reference for the selected core. Every
+            // permitted run may update it, regardless of content or settings;
+            // actual score/relay imports still validate runtime identity.
             if ((reference.HasValue("TimerCore") && reference.GetValue<string>("TimerCore") != CoreName) ||
                 (reference.HasValue("TimingModeMs") && reference.GetValue<int>("TimingModeMs") != TimingModeMs) ||
                 (reference.HasValue("TimingMapSpeedTicks") && reference.GetValue<int>("TimingMapSpeedTicks") != TimingMapSpeedTicks))
@@ -1691,7 +1695,8 @@ namespace Pal98Timer
                 paused,
                 Dx9TimingCategory.ModeLabel(RecordedTimingMode),
                 hardcore.Status,
-                hardcore.Device);
+                hardcore.Device,
+                runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0));
         }
 
         private string GetDx9OverlayFontFamily()
@@ -1770,6 +1775,7 @@ namespace Pal98Timer
             {
                 ObserveHardcoreRuntime(PalProcess);
                 RuntimeTimingMode actualMode = paletteFadeMode.Read(PalProcess);
+                runtimeIntegrity.Observe(PalProcess);
                 if (GetScoreValidationError().Length != 0)
                 {
                     MT.Stop();
@@ -2162,6 +2168,7 @@ namespace Pal98Timer
                         }
 
                         PalProcess = res[0];
+                        runtimeIntegrity?.SelectTarget(PalProcess);
                         attachedProcessIdentity = openedIdentity;
                         attachedExecutablePath = openedIdentity.ExecutablePath;
                         TournamentDisplayName = TournamentLockInfoReader
@@ -2501,6 +2508,7 @@ namespace Pal98Timer
             LastRejectedProfileMessage = "";
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
+            runtimeIntegrity?.SelectTarget(null);
             TournamentDisplayName = string.Empty;
             PID = -1;
             GMD5 = "none";
@@ -2810,6 +2818,7 @@ namespace Pal98Timer
             exdata["EarthPaper"] = MaxTLF;
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
+            runtimeIntegrity?.Fill(exdata, form != null && form.CloudID() >= 0);
             exdata["DX9Version"] = FormatPaletteFadeVersion(DX9Version);
             RuntimeTimingMode timing = RecordedTimingMode;
             exdata["GameVersion"] = GetGameVersion();

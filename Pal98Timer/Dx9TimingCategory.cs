@@ -24,6 +24,15 @@ namespace Pal98Timer
         internal static string Text(string simplified, string traditional)
         { return Traditional ? traditional : simplified; }
 
+        internal static string ClassicCaption(string patchVersion)
+        {
+            // Older PAL windows include a packaging revision. Keep it out of
+            // the caption without changing the runtime/recorded identity.
+            string version = System.Text.RegularExpressions.Regex.Replace(
+                (patchVersion ?? "").Trim(), @"^(\d+\.\d+)\s+[rR][0-9]+$", "$1");
+            return "98柔情原版 " + version;
+        }
+
         internal static string Suffix(RuntimeTimingMode actual)
         { return (actual == null ? " " : "-") + ModeLabel(actual); }
 

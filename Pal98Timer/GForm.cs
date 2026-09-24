@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.4";
+        public const string CurrentVersion = "3.37.5";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -822,6 +822,9 @@ namespace Pal98Timer
                     }
                 }
                 rr.SetGameVersion(core.GetGameVersion());
+                string integrityTitle = core.GetRuntimeIntegrityStatus();
+                string windowTitle = "自动计时器" + (integrityTitle.Length == 0 ? "" : " " + integrityTitle);
+                if (Text != windowTitle) Text = windowTitle;
                 var dx9Core = core as 仙剑98柔情DX9;
                 rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());
                 rr.SetWillClear(core.GetPointEnd());

@@ -276,10 +276,10 @@ internal static class V165TimingBehavior
     }
     static void StorageTransactions()
     {
-        for (int i = 0; i < 3; ++i)
+        foreach (bool official in new[] { true, false }) for (int i = 0; i < 3; ++i)
         {
             var core = Core(i);
-            Attach(core, Mode(Fade(i), Speed(i), true));
+            Attach(core, Mode(Fade(i), Speed(i), official));
             var point = core.CheckPoints[0];
             var checker = point.Check;
             string name = point.Name;
@@ -290,8 +290,10 @@ internal static class V165TimingBehavior
             item.Cur = point.Current;
             point.SetUIItem(item);
             string active = "best" + core.CoreName + ".txt";
+            int archives = Directory.GetFiles(".", "best" + core.CoreName + "-*.txt").Length;
+            bool hadActive = File.Exists(active);
             for (int n = 0; n < 4; ++n) core.SaveBest();
-            Check(Directory.GetFiles(".", "best" + core.CoreName + "-*.txt").Length == 3,
+            Check(Directory.GetFiles(".", "best" + core.CoreName + "-*.txt").Length == archives + (hadActive ? 4 : 3),
                 "Repeated saves have unique recoverable archives " + i);
             Check(point.Best == point.Current && item.Best == point.Current && item.Name == point.NickName,
                 "Successful save immediately refreshes current reference and UI " + i);
@@ -320,6 +322,24 @@ internal static class V165TimingBehavior
             Check(File.ReadAllBytes(active).SequenceEqual(before), "Read-only target preserves bytes " + i);
             core.SaveBest();
             Check(Core(i).CheckPoints[0].Best == point.Current, "Retry after failure saves the same run " + i);
+            using (var editor = new BestEditForm(core.CoreName))
+            {
+                var row = (BestEditItem)((Panel)Field(editor, "pnMain")).Controls[0];
+                ((TextBox)Field(row, "txtDes")).Text = "隨機參考節點";
+                ((NumericUpDown)Field(row, "numSec")).Value = 17;
+                TimeSpan edited = row.GetValue().BestTS;
+                Call(editor, "SaveToTarFile");
+                core.RefreshBestReference();
+                var editedCore = Core(i);
+                Check(editor.Saved && editedCore.CheckPoints[0].Best == edited &&
+                    editedCore.CheckPoints[0].GetNickName() == "隨機參考節點", "Reference editor roundtrip " + official + "/" + i);
+                Check(core.ScoreRunSequence == run && point.Current == TimeSpan.FromSeconds(222 + i),
+                    "Reference edit preserves the running timer " + official + "/" + i);
+                var editedData = new HObj(File.ReadAllText(active));
+                Check(editedData.GetValue<bool>("ReferenceTimeline") && !editedData.GetValue<bool>("TimingRulesVerified"),
+                    "Edited reference is never promoted to a verified run");
+                Check(!editor.Visible && !editor.IsHandleCreated, "Editor check does not open a window");
+            }
         }
     }
 
@@ -334,20 +354,47 @@ internal static class V165TimingBehavior
             cores[i].CheckPoints[0].Current=TimeSpan.FromSeconds(100+i);Attach(cores[i],Mode(Fade(i),Speed(i),true));cores[i].SaveBest();
             var reopened=Core(i);Check(reopened.CheckPoints[0].Best==TimeSpan.FromSeconds(100+i),"Independent best save/reopen "+i);
         }
-        var before=cores.ToDictionary(c=>"best"+c.CoreName+".txt",c=>File.ReadAllBytes("best"+c.CoreName+".txt"));
-        for(int selected=0;selected<3;++selected)foreach(int fade in new[]{1200,800})foreach(int speed in new[]{10,9})
+        Directory.CreateDirectory("Records");
+        File.WriteAllText("Records/old-export.txt", "keep historical export");
+        string[] contentIds = { "pal98.package.suiji-v0.1.single.global-skills",
+            "pal98.package.suiji-v0.1.single-wuqiang.global-skills", "custom.content.with.optional.mods" };
+        int saved = 0;
+        foreach(string contentId in contentIds) for(int selected=0;selected<3;++selected)
+        foreach(int fade in new[]{1200,800}) foreach(int speed in new[]{10,9})
         {
-            Attach(cores[selected],Mode(fade,speed,false,"pal98.package.random",name:"完全随机物品"));cores[selected].SaveBest();
-            foreach(var file in before)Check(File.ReadAllBytes(file.Key).SequenceEqual(file.Value),"Non-speedrun did not overwrite "+file.Key);
-        }
-        var files=Directory.GetFiles("Records","*.txt");Check(files.Length==12,"Non-speedrun saves have records, not best/core");
-        foreach(string file in files)
-        {
-            var data=new HObj(File.ReadAllText(file));Check(data.GetValue<bool>("TimingRulesVerified")&&!data.GetValue<bool>("OfficialSpeedrun"),"Nonformal record verified as own content");
+            var before=cores.ToDictionary(c=>"best"+c.CoreName+".txt",c=>File.ReadAllBytes("best"+c.CoreName+".txt"));
+            var core = Core(selected);
+            var mode = Mode(fade,speed,false,contentId,name:"非速通内容");
+            Attach(core,mode);
+            Check(core.GetScoreValidationError()=="", "Any permitted timing mode can save a best line");
+            var point = core.CheckPoints[0];
+            var checker = point.Check;
+            point.Current = TimeSpan.FromSeconds(200 + ++saved);
+            point.NickName = "随机玩法节点" + saved;
+            long run = core.ScoreRunSequence;
+            core.SaveBest();
+            string active = "best"+core.CoreName+".txt";
+            Check(point.Best==point.Current && core.ScoreRunSequence==run && ReferenceEquals(point.Check,checker),
+                "Non-speedrun save refreshes reference without resetting or changing checkpoints");
+            foreach(var file in before) if(file.Key!=active)
+                Check(File.ReadAllBytes(file.Key).SequenceEqual(file.Value),"Other core remains unchanged "+file.Key);
+            var data=new HObj(File.ReadAllText(active));
+            Check(data.GetValue<bool>("TimingRulesVerified")&&!data.GetValue<bool>("OfficialSpeedrun"),"Best line retains actual nonformal identity");
             Check(data.GetValue<string>("LeaderboardCategory")=="","No traditional leaderboard");
-            Check(data.GetValue<string>("ContentId")=="pal98.package.random","Content identity retained");
-            Reject(()=>Call(cores[0],"ValidateBestReference",data),"Non-speedrun rejected as traditional reference");
+            Check(data.GetValue<string>("ContentId")==contentId && data.GetValue<int>("PaletteFadeModeMs")==fade &&
+                data.GetValue<int>("MapSpeedTicks")==speed,"Actual content and timing metadata retained");
+            var reopened = Core(selected);
+            Check(reopened.CheckPoints[0].Best==point.Current && reopened.CheckPoints[0].GetNickName()==point.NickName,
+                "Non-speedrun best line survives reopen including UTF8 nickname");
+            Check(reopened.CheckPoints[0].Current==TimeSpan.Zero && Watch(reopened).CurrentTS==TimeSpan.Zero,
+                "Loading reference never imports a running score");
+            Attach(reopened,Mode(Fade(selected),Speed(selected),true));
+            Check(reopened.GetScoreValidationError()=="", "Reference content cannot change the next run's timing identity");
+            Reject(()=>Validate(core.CoreName,Fade(selected),data,Mode(Fade(selected),Speed(selected),true)),
+                "Best line does not bypass score import content validation");
         }
+        Check(Directory.GetFiles("Records","*.txt").Length==1 && File.ReadAllText("Records/old-export.txt")=="keep historical export",
+            "Saving best lines no longer diverts to Records and preserves historical exports");
         string[] relay={"SRPG.bin","SRPG.PAL98DX9_800.bin","SRPG.PAL98DX9_800_SPEED.bin"};
         for(int i=0;i<3;++i)Check((string)Dx9.GetProperty("RelayFileName",Instance).GetValue(cores[i])==relay[i],"Relay identity preserved");
     }
@@ -377,15 +424,28 @@ internal static class V165TimingBehavior
                 Check(ended.GetValue<string>("GameVersion")==core.GetGameVersion()&&ended.GetValue<string>("TournamentDisplayName")=="秋季杯比赛专用","Completed export preserves tournament identity");
             }
             var nonformal=Core(0);Attach(nonformal,Mode(1200,9,false,"pal98.package.random",name:"完全隨機物品&快走速"));
-            Check(nonformal.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Nonformal caption retains only version and actual mode");
+            Check(nonformal.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Nonformal caption retains only version and actual mode");
+            foreach (string patchVersion in new[]{"1.68", "1.68 r10", "1.68 r11", "1.68 r12", "1.69", "1.69 r12"})
+            foreach (int selected in new[]{0,1,2})
+            {
+                var titleCore=Core(selected); Attach(titleCore,Mode(Fade(selected),Speed(selected),true));
+                Set(titleCore,"DX9Version",patchVersion);
+                string expected="98柔情原版 "+patchVersion.Split(' ')[0]+"-"+Label(Fade(selected),Speed(selected));
+                Check(titleCore.GetGameVersion()==expected,"Caption hides package revision and preserves release and timing mode");
+                var titleRecord=new HObj(titleCore.GetRStr());
+                Check(titleRecord.GetValue<string>("GameVersion")==expected,"Record uses the same player-facing caption");
+                Check(((string)Field(titleCore,"DX9Version"))==patchVersion,"Caption does not rewrite parsed runtime version");
+                Set(titleCore,"PalProcess",null);Set(titleCore,"PID",-1);
+                Check(titleCore.GetGameVersion()==expected,"Completed run keeps compact release caption");
+            }
             foreach(string contentName in new[]{"完全随机物品","完全隨機物品","全随机技能","全隨機技能","完全随机物品+全随机技能"})
             {
                 var random=Core(0);Attach(random,Mode(1200,9,false,"pal98.package.random",name:contentName));
-                Check(random.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Random labels do not lengthen caption");
+                Check(random.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Random labels do not lengthen caption");
                 var randomRecord=new HObj(random.GetRStr());
                 Check(randomRecord.GetValue<string>("ContentDisplayName")==contentName&&randomRecord.GetValue<string>("ContentId")=="pal98.package.random","Compact caption preserves record identity");
                 Set(random,"PalProcess",null);Set(random,"PID",-1);
-                Check(random.GetGameVersion()=="仙剑98原版 新补丁 1.65-1.2秒&快走速","Completed random caption stays compact");
+                Check(random.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Completed random caption stays compact");
             }
             Check((string)Field(Snapshot(nonformal),"TimingModeLabel")=="1.2秒&快走速","Fourth combination in overlay");
             string menu=TimerCore.GetCoreDisplayName("Pal98Dx9Fast800Speed");

@@ -169,6 +169,11 @@
     <Compile Include="LegacyCloudStepClient.cs" />
     <Compile Include="PaletteFadeModeReader.cs" />
     <Compile Include="TimingModeReader.cs" />
+    <Compile Include="RuntimeIntegrityReader.cs" />
+    <Compile Include="ReleaseIntegrityManifest.cs" />
+    <Compile Include="IntegrityProcessReader.cs" />
+    <Compile Include="ReleaseIntegrityVerifier.cs" />
+    <Compile Include="RuntimeIntegrityMonitor.cs" />
     <Compile Include="HardcoreModeReader.cs" />
     <Compile Include="HardcoreRunEvidence.cs" />
     <Compile Include="HardcoreKeyChangerGuard.cs" />
@@ -273,6 +278,9 @@
     <Compile Include="自定义.cs" />
     <EmbeddedResource Include="AboutForm.resx">
       <DependentUpon>AboutForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="release_integrity.v1.json">
+      <LogicalName>Pal98Timer.release_integrity.v1.json</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="TournamentIntegrityKey.txt" Condition="Exists('TournamentIntegrityKey.txt')">
       <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>

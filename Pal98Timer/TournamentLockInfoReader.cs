@@ -63,6 +63,13 @@ namespace Pal98Timer
 
     internal static class TournamentLockInfoReader
     {
+        internal static bool SupportedLockVersions(string producer, string contract, string runtime, string timer)
+        {
+            if (contract != "PAL98.Settings.v1") return false;
+            return producer == "1.6.8.10" && runtime == "1.6.8.10" && timer == "3.37.5.0" ||
+                producer == "1.6.9.0" && runtime == "1.6.9.0" && timer == "3.37.5.0" ||
+                (producer == "1.6.8.1" || producer == "1.6.8.2") && runtime == "1.6.8.1" && timer == "3.37.4.4";
+        }
         private const string Schema = "PAL98.TournamentLock.v1";
         private const string IntegrityKeyResourceName =
             "Pal98Timer.TournamentIntegrityKey.txt";
@@ -270,8 +277,8 @@ namespace Pal98Timer
             {
                 Guid id;
                 if (!Guid.TryParseExact(manifest.configuration_id, "D", out id) || !Regex.IsMatch(manifest.configuration_sha256 ?? "", "^[0-9a-f]{64}$") ||
-                    manifest.producer_version != "1.6.8.1" || manifest.settings_contract != "PAL98.Settings.v1" ||
-                    manifest.minimum_runtime != "1.6.8.1" || manifest.minimum_timer != "3.37.4.4" || manifest.dependencies == null || manifest.absent_files == null || manifest.absent_files.Length > 256)
+                    !SupportedLockVersions(manifest.producer_version, manifest.settings_contract, manifest.minimum_runtime, manifest.minimum_timer) ||
+                    manifest.dependencies == null || manifest.absent_files == null || manifest.absent_files.Length > 256)
                 { error = "比赛配置版本或身份不匹配，请更新配套工具。"; return false; }
                 string root = Path.GetFullPath(Path.Combine(activeDirectory, "..", "..", ".."));
                 foreach (string absent in manifest.absent_files) {

@@ -53,8 +53,17 @@ namespace Pal98Timer
         public readonly string TimingModeLabel;
         public readonly string HardcoreStatus;
         public readonly string HardcoreDevice;
+        public readonly string IntegrityStatus;
         public readonly bool IsAntiCheatPaused;
         public readonly bool IsPaused;
+
+        // Preserve the existing reflection/plug-in constructor shape.
+        public Dx9OverlaySnapshot(IntPtr gameWindowHandle, string fontFamily, string mainTimer, string battleTimer,
+            string idleTimer, string resources, int manualPauseCount, Dx9OverlayTimelineEntry timelineFirst,
+            Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
+            bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus, string hardcoreDevice)
+            : this(gameWindowHandle, fontFamily, mainTimer, battleTimer, idleTimer, resources, manualPauseCount,
+                timelineFirst, timelineSecond, timelineThird, state, isAntiCheatPaused, isPaused, timingModeLabel, hardcoreStatus, hardcoreDevice, "") { }
 
         public Dx9OverlaySnapshot(
             IntPtr gameWindowHandle,
@@ -72,7 +81,8 @@ namespace Pal98Timer
             bool isPaused,
             string timingModeLabel = "",
             string hardcoreStatus = "",
-            string hardcoreDevice = "")
+            string hardcoreDevice = "",
+            string integrityStatus = "")
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -88,6 +98,7 @@ namespace Pal98Timer
             TimingModeLabel = timingModeLabel ?? "";
             HardcoreStatus = hardcoreStatus ?? "";
             HardcoreDevice = hardcoreDevice ?? "";
+            IntegrityStatus = integrityStatus ?? "";
             IsAntiCheatPaused = isAntiCheatPaused;
             IsPaused = isPaused;
         }
@@ -713,6 +724,14 @@ namespace Pal98Timer
                     DrawOutlinedText(e.Graphics, snapshot.HardcoreDevice, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
                 }
 
+                if (snapshot.IntegrityStatus.Length != 0)
+                {
+                    y += infoHeight + rowGap;
+                    row = new RectangleF(margin, y, contentWidth, GetIntegrityRows(snapshot.IntegrityStatus) * (infoHeight + rowGap));
+                    using (var integrityFormat = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Near })
+                        DrawOutlinedText(e.Graphics, snapshot.IntegrityStatus, smallFont, currentBrush, shadowBrush, row, integrityFormat, scale);
+                }
+
                 if (EditMode)
                 {
                     using (StringFormat leftFormat = new StringFormat())
@@ -1084,7 +1103,15 @@ namespace Pal98Timer
             float infoHeight = GetInfoHeightLogicalPixels();
             float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 5.0F * (infoHeight + 2.0F) + 9.0F;
             if (CurrentSnapshot != null && CurrentSnapshot.HardcoreStatus.Length != 0) contentHeight += 2.0F * (infoHeight + 2.0F);
+            if (CurrentSnapshot != null && CurrentSnapshot.IntegrityStatus.Length != 0) contentHeight += GetIntegrityRows(CurrentSnapshot.IntegrityStatus) * (infoHeight + 2.0F);
             return contentHeight + (EditMode ? EditHeaderLogicalPixels : 0.0F);
+        }
+
+        private int GetIntegrityRows(string text)
+        {
+            // Reserve for full-width Chinese glyphs; the diagnostic never shares
+            // the pause row or gets truncated to a misleading success prefix.
+            return Math.Max(1, (int)Math.Ceiling(text.Length * LayoutSettings.FontSize * 1.6F / (OverlayWidthLogicalPixels - 14.0F)));
         }
 
         private Rectangle GetResizeHandleRectangle()

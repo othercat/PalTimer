@@ -36,6 +36,7 @@ namespace Pal98Timer
         public IntPtr GameWindowHandle = IntPtr.Zero;
         private int PID = -1;
         private Process PalProcess;
+        private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private readonly PaletteFadeModeReader paletteFadeMode = new PaletteFadeModeReader();
         private string TournamentDisplayName = string.Empty;
         private bool _HasGameStart = false;
@@ -376,19 +377,28 @@ namespace Pal98Timer
 
         public override string GetGameVersion()
         {
+            string title = GetBaseGameVersion();
+            return runtimeIntegrity == null ? title : runtimeIntegrity.Append(title, form != null && form.CloudID() >= 0);
+        }
+
+        private string GetBaseGameVersion()
+        {
             if (PID != -1)
             {
                 if (!string.IsNullOrEmpty(TournamentDisplayName))
                 {
                     return FormatPaletteFadeVersion(TournamentDisplayName);
                 }
-                return FormatPaletteFadeVersion("仙剑98原版 新补丁 " + DX9Version + " 不欢乐");
+                return FormatPaletteFadeVersion(Dx9TimingCategory.ClassicCaption(DX9Version) + " 不欢乐");
             }
             else
             {
                 return "等待游戏运行";
             }
         }
+
+        public override string GetRuntimeIntegrityStatus()
+        { return runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0); }
 
         protected string FormatPaletteFadeVersion(string version)
         {
@@ -1016,6 +1026,7 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
+                runtimeIntegrity.Observe(PalProcess);
                 CopyRPGIfHas();
 
                 JudgePause();
@@ -1329,6 +1340,7 @@ namespace Pal98Timer
                         }
 
                         PalProcess = res[0];
+                        runtimeIntegrity?.SelectTarget(PalProcess);
                         TournamentDisplayName = TournamentLockInfoReader
                             .LoadForProcessExecutable(PalProcess.MainModule.FileName)
                             .CompetitionDisplayName;
@@ -1644,6 +1656,7 @@ namespace Pal98Timer
             PalHandle = IntPtr.Zero;
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
+            runtimeIntegrity?.SelectTarget(null);
             TournamentDisplayName = string.Empty;
             PID = -1;
             GMD5 = "none";
@@ -1953,6 +1966,7 @@ namespace Pal98Timer
             exdata["EarthPaper"] = MaxTLF;
             exdata["CuArmor"] = MaxQTJ;
             exdata["GMD5"] = GMD5;
+            runtimeIntegrity?.Fill(exdata, form != null && form.CloudID() >= 0);
             exdata["DX9Version"] = FormatPaletteFadeVersion(DX9Version);
             exdata["PaletteFadeModeMs"] = paletteFadeMode.Read(PalProcess) ?? 0;
             exdata["TotalMonsterCount"] = TotalMonsterCount;  // 保存撞怪总数
@@ -1984,6 +1998,12 @@ namespace Pal98Timer
                 IsInUnCheat = false;
                 HasUnCheated = true;
             }
+        }
+
+        public override void Unload()
+        {
+            runtimeIntegrity?.Dispose();
+            base.Unload();
         }
 
         public override void OnFunctionKey(int FunNo)
