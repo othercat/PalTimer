@@ -93,7 +93,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.5.0","assembly version");
+        Check(Product.GetName().Version.ToString()=="3.37.6.0","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.6.0","file version");
+        Check(GForm.CurrentVersion=="3.37.6","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));

@@ -587,6 +587,22 @@ namespace Pal98Timer
         /// </summary>
         protected string PointSpanName = "";
         /// <summary>
+        /// Resume timing and check the current route, without restarting a completed run.
+        /// Keep the main watch independent of the final split (manual/imported values may differ).
+        /// </summary>
+        protected void StartAndCheckMainTimer()
+        {
+            if (CheckPoints != null && CurrentStep >= CheckPoints.Count)
+            {
+                MT.Stop();
+                return;
+            }
+
+            MT.Start();
+            Checking();
+        }
+
+        /// <summary>
         /// 检测节点是否触发的逻辑
         /// </summary>
         protected void Checking()

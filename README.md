@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.5（文件版本 3.37.5.0）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.6（文件版本 3.37.6.0）；需要 .NET Framework 4.7.2 框架**
+
+v3.37.6 修复 PAL98、PAL98DX9 和不欢乐内核通关后主时间末位缓慢增长：结束后不再重复启动主秒表及执行结束处理。主时间与末节点各自保留原值，手动调时、跳回节点及接力恢复语义保持。新 EXE 哈希需要重新登记云激活。
 
 v1.68 r10（原 v1.69 候选功能，PALDLL/配置工具 1.6.8.10）配套新增文件、关键代码及运行诊断核验。“[测试版]”只由 PAL.dll 的 SHA-256 和大小决定：当前内嵌清单的最新 1.68，以及发布者指定 ZIP 中的 1.14、1.02 不显示标签，其它 DLL 显示“[测试版]”。其它核心文件差异继续核验并记录，不决定该标签；实际读取失败、随机数待核验、数值改写拦截等提示保持。“运行诊断不可用”在任何时候都不加入标题或 OBS，状态仍保留在报告及成绩中。初次扫描、后台复核、核验成功及正常保护状态不显示提示，云状态仍看原有云 ID。完整状态保留在成绩附加信息中，文件差异仍记录为 Mismatch。这些新增异常均不停止计时，既有时序、暂停和硬核规则保持不变。
 

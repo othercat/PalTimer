@@ -28,6 +28,27 @@ internal sealed class OfflineRestoreCore : 仙剑98柔情DX9
 }
 internal sealed class EmptySnapshotProvider<T> { public T Get() { return default(T); } }
 
+// Delay terminal bookkeeping so an accidental Start -> completed Checking -> Stop
+// cycle is observable without depending on CPU speed or wall-clock granularity.
+internal sealed class CompletedPal98Core : 仙剑98柔情
+{
+    internal int EndCalls;
+    internal CompletedPal98Core(GForm form) : base(form) { }
+    protected override void OnCheckPointEnd() { ++EndCalls; Thread.Sleep(2); base.OnCheckPointEnd(); }
+}
+internal sealed class CompletedDx9Core : 仙剑98柔情DX9
+{
+    internal int EndCalls;
+    internal CompletedDx9Core(GForm form) : base(form) { }
+    protected override void OnCheckPointEnd() { ++EndCalls; Thread.Sleep(2); base.OnCheckPointEnd(); }
+}
+internal sealed class CompletedUnhappyCore : 仙剑98柔情不欢乐模式
+{
+    internal int EndCalls;
+    internal CompletedUnhappyCore(GForm form) : base(form) { }
+    protected override void OnCheckPointEnd() { ++EndCalls; Thread.Sleep(2); base.OnCheckPointEnd(); }
+}
+
 internal static class V165TimingBehavior
 {
     const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
@@ -122,6 +143,86 @@ internal static class V165TimingBehavior
     {
         object previous=Field(core,"form"); Set(core,"form",FormatterServices.GetUninitializedObject(typeof(GForm)));
         try { return Call(core,"CreateDx9OverlaySnapshot"); } finally { Set(core,"form",previous); }
+    }
+
+    static void CompletedMainWatch()
+    {
+        bool sounds=SoundConfig.ins.GlobalEnabled;
+        SoundConfig.ins.GlobalEnabled=false;
+        try
+        {
+            foreach(int kind in new[]{0,1,2}) foreach(int route in new[]{0,1,2})
+            {
+                var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+                form.IsNonSequentialCheck=route!=0;
+                TimerCore core=kind==0?(TimerCore)new CompletedPal98Core(form):
+                    kind==1?(TimerCore)new CompletedDx9Core(form):new CompletedUnhappyCore(form);
+                Set(form,"core",core);
+                if(kind==1) Attach(core,Mode(1200,10,true));
+                bool[] ready={false,false,false}; int checks=0;
+                Action initialize=delegate {
+                    core.CheckPoints=Enumerable.Range(0,3).Select(index=>new CheckPoint(index,
+                        new CheckPointNewer{Name="fixture-"+index,BestTS=TimeSpan.FromMinutes(index+1)}) {
+                            Check=delegate { ++checks; return ready[index]; }
+                        }).ToList();
+                    Set(core,"_CurrentStep",-1);
+                };
+                initialize();
+                var watch=Watch(core);watch.SetTS(TimeSpan.FromMinutes(2));
+                Call(core,"StartAndCheckMainTimer");
+                Check(watch.IsRunning&&core.CurrentStep==0,"Unfinished route starts and checks "+kind+"/"+route);
+                watch.Stop();var paused=watch.CurrentTS;Thread.Sleep(3);
+                Check(watch.CurrentTS==paused,"Existing stop/pause remains stable");
+                if(route==2)
+                {
+                    ready[2]=true;Call(core,"StartAndCheckMainTimer");
+                    Check(core.CheckPoints[0].Status==CheckPointStatus.AutoSkipped,"Nonsequential final jump preserved");
+                }
+                else for(int index=0;index<3;++index){ready[index]=true;Call(core,"StartAndCheckMainTimer");}
+                Check(core.CurrentStep==3&&!watch.IsRunning,"Final route stops "+kind+"/"+route);
+                Check((int)Field(core,"EndCalls")==1,"Terminal callback called once");
+                var ended=core.GetMainWatch();var split=core.CheckPoints[2].Current;int endedChecks=checks;
+                Check(ended>split,"Final bookkeeping delay must not be rewritten into split time");
+                string jsonTime=new HObj(core.GetRStr()).GetValue<string>("Current");
+                string overlay=kind==1?(string)Field(Snapshot(core),"MainTimer"):null;
+                for(int n=0;n<4096;++n)Call(core,"StartAndCheckMainTimer");
+                Check(core.GetMainWatch()==ended&&core.CheckPoints[2].Current==split,"Main and final split separately frozen");
+                Check(!watch.IsRunning&&checks==endedChecks&&(int)Field(core,"EndCalls")==1,"Completed polling performs no route or finish work");
+                Check(new HObj(core.GetRStr()).GetValue<string>("Current")==jsonTime,"Exported main time frozen");
+                if(kind==1)Check((string)Field(Snapshot(core),"MainTimer")==overlay,"OBS main time frozen");
+                core.SetTS(ended+TimeSpan.FromSeconds(7));var adjusted=core.GetMainWatch();
+                Call(core,"StartAndCheckMainTimer");
+                Check(core.GetMainWatch()==adjusted&&core.CheckPoints[2].Current==split,"Completed manual adjustment preserves separate split");
+                ready[1]=ready[2]=false;core.Jump(1);Call(core,"StartAndCheckMainTimer");
+                Check(watch.IsRunning&&core.CurrentStep==1,"Jump back reopens route");watch.Stop();
+                core.Reset();initialize();ready[0]=ready[1]=ready[2]=false;
+                Check(core.GetMainWatch()==TimeSpan.Zero&&!(bool)Field(core,"_hasCallPointEnd"),"Reset clears time and one-run end flag");
+                if(kind==1)Attach(core,Mode(1200,10,true));
+                Call(core,"StartAndCheckMainTimer");Check(watch.IsRunning&&core.CurrentStep==0,"Reset can start a new run");watch.Stop();
+            }
+
+            // Restore through the existing relay body after validating the real
+            // category, without its optional live-PAL attachment probe.
+            var mode=Mode(1200,10,true);var source=Core(0);Attach(source,mode);
+            Watch(source).SetTS(TimeSpan.FromMilliseconds(125999));
+            source.CheckPoints.Last().Current=TimeSpan.FromMilliseconds(125321);
+            Set(source,"_CurrentStep",source.CheckPoints.Count);
+            var imported=new HObj(source.GetRStr());
+            var restored=new OfflineRestoreCore();Call(restored,"InitCheckPoints");Attach(restored,mode);
+            var restoredForm=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            Set(restored,"form",restoredForm);Set(restoredForm,"core",restored);
+            Validate(restored.CoreName,1200,imported,mode);
+            restored.SetTimerFromString(imported.ToJson());restored.Expected=1200;
+            for(int n=0;n<4096;++n)Call(restored,"StartAndCheckMainTimer");
+            Check(restored.GetMainWatch()==TimeSpan.FromMilliseconds(125999),"Completed relay main time preserved exactly");
+            Check(restored.CheckPoints.Last().Current==TimeSpan.FromMilliseconds(125321),"Completed relay retains distinct final split");
+            Check(!Watch(restored).IsRunning&&restored.CurrentStep==restored.CheckPoints.Count,"Completed relay remains stopped");
+            foreach(var point in restored.CheckPoints)point.Check=delegate{return false;};
+            restored.Jump(0);Call(restored,"StartAndCheckMainTimer");
+            Check(Watch(restored).IsRunning&&restored.CurrentStep==0,"Restored completed route can jump back and resume");
+            Watch(restored).Stop();
+        }
+        finally { SoundConfig.ins.GlobalEnabled=sounds; }
     }
 
     static void SnapshotContract()
@@ -506,6 +607,7 @@ internal static class V165TimingBehavior
             Scenario("cross_imports",CrossImports);Scenario("content_imports",ContentImports);Scenario("run_identity",RunIdentity);
             Scenario("legacy_records",LegacyRecords);Scenario("storage_isolation",StorageIsolation);
             Scenario("storage_transactions",StorageTransactions);
+            Scenario("completed_main_watch",CompletedMainWatch);
             Scenario("presentation_completion",PresentationAndCompletion);Scenario("overlay_layout",OverlayLayout);
         }
         HObj result=new HObj();result["scenariosPassed"]=Passed;result["scenariosFailed"]=Failed;result["assertions"]=Assertions;

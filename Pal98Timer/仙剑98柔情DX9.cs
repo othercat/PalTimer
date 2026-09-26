@@ -1863,8 +1863,7 @@ namespace Pal98Timer
                     }
                     else
                     {
-                        MT.Start();
-                        Checking();
+                        StartAndCheckMainTimer();
                     }
                 }
                 else

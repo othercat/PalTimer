@@ -3455,6 +3455,611 @@
           ]
         }
       ]
+    },
+    {
+      "content_id": "吴强-v1.1 + 原版/魂牵技能库@1.1.1",
+      "content_version": "1.1.1",
+      "content_sha256": "fb9a20518b95514fa85212204346b7ec962456d1a1758490456e5cc19ca6790e",
+      "files": [
+        {
+          "path": "ABC.mkf",
+          "size": 933315,
+          "sha256": "c5dadb1303addbf103437de594cb9820150bc9f1f2fea02837594c49e241ed8b"
+        },
+        {
+          "path": "BALL.MKF",
+          "size": 145070,
+          "sha256": "b9925833a9d921aa6bea9d0d199dbbe170968716d951036a142c1dd303f99bd0"
+        },
+        {
+          "path": "DATA.MKF",
+          "size": 63978,
+          "sha256": "c0bc968e5322b06fe669dd6e34483dd1f12dd223ac25b03b6dc74d3742635c1b"
+        },
+        {
+          "path": "F.MKF",
+          "size": 173198,
+          "sha256": "eb492e6dcd0eefb6fbc1751d775bc8667b46d3cd5231974caa1eef309f3152d7"
+        },
+        {
+          "path": "FBP.MKF",
+          "size": 1242530,
+          "sha256": "29bbc71c10c58a555e5b45b853dfeef3fa0d299ceeb8e7556b6c1d6bc40c4d84"
+        },
+        {
+          "path": "FIRE.MKF",
+          "size": 764381,
+          "sha256": "5a23940d3daab5bfa95efd3b92b4d1ae481fc4f7ad38374ec66b16c7e7d5d9cf"
+        },
+        {
+          "path": "GOP.MKF",
+          "size": 16437766,
+          "sha256": "5745d016a8d9c280b90a8b92d2871210a2dd0a0c04a79d4c8e65f4d0396aa04b"
+        },
+        {
+          "path": "M.MSG",
+          "size": 224983,
+          "sha256": "c5f0d47ae195366be4d71dd57a70b6886ca37815c33762a4b88a802e1e7c36d3"
+        },
+        {
+          "path": "MAP.MKF",
+          "size": 1534624,
+          "sha256": "bf8bb4aea35c02f17eeb952d8b5c819a28541a5ec27326f3f5b079fdeeb395ef"
+        },
+        {
+          "path": "MGO.mkf",
+          "size": 1443881,
+          "sha256": "62ce20393e378c80538ba8b9ad1a24112e491f5afc5f350c5ebb00190b2317a0"
+        },
+        {
+          "path": "PAT.MKF",
+          "size": 8488,
+          "sha256": "b2d6a3db53a3e80106a4c041c7f94dfaf9dcb065517fce79b1ff3d413494d997"
+        },
+        {
+          "path": "RGM.MKF",
+          "size": 512292,
+          "sha256": "817b673e9cd72ccd30936475ea26bead5351bbd8e7909e9b9a2a65b6b75fc132"
+        },
+        {
+          "path": "RNG.MKF",
+          "size": 4085342,
+          "sha256": "5d62cad87b330d2e1ec00d7c1acc4de96b8324e547fa8095aab0f64a9811d7bd"
+        },
+        {
+          "path": "SSS.MKF",
+          "size": 575270,
+          "sha256": "fb9a20518b95514fa85212204346b7ec962456d1a1758490456e5cc19ca6790e"
+        },
+        {
+          "path": "WORD.DAT",
+          "size": 5650,
+          "sha256": "be56e77c7ecd61306133913a1987b1dddf656528ae870c2de1ee8ccda7ff3ebf"
+        },
+        {
+          "path": "patches/wuqiang-v1.1.zip",
+          "size": 13425784,
+          "sha256": "ceae771e5aed35996c5986d26a28673370c88c0942e97f7bbe0307d78e6c8715"
+        },
+        {
+          "path": "patches/wuqiang-v1.1.json",
+          "size": 3087,
+          "sha256": "60e9d484a8301ce751c033e61fd940362b992a101ad02dc8c66e76ff9b5d18c2"
+        }
+      ],
+      "settings": [
+        {
+          "file": "config.ini",
+          "section": "Patch",
+          "key": "DefaultPatch",
+          "ignore_case": true,
+          "allowed_values": [
+            "wuqiang-v1.1",
+            "wuqiang-v1.1.zip",
+            "wuqiang-v1.1.json"
+          ]
+        }
+      ]
+    },
+    {
+      "content_id": "pal98.package.wuqiang-v1.1.skill-library.classic-hunqian167.global-skills",
+      "content_version": "1.1.1",
+      "content_sha256": "1be1962f87f674995f0eb4e0320fa034f90cadea9b3be436ca9a282c92941e40",
+      "files": [
+        {
+          "path": "ABC.mkf",
+          "size": 933315,
+          "sha256": "c5dadb1303addbf103437de594cb9820150bc9f1f2fea02837594c49e241ed8b"
+        },
+        {
+          "path": "BALL.MKF",
+          "size": 145070,
+          "sha256": "b9925833a9d921aa6bea9d0d199dbbe170968716d951036a142c1dd303f99bd0"
+        },
+        {
+          "path": "FBP.MKF",
+          "size": 1242530,
+          "sha256": "29bbc71c10c58a555e5b45b853dfeef3fa0d299ceeb8e7556b6c1d6bc40c4d84"
+        },
+        {
+          "path": "GOP.MKF",
+          "size": 16437766,
+          "sha256": "5745d016a8d9c280b90a8b92d2871210a2dd0a0c04a79d4c8e65f4d0396aa04b"
+        },
+        {
+          "path": "MAP.MKF",
+          "size": 1534624,
+          "sha256": "bf8bb4aea35c02f17eeb952d8b5c819a28541a5ec27326f3f5b079fdeeb395ef"
+        },
+        {
+          "path": "MGO.mkf",
+          "size": 1443881,
+          "sha256": "62ce20393e378c80538ba8b9ad1a24112e491f5afc5f350c5ebb00190b2317a0"
+        },
+        {
+          "path": "RGM.MKF",
+          "size": 512292,
+          "sha256": "817b673e9cd72ccd30936475ea26bead5351bbd8e7909e9b9a2a65b6b75fc132"
+        },
+        {
+          "path": "RNG.MKF",
+          "size": 4085342,
+          "sha256": "5d62cad87b330d2e1ec00d7c1acc4de96b8324e547fa8095aab0f64a9811d7bd"
+        },
+        {
+          "path": "patches/wuqiang-v1.1.zip",
+          "size": 13425784,
+          "sha256": "ceae771e5aed35996c5986d26a28673370c88c0942e97f7bbe0307d78e6c8715"
+        },
+        {
+          "path": "patches/wuqiang-v1.1.json",
+          "size": 3087,
+          "sha256": "60e9d484a8301ce751c033e61fd940362b992a101ad02dc8c66e76ff9b5d18c2"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/manifest/game-profile.json",
+          "size": 32793,
+          "sha256": "1be1962f87f674995f0eb4e0320fa034f90cadea9b3be436ca9a282c92941e40"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/SSS.MKF",
+          "size": 587882,
+          "sha256": "63fa4611df1d2d3d7a53e69332b630fc8e73f1b047096a032a66b57071876af1"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/DATA.MKF",
+          "size": 74442,
+          "sha256": "3c6acb303c5ca59e10d6d1f50b6c7a166cb081e555da6f41e1371b663cc33ff9"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/FIRE.MKF",
+          "size": 1422743,
+          "sha256": "49995b75ffaf156a632f5a7bb5936e278007e1f572c9648355cf7ba3ff8985db"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/F.MKF",
+          "size": 266996,
+          "sha256": "c0bcd90d523a35ea662f8ce64460a257f92fc4cdf66e559d27e729afdfa64789"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/PAT.MKF",
+          "size": 8488,
+          "sha256": "b2d6a3db53a3e80106a4c041c7f94dfaf9dcb065517fce79b1ff3d413494d997"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/M.MSG",
+          "size": 231380,
+          "sha256": "2c7bd1d58188dd7186437439dffa2a22f49550bfecea0f305ffb72e07ed58d85"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/resources/WORD.DAT",
+          "size": 5650,
+          "sha256": "be56e77c7ecd61306133913a1987b1dddf656528ae870c2de1ee8ccda7ff3ebf"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/palmod/profile/skill-objects.v1.bin",
+          "size": 40580,
+          "sha256": "cfe0d12f6f62c9d06781c1451bf3da545dc16525a26ee9840096187e7fe04596"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/palmod/profile/global-skill-library.v1.json",
+          "size": 213758,
+          "sha256": "f7a830621263c69be5309e34d6708da939769aef6039448df0c0a83ca92a2aa6"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/palmod/profile/content-catalog.json",
+          "size": 716856,
+          "sha256": "b3d8c0a649916af15a31b47cb844a2829db0b44c8d450f76a27cc1d2f945de86"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/00d021569d046c96aa4378e4e9ee4d456dc91fc6e07a86dbf2e013b84309b880",
+          "size": 1434,
+          "sha256": "00d021569d046c96aa4378e4e9ee4d456dc91fc6e07a86dbf2e013b84309b880"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/00faf0e9b2e35116103700ff0f7a5889018d94c7f0a23a062089ac68131eff16",
+          "size": 59846,
+          "sha256": "00faf0e9b2e35116103700ff0f7a5889018d94c7f0a23a062089ac68131eff16"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/01924a17a7b81679981fe5379a957d08771c5f394aea7e405d65c779d5632dc6",
+          "size": 63822,
+          "sha256": "01924a17a7b81679981fe5379a957d08771c5f394aea7e405d65c779d5632dc6"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/027a0d5b24487e0cd01859b0cf54cadbd1d623bdb07532b5381466b3b4b14988",
+          "size": 32988,
+          "sha256": "027a0d5b24487e0cd01859b0cf54cadbd1d623bdb07532b5381466b3b4b14988"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/035b50579714a32c51791bc5d643e015accd6cf448d014fde347717bef32172a",
+          "size": 6946,
+          "sha256": "035b50579714a32c51791bc5d643e015accd6cf448d014fde347717bef32172a"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/08319b527467f6ca9c670b0db421440392277a9bc2df2c5abe08080dc3e5514c",
+          "size": 15190,
+          "sha256": "08319b527467f6ca9c670b0db421440392277a9bc2df2c5abe08080dc3e5514c"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/083521b59c39ee266459cbe97d73881a1187d5698fe1f17218064eebd4e07cb9",
+          "size": 12658,
+          "sha256": "083521b59c39ee266459cbe97d73881a1187d5698fe1f17218064eebd4e07cb9"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/0981ca47232a557c781b4e6d62b82ef24674be478af2ee3428749756603fb459",
+          "size": 61048,
+          "sha256": "0981ca47232a557c781b4e6d62b82ef24674be478af2ee3428749756603fb459"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/0d7f0621f5a9230a8f4acab36445cab8c73f06b9d98343e9e3c871df2c18ec21",
+          "size": 14836,
+          "sha256": "0d7f0621f5a9230a8f4acab36445cab8c73f06b9d98343e9e3c871df2c18ec21"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/0ee7d1461b065eb3abc0675673bcee32d866c63f1f95eecbf59ea7db36b2ba66",
+          "size": 11126,
+          "sha256": "0ee7d1461b065eb3abc0675673bcee32d866c63f1f95eecbf59ea7db36b2ba66"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/0f95a8346a8abc0dbc4fe2858a4552590ec34724a36cb030c100e6e87782fbfd",
+          "size": 64132,
+          "sha256": "0f95a8346a8abc0dbc4fe2858a4552590ec34724a36cb030c100e6e87782fbfd"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/1504ead987f0751b18e080c52562861230baa255b14d0d1f0c2a759c915265e1",
+          "size": 34024,
+          "sha256": "1504ead987f0751b18e080c52562861230baa255b14d0d1f0c2a759c915265e1"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/1a2ac206aed391cd1cbe8276497ba8c782873c8043ab7a9efc6768011cb42a7b",
+          "size": 47908,
+          "sha256": "1a2ac206aed391cd1cbe8276497ba8c782873c8043ab7a9efc6768011cb42a7b"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/1c0b87e93d046e0609fb876c691a5956eb74f7225d7ecfb0fbd8eb24b4f6f83b",
+          "size": 2412,
+          "sha256": "1c0b87e93d046e0609fb876c691a5956eb74f7225d7ecfb0fbd8eb24b4f6f83b"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/1ceb6951f23085267626246f070341d4104899c853933c43b12f553c57389b30",
+          "size": 52710,
+          "sha256": "1ceb6951f23085267626246f070341d4104899c853933c43b12f553c57389b30"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/214ad75827a9891ebb410a90ee93978dbb9cf65c54dd046e597bffd58c3d5f11",
+          "size": 65376,
+          "sha256": "214ad75827a9891ebb410a90ee93978dbb9cf65c54dd046e597bffd58c3d5f11"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/214ad9c98d42cefd21fcd940691e0d9b020ea55335331a43d9f5fef97c59e8be",
+          "size": 15198,
+          "sha256": "214ad9c98d42cefd21fcd940691e0d9b020ea55335331a43d9f5fef97c59e8be"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/26973a81dc1d49854eddf3f0174fce5042f62a50fe9ab714c0e6752c9932724b",
+          "size": 15752,
+          "sha256": "26973a81dc1d49854eddf3f0174fce5042f62a50fe9ab714c0e6752c9932724b"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/280c115bd0546b5b1f4339e5c8223ae0bc496e10e2f6b03923eaa16efd5b51af",
+          "size": 5778,
+          "sha256": "280c115bd0546b5b1f4339e5c8223ae0bc496e10e2f6b03923eaa16efd5b51af"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/295e0eb3c8201f2d5d08bfe102ed114f4427360ee1748b282d87ac423224b3ad",
+          "size": 37128,
+          "sha256": "295e0eb3c8201f2d5d08bfe102ed114f4427360ee1748b282d87ac423224b3ad"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/2f8d3bca19be717886665b95f3e885603a67f7fb37d5bde2a6761eceeb3930bd",
+          "size": 2708,
+          "sha256": "2f8d3bca19be717886665b95f3e885603a67f7fb37d5bde2a6761eceeb3930bd"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/2fdad2ffbba2b7245398c30001d704162a6c235774b6e9fb74354e8f1ab8c3c5",
+          "size": 30400,
+          "sha256": "2fdad2ffbba2b7245398c30001d704162a6c235774b6e9fb74354e8f1ab8c3c5"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/312402a00b39f40a82d9741ec267fb41b92449a0d2ee6333d1114dc85448fcbb",
+          "size": 58116,
+          "sha256": "312402a00b39f40a82d9741ec267fb41b92449a0d2ee6333d1114dc85448fcbb"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/34a65c3a5f7aaeefe403460e231958c0637e5a6c33d6966ddb2e93f910b63852",
+          "size": 57186,
+          "sha256": "34a65c3a5f7aaeefe403460e231958c0637e5a6c33d6966ddb2e93f910b63852"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/3d560fc5022b9f54f94fab223a20673c9e5b86a3a774808ef52c77b2cce23ea7",
+          "size": 36688,
+          "sha256": "3d560fc5022b9f54f94fab223a20673c9e5b86a3a774808ef52c77b2cce23ea7"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/3e8a26348a468b7eff156b2e55d0143ff655837f5671a6cbcb5076cefd97b477",
+          "size": 8974,
+          "sha256": "3e8a26348a468b7eff156b2e55d0143ff655837f5671a6cbcb5076cefd97b477"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/3f80f31cfa0a3281bb1bfb858824b04b7fa1ecd6402d00e4d41e0005a55c4956",
+          "size": 34836,
+          "sha256": "3f80f31cfa0a3281bb1bfb858824b04b7fa1ecd6402d00e4d41e0005a55c4956"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/504524ec0a17efff57ed21a60ef3680e89e5a5929be0dc9b9ca5ba035ed95ea9",
+          "size": 19588,
+          "sha256": "504524ec0a17efff57ed21a60ef3680e89e5a5929be0dc9b9ca5ba035ed95ea9"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/505a6f48bb86c863aa463d8dc785c2ab06cf28545eec558eaa8b5f09f001469e",
+          "size": 32600,
+          "sha256": "505a6f48bb86c863aa463d8dc785c2ab06cf28545eec558eaa8b5f09f001469e"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/524159f780d5922246bd247db47dd98d05cbfa2dd9ea4cdc3b52612cebbc7d54",
+          "size": 15370,
+          "sha256": "524159f780d5922246bd247db47dd98d05cbfa2dd9ea4cdc3b52612cebbc7d54"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/55c522d324493f7f60fb74d8104d365172452a9789179a1a07ba1628b226d815",
+          "size": 4036,
+          "sha256": "55c522d324493f7f60fb74d8104d365172452a9789179a1a07ba1628b226d815"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/5bbd3ba32bc8f3c41a909a82ad206e369c9d0a3bd8880e4a988f7ac2e5f1c9e7",
+          "size": 47480,
+          "sha256": "5bbd3ba32bc8f3c41a909a82ad206e369c9d0a3bd8880e4a988f7ac2e5f1c9e7"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/5bc00bde8cee943a0c992ae8f52da029194ffc52190119471862f97a4ccd7319",
+          "size": 56036,
+          "sha256": "5bc00bde8cee943a0c992ae8f52da029194ffc52190119471862f97a4ccd7319"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/60c18f33c050a4c2ce60b65c65aeba5b6bf811f461e2e7b5345cf910b0c60f54",
+          "size": 30630,
+          "sha256": "60c18f33c050a4c2ce60b65c65aeba5b6bf811f461e2e7b5345cf910b0c60f54"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/7005ac6a42d49a7aaec2d95e7f21733a0545054d12ff3879acc22cb3f8891400",
+          "size": 13384,
+          "sha256": "7005ac6a42d49a7aaec2d95e7f21733a0545054d12ff3879acc22cb3f8891400"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/700bcb2ae82e494f8c72783b58769be084b65eb18c99bc65072f0a7ca89da16e",
+          "size": 32934,
+          "sha256": "700bcb2ae82e494f8c72783b58769be084b65eb18c99bc65072f0a7ca89da16e"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/70f036c857e7d3047007f9db0d209df7e8843dd6e25277692b58446859da22a7",
+          "size": 58116,
+          "sha256": "70f036c857e7d3047007f9db0d209df7e8843dd6e25277692b58446859da22a7"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/796b6e51532a6195e800e536bc4190b1ccbaab74a8d9bd615ab1576db5042ec4",
+          "size": 28290,
+          "sha256": "796b6e51532a6195e800e536bc4190b1ccbaab74a8d9bd615ab1576db5042ec4"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/7a3dff3c7f4e93ab5d805dc3dc67d0675a9aa93c98a62439c5acdf2f00af43e8",
+          "size": 18696,
+          "sha256": "7a3dff3c7f4e93ab5d805dc3dc67d0675a9aa93c98a62439c5acdf2f00af43e8"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/8554bd051e2f89eee33f4f056b1755f803b28db76e1d454080369867d5ba6a1d",
+          "size": 42020,
+          "sha256": "8554bd051e2f89eee33f4f056b1755f803b28db76e1d454080369867d5ba6a1d"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/89241260941eab53e26f8be068e71d41efba0b0f41db0768bd7502e061c4a064",
+          "size": 10216,
+          "sha256": "89241260941eab53e26f8be068e71d41efba0b0f41db0768bd7502e061c4a064"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/8ec476fa36ece4ac92349c3e244ecd768a8f17f2f4d0b91423a759ea31f7cba5",
+          "size": 63468,
+          "sha256": "8ec476fa36ece4ac92349c3e244ecd768a8f17f2f4d0b91423a759ea31f7cba5"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/9399af9b7bd0af897ee6cc35a05ad82a3c3f82dcbb87e66f6f5a65991e75c632",
+          "size": 21246,
+          "sha256": "9399af9b7bd0af897ee6cc35a05ad82a3c3f82dcbb87e66f6f5a65991e75c632"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/9593339ed9aed48d302678a4afcf893aeceaae94cdec061dd9be6508db55a9f2",
+          "size": 36216,
+          "sha256": "9593339ed9aed48d302678a4afcf893aeceaae94cdec061dd9be6508db55a9f2"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/a7f105ad3e1a11931ad5a2597d8ba7f9698fcf3fdc65af21aeb9deb6788ec81a",
+          "size": 7170,
+          "sha256": "a7f105ad3e1a11931ad5a2597d8ba7f9698fcf3fdc65af21aeb9deb6788ec81a"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/a8b6c9ec3d3243d50eb5a823533b58a027b473861b69e4a756391acfb3185080",
+          "size": 64454,
+          "sha256": "a8b6c9ec3d3243d50eb5a823533b58a027b473861b69e4a756391acfb3185080"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/ad3acd76b02c811d333955257b7be164b758becd68bb069adee5a2cde102e9ff",
+          "size": 11392,
+          "sha256": "ad3acd76b02c811d333955257b7be164b758becd68bb069adee5a2cde102e9ff"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/adaa891864f8c734383cca841cf3f607273e62f628f414d837d8ea67ee0c352f",
+          "size": 21906,
+          "sha256": "adaa891864f8c734383cca841cf3f607273e62f628f414d837d8ea67ee0c352f"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/b699926e79e29fbd6319aaa5ad6201360aaadeeb59cf4f1ce5db1cb54086384b",
+          "size": 24192,
+          "sha256": "b699926e79e29fbd6319aaa5ad6201360aaadeeb59cf4f1ce5db1cb54086384b"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/b76ea29a62f1b077389743750fb27c714a3db4d8bc44c3cb342ac49f66c9d962",
+          "size": 8604,
+          "sha256": "b76ea29a62f1b077389743750fb27c714a3db4d8bc44c3cb342ac49f66c9d962"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/b7d87fe726b5c4a1875d430e6b492bb94b04f3aeccfcf34f796db5dcb26a6813",
+          "size": 14932,
+          "sha256": "b7d87fe726b5c4a1875d430e6b492bb94b04f3aeccfcf34f796db5dcb26a6813"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/bbd80c42d14a8c9452c952ee6091135c6b1434662dac01e1b9358bec10b34c5b",
+          "size": 17968,
+          "sha256": "bbd80c42d14a8c9452c952ee6091135c6b1434662dac01e1b9358bec10b34c5b"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/bd0610c2f8c9ec13ea5329ef6f09e1816a5efd1d324a5e941639632031ccbcdc",
+          "size": 62626,
+          "sha256": "bd0610c2f8c9ec13ea5329ef6f09e1816a5efd1d324a5e941639632031ccbcdc"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/bd9120b55028a3878de329071381c1af098356b25bc5b1ad5219c075be3e6dbf",
+          "size": 4360,
+          "sha256": "bd9120b55028a3878de329071381c1af098356b25bc5b1ad5219c075be3e6dbf"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/be4d8c3a3abd99f1d086b1ee1123060f6a3e36c59b9bcdafa66554383f6a0026",
+          "size": 49084,
+          "sha256": "be4d8c3a3abd99f1d086b1ee1123060f6a3e36c59b9bcdafa66554383f6a0026"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/c65cec917049d0afa07672d18026a1f3c79c5f33f932d75cbb5cac91a629bf8e",
+          "size": 65502,
+          "sha256": "c65cec917049d0afa07672d18026a1f3c79c5f33f932d75cbb5cac91a629bf8e"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/c9f02ec82dcb4019aaa2c79452f10088912c0a529072fb9cea20134ad1be1e17",
+          "size": 8642,
+          "sha256": "c9f02ec82dcb4019aaa2c79452f10088912c0a529072fb9cea20134ad1be1e17"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/ca708c07fefa47116e0c1a74dc0475430e5cd2673340a32022bbe55da15c35b4",
+          "size": 28624,
+          "sha256": "ca708c07fefa47116e0c1a74dc0475430e5cd2673340a32022bbe55da15c35b4"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/cae0fb4cbd6e2453e9637eb0ad46152057f7f20ac963c60673fdc905f2541f4a",
+          "size": 34004,
+          "sha256": "cae0fb4cbd6e2453e9637eb0ad46152057f7f20ac963c60673fdc905f2541f4a"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/ce6572db1eba8ee39ff162715201ea29385de2f8e9bba7ec9e31e12443102806",
+          "size": 63794,
+          "sha256": "ce6572db1eba8ee39ff162715201ea29385de2f8e9bba7ec9e31e12443102806"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/d373159508e13397f374a267e6c062cfd5ddfc591ea4e2834fea761b56d8b5b5",
+          "size": 27470,
+          "sha256": "d373159508e13397f374a267e6c062cfd5ddfc591ea4e2834fea761b56d8b5b5"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/d4716ab038f43e2adc1fc6a4d18571d9bf7cec475551cc4e92a398fc31459248",
+          "size": 15518,
+          "sha256": "d4716ab038f43e2adc1fc6a4d18571d9bf7cec475551cc4e92a398fc31459248"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/d81f42497063110dcdbe208382a6fe97576bcfe129b10a9f7364f4a55c87dfc0",
+          "size": 9414,
+          "sha256": "d81f42497063110dcdbe208382a6fe97576bcfe129b10a9f7364f4a55c87dfc0"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/d8fc40fcfb0726eaed0b8f394fc655360c5968971e718224d2cd1ef6f7673624",
+          "size": 54494,
+          "sha256": "d8fc40fcfb0726eaed0b8f394fc655360c5968971e718224d2cd1ef6f7673624"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/ddb8df5b76355e08a46a9cc397768ff8d0057268d9733496f51722ccaad86d17",
+          "size": 8348,
+          "sha256": "ddb8df5b76355e08a46a9cc397768ff8d0057268d9733496f51722ccaad86d17"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/de67060f56a82d983141fd8703eab6ebc0620a29ddbe23b7f4abd5842fe78265",
+          "size": 33206,
+          "sha256": "de67060f56a82d983141fd8703eab6ebc0620a29ddbe23b7f4abd5842fe78265"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/de8a2a72b89d123691c31084b64b5584e53c95fccdf0b840cb68338269ae5ef8",
+          "size": 56400,
+          "sha256": "de8a2a72b89d123691c31084b64b5584e53c95fccdf0b840cb68338269ae5ef8"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/e0b3d13a6b9107b3bc42497571d92b6acfb7800df17ccfa8439d7a1d95930d4d",
+          "size": 47786,
+          "sha256": "e0b3d13a6b9107b3bc42497571d92b6acfb7800df17ccfa8439d7a1d95930d4d"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/e20f8996d00274aa854e84a04b22179a44fe873d3b7905bd19e1819ca326c9ec",
+          "size": 4374,
+          "sha256": "e20f8996d00274aa854e84a04b22179a44fe873d3b7905bd19e1819ca326c9ec"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/ec5de42214f655c3146334e386d18d2fd6710e0e7799bd3394497bfffb560448",
+          "size": 28622,
+          "sha256": "ec5de42214f655c3146334e386d18d2fd6710e0e7799bd3394497bfffb560448"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/efd7b2fb16a6b32251cd4f1992731d63f9645c3ec486fab7d2c206ce37fb2d7e",
+          "size": 16920,
+          "sha256": "efd7b2fb16a6b32251cd4f1992731d63f9645c3ec486fab7d2c206ce37fb2d7e"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/f22456f3479833b781708ac79c25fd331b4a14d7f989bd10aa91d0c045f8dd67",
+          "size": 20034,
+          "sha256": "f22456f3479833b781708ac79c25fd331b4a14d7f989bd10aa91d0c045f8dd67"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/f617dc503887715bbacb46d5618db37a0245ffbb5937fc1e3a61195e7a3d2e63",
+          "size": 25392,
+          "sha256": "f617dc503887715bbacb46d5618db37a0245ffbb5937fc1e3a61195e7a3d2e63"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/c/fdfa64c64bc414c81fcd95ac037e0e351781d3f2066df3e3befabd81cbc2470f",
+          "size": 24838,
+          "sha256": "fdfa64c64bc414c81fcd95ac037e0e351781d3f2066df3e3befabd81cbc2470f"
+        },
+        {
+          "path": "palmod/Profiles/p/1be1962f87f674995f0eb4e0320fa034/x/m",
+          "size": 110249,
+          "sha256": "57160ae2b3e19be263158a08495002df30cf9d9cd421222918be6d3a6a31e599"
+        }
+      ],
+      "settings": [
+        {
+          "file": "config.ini",
+          "section": "Patch",
+          "key": "DefaultPatch",
+          "ignore_case": true,
+          "allowed_values": [
+            "wuqiang-v1.1",
+            "wuqiang-v1.1.zip",
+            "wuqiang-v1.1.json"
+          ]
+        }
+      ]
     }
   ],
   "settings": [
