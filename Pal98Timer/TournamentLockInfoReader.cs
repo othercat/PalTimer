@@ -22,6 +22,7 @@ namespace Pal98Timer
         public TournamentLockReadState State { get; set; }
         public string CompetitionDisplayName { get; set; }
         public string Diagnostic { get; set; }
+        internal string CommonToolsSnapshot { get; set; }
     }
 
     internal sealed class TournamentTimerLockedFile
@@ -66,7 +67,9 @@ namespace Pal98Timer
         internal static bool SupportedLockVersions(string producer, string contract, string runtime, string timer)
         {
             if (contract != "PAL98.Settings.v1") return false;
-            return producer == "1.6.8.10" && runtime == "1.6.8.10" && timer == "3.37.5.0" ||
+            return producer == "1.6.8.12" && runtime == "1.6.8.12" && timer == "3.37.6.2" ||
+                producer == "1.6.8.11" && runtime == "1.6.8.11" && timer == "3.37.6.1" ||
+                producer == "1.6.8.10" && runtime == "1.6.8.10" && timer == "3.37.5.0" ||
                 producer == "1.6.9.0" && runtime == "1.6.9.0" && timer == "3.37.5.0" ||
                 (producer == "1.6.8.1" || producer == "1.6.8.2") && runtime == "1.6.8.1" && timer == "3.37.4.4";
         }
@@ -143,12 +146,15 @@ namespace Pal98Timer
                     Guid.TryParseExact(manifest.configuration_id, "D", out selectionId) && Regex.IsMatch(manifest.configuration_sha256 ?? "", "^[0-9a-f]{64}$"))
                     return new TournamentLockInfo { State = TournamentLockReadState.Unlocked, CompetitionDisplayName = "", Diagnostic = "unlocked preset" };
                 string error;
-                if (!Validate(active, manifest, out error)) return Invalid(error);
+                string commonTools = null;
+                if (!Validate(active, manifest, out error, (name, data) => {
+                    if (name == "palmod/common-tools.v1.json") commonTools = new UTF8Encoding(false, true).GetString(data);
+                })) return Invalid(error);
                 return new TournamentLockInfo
                 {
                     State = TournamentLockReadState.Locked,
                     CompetitionDisplayName = manifest.competition_display_name,
-                    Diagnostic = "locked"
+                    Diagnostic = "locked", CommonToolsSnapshot = commonTools
                 };
             }
             catch (Exception ex)
@@ -179,7 +185,7 @@ namespace Pal98Timer
         private static bool Validate(
             string activeDirectory,
             TournamentTimerManifest manifest,
-            out string error)
+            out string error, Action<string, byte[]> inspected = null)
         {
             error = string.Empty;
             if (manifest == null || (manifest.schema != Schema || manifest.version != 1) && (manifest.schema != "PAL98.TournamentLock.v2" || manifest.version != 2) || !manifest.locked)
@@ -271,6 +277,7 @@ namespace Pal98Timer
                     error = "tournament lock snapshot hash mismatch";
                     return false;
                 }
+                inspected?.Invoke(file.name, snapshotBytes);
             }
             if (!ExpectedFiles.All(seen.Contains)) return false;
             if (manifest.version == 2)
@@ -307,7 +314,7 @@ namespace Pal98Timer
         private static bool SafeRelative(string path) => !string.IsNullOrEmpty(path) && !Path.IsPathRooted(path) && path.Length <= 220 &&
             path.IndexOfAny(new[] { '\\', ':', '\r', '\n', '\0' }) < 0 && path.Split('/').All(p => p.Length > 0 && p != "." && p != ".." && p.TrimEnd(' ', '.') == p && p.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
         private static bool AllowedSnapshot(string path, int version) => SafeRelative(path) && (ExpectedFiles.Contains(path, StringComparer.OrdinalIgnoreCase) || version == 2 &&
-            (path == "palmod/random-skill-selection.v1.json" || path == "palmod/common-tools.v1.json" || Regex.IsMatch(path, @"^Graphics/Presets/[^/]+\.ini$", RegexOptions.IgnoreCase) || Regex.IsMatch(path, @"^copymen_scripts/[^/]+\.module\.json$", RegexOptions.IgnoreCase)));
+            (path == "palmod/random-skill-selection.v1.json" || path == "palmod/common-tools.v1.json" || path == "palmod/title-presentation.v1.json" || Regex.IsMatch(path, @"^Graphics/Presets/[^/]+\.ini$", RegexOptions.IgnoreCase) || Regex.IsMatch(path, @"^copymen_scripts/[^/]+\.module\.json$", RegexOptions.IgnoreCase)));
         private static string HashFile(string path)
         {
             using (var file = File.OpenRead(path)) using (var sha = SHA256.Create()) return ToHex(sha.ComputeHash(file));

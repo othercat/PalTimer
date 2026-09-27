@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 
@@ -72,6 +74,9 @@ namespace Pal98Timer
         public string schema { get; set; }
         public string release_id { get; set; }
         public string build { get; set; }
+        public string source_commit { get; set; }
+        public string source_state { get; set; }
+        internal string ManifestSha256 { get; private set; }
         public bool frozen { get; set; }
         public ReleaseIntegrityFile[] files { get; set; }
         public ReleaseIntegrityGraphics[] graphics_chains { get; set; }
@@ -89,6 +94,23 @@ namespace Pal98Timer
                 using (var reader = new StreamReader(stream)) return Parse(reader.ReadToEnd());
             }
         }
+        // Approval is independent of this verification catalog. Every embedded
+        // baseline is keyed by bytes, never by a self-reported version string.
+        internal static ReleaseIntegrityManifest[] LoadCatalog()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var catalog = assembly.GetManifestResourceNames().Where(n => n == ResourceName ||
+                n.StartsWith("Pal98Timer.release_integrity.", StringComparison.Ordinal) && n.EndsWith(".v1.json", StringComparison.Ordinal))
+                .Select(n => { using (var stream = assembly.GetManifestResourceStream(n)) using (var reader = new StreamReader(stream)) return Parse(reader.ReadToEnd()); }).ToArray();
+            var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var manifest in catalog) {
+                var dll = manifest.files.Single(f => f.path.Equals("PAL.dll", StringComparison.OrdinalIgnoreCase));
+                if (!identities.Add(dll.size + ":" + dll.sha256)) throw new InvalidDataException("Duplicate DLL build in embedded catalog");
+            }
+            if (catalog.Length == 0) throw new InvalidDataException("Missing embedded build catalog");
+            return catalog;
+        }
+        internal bool MatchesDll(long size, string hash) => files.Any(f => f.path.Equals("PAL.dll", StringComparison.OrdinalIgnoreCase) && f.size == size && string.Equals(hash, f.sha256, StringComparison.OrdinalIgnoreCase));
         internal static ReleaseIntegrityManifest Parse(string json)
         {
             if (json == null || json.Length > 4 * 1024 * 1024) throw new InvalidDataException("Invalid release manifest size");
@@ -147,6 +169,7 @@ namespace Pal98Timer
                         fixup.offset < 0 || (long)fixup.offset + 4 > region.expected.Length / 2 ||
                         Enumerable.Range(fixup.offset, 4).Any(i => !occupied.Add(i))) throw new InvalidDataException("Invalid memory fixup");
             }
+            using (var sha = SHA256.Create()) manifest.ManifestSha256 = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(json))).Replace("-", "").ToLowerInvariant();
             return manifest;
         }
         private static void ValidateFiles(ReleaseIntegrityFile[] files)
@@ -176,14 +199,15 @@ namespace Pal98Timer
                     !keys.Add(setting.file + "\n" + setting.section + "\n" + setting.key)) throw new InvalidDataException("Invalid release setting");
         }
         internal static bool Hash(string text) { return text != null && Regex.IsMatch(text, "^[0-9a-fA-F]{64}$"); }
-        // The current DLL comes from the compiled release manifest. These two
-        // historical identities were read from the owner's exact release ZIPs;
-        // version strings, an adjacent JSON file, and arbitrary old DLLs do not
-        // qualify. This classification does not waive the other file checks.
+        // Only the owner's explicitly approved identities. Adding a
+        // supported candidate baseline never promotes that DLL to official.
         internal string OfficialPalDllVersion(long size, string hash)
+        { return ApprovedPalDllVersion(size, hash); }
+        internal static string ApprovedPalDllVersion(long size, string hash)
         {
-            var current = files.SingleOrDefault(f => string.Equals(f.path, "PAL.dll", StringComparison.OrdinalIgnoreCase));
-            if (current != null && size == current.size && string.Equals(hash, current.sha256, StringComparison.OrdinalIgnoreCase)) return "current";
+            if (size == 2016256 && string.Equals(hash, "b16a613b73d1d7ddd6cad12ddef5262c123908f50ba2fa3dcbaed51dd0708700", StringComparison.OrdinalIgnoreCase)) return "1.6.8.10";
+            // Explicitly approved together with 20260925 for the 3.37.7 test package.
+            if (size == 2064384 && string.Equals(hash, "064a85def9ebe62652cc89b228413a9f1055335961016f1f927f2748cd9a440e", StringComparison.OrdinalIgnoreCase)) return "1.6.8.12";
             if (size == 526336 && string.Equals(hash, "b3bc8a7b53cb92a8e7910c3b6e3176cdfeb888ca50cba79c8e26c4f8e9b634e6", StringComparison.OrdinalIgnoreCase)) return "1.14";
             if (size == 477184 && string.Equals(hash, "cb47b9e66119de098c3d4d9bc6a1fe2d9c0672d1afc2a13d8110f3a98a8ac8b0", StringComparison.OrdinalIgnoreCase)) return "1.02";
             return null;

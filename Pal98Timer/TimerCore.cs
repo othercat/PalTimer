@@ -229,6 +229,13 @@ namespace Pal98Timer
         /// <param name="index"></param>
         public void Jump(int index)
         {
+            // A manual route rewind must not reuse an already uploaded run id.
+            if (index < CurrentStep)
+            {
+                competitionCoreId = Guid.NewGuid().ToString("N");
+                competitionSequence = -1;
+                form?.InvalidateCompetition(this, competitionCoreId + ":" + ScoreRunSequence);
+            }
             for (int i = 0; i < CheckPoints.Count; ++i)
             {
                 if (i < index)
@@ -898,7 +905,48 @@ namespace Pal98Timer
         /// </summary>
         private long scoreRunSequence;
         public long ScoreRunSequence { get { return System.Threading.Interlocked.Read(ref scoreRunSequence); } }
-        protected void AdvanceScoreRunSequence() { System.Threading.Interlocked.Increment(ref scoreRunSequence); }
+        protected void AdvanceScoreRunSequence()
+        {
+            System.Threading.Interlocked.Increment(ref scoreRunSequence);
+            form?.InvalidateCompetition(this, competitionCoreId + ":" + ScoreRunSequence);
+        }
+        private string competitionCoreId = Guid.NewGuid().ToString("N");
+        internal string CompetitionToken { get { return competitionCoreId + ":" + ScoreRunSequence; } }
+        internal virtual Process CompetitionGameProcess { get { return null; } }
+        private long competitionSequence = -1, competitionPoll;
+        private int competitionStep = -2;
+        private string competitionFingerprint = "";
+        private bool competitionBeganHere;
+        internal virtual void CaptureCompetitionIdentity(out string hash, out string version, out int fade, out int speed, out string error)
+        { hash = version = ""; fade = speed = 0; error = "此内核尚未接入比赛联机"; }
+        private void PublishCompetitionIfChanged()
+        {
+            if (form == null || !form.CompetitionEnabled(this) || CheckPoints == null || CheckPoints.Count == 0) return;
+            string coreIdentity = competitionCoreId;
+            long sequence = ScoreRunSequence, now = Stopwatch.GetTimestamp(); int step = CurrentStep;
+            if (sequence == competitionSequence && step == competitionStep && now < competitionPoll) return;
+            competitionPoll = now + Stopwatch.Frequency;
+            string hash, version, error; int fade, speed;
+            CaptureCompetitionIdentity(out hash, out version, out fade, out speed, out error);
+            if (sequence != competitionSequence) competitionBeganHere = step <= 0;
+            string fingerprint = coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
+            if (fingerprint == competitionFingerprint) return;
+            var splits = new CompetitionSplit[CheckPoints.Count];
+            for (int index = 0; index < splits.Length; index++)
+            {
+                var point = CheckPoints[index];
+                splits[index] = new CompetitionSplit { checkpoint_id = point.Name,
+                    elapsed_ms = point.Status == CheckPointStatus.Completed ? (long?)(point.Current.Ticks / TimeSpan.TicksPerMillisecond) : null,
+                    status = point.Status == CheckPointStatus.Completed ? "completed" : point.Status == CheckPointStatus.AutoSkipped ? "auto_skipped" : point.Status == CheckPointStatus.ManualSkipped ? "manual_skipped" : "in_progress" };
+            }
+            long totalMilliseconds = MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond;
+            if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
+            competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
+            form.PublishCompetition(this, new CompetitionObservation { Token = coreIdentity + ":" + sequence, Core = CoreName,
+                Step = step, TotalMilliseconds = totalMilliseconds,
+                Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
+                DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = error, Splits = splits });
+        }
         protected virtual void ValidateBestReference(HObj reference) { }
 
         public virtual void Reset()
@@ -943,6 +991,9 @@ namespace Pal98Timer
                     try
                     {
                         OnTick();
+                        // After the local result has been fixed. A failure in diagnostics
+                        // cannot prevent the next local tick, pause or reset.
+                        PublishCompetitionIfChanged();
                     }
                     catch { }
                     WriteAutomationTickSnapshotIfDue();

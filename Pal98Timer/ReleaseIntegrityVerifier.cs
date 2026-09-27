@@ -25,11 +25,17 @@ namespace Pal98Timer
         internal const int BackgroundByteBudget = 256 * 1024;
         internal const int SliceMilliseconds = 2;
         private readonly string root;
-        private readonly ReleaseIntegrityManifest manifest;
-        private readonly ReleaseIntegrityProfile profile;
-        private readonly Queue<string> pending;
-        private readonly Queue<ReleaseIntegritySetting> pendingSettings;
-        private readonly Dictionary<string, ReleaseIntegrityFile> fileRules;
+        private ReleaseIntegrityManifest manifest;
+        private ReleaseIntegrityProfile profile;
+        private Queue<string> pending;
+        private Queue<ReleaseIntegritySetting> pendingSettings;
+        private Dictionary<string, ReleaseIntegrityFile> fileRules;
+        private readonly ReleaseIntegrityManifest[] catalog;
+        private readonly RuntimeTimingMode mode;
+        private bool identityResolved;
+        internal ReleaseIntegrityManifest SelectedManifest => manifest;
+        internal string PalDllSha256 { get; private set; }
+        internal long PalDllSize { get; private set; }
         private readonly Dictionary<string, IntegrityFileResult> results = new Dictionary<string, IntegrityFileResult>(StringComparer.OrdinalIgnoreCase);
         private readonly byte[] buffer = new byte[65536];
         private FileStream stream;
@@ -63,7 +69,20 @@ namespace Pal98Timer
 
         internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest manifest, RuntimeTimingMode mode)
         {
-            this.root = Path.GetFullPath(root); this.manifest = manifest; profile = manifest.FindProfile(mode);
+            this.root = Path.GetFullPath(root); this.mode = mode; identityResolved = true;
+            Configure(manifest);
+        }
+        internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest[] catalog, RuntimeTimingMode mode)
+        {
+            this.root = Path.GetFullPath(root); this.catalog = catalog; this.mode = mode;
+            pending = new Queue<string>(new[] { "PAL.dll" });
+            fileRules = new Dictionary<string, ReleaseIntegrityFile>(StringComparer.OrdinalIgnoreCase) { ["PAL.dll"] = new ReleaseIntegrityFile { path = "PAL.dll" } };
+            pendingSettings = new Queue<ReleaseIntegritySetting>(); directoryComplete = settingsComplete = true;
+            Detail = "构建身份核验尚未完成";
+        }
+        private void Configure(ReleaseIntegrityManifest selected)
+        {
+            manifest = selected; profile = manifest.FindProfile(mode);
             directoryComplete = manifest.exact_directories == null || manifest.exact_directories.Length == 0;
             pendingSettings = new Queue<ReleaseIntegritySetting>(manifest.settings.Concat(profile == null ? new ReleaseIntegritySetting[0] : profile.settings ?? new ReleaseIntegritySetting[0]));
             settingsComplete = pendingSettings.Count == 0;
@@ -71,7 +90,7 @@ namespace Pal98Timer
                 .Concat(manifest.graphics_chains.SelectMany(c => c.files)).GroupBy(f => f.path, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             // Resolve module switches before visiting conditional payloads.
-            pending = new Queue<string>(fileRules.Values.OrderBy(f => f.normalization != null ? 0 : f.enabled_by == null ? 1 : 2).Select(f => f.path));
+            pending = new Queue<string>(fileRules.Values.Where(f => !results.ContainsKey(f.path)).OrderBy(f => f.normalization != null ? 0 : f.enabled_by == null ? 1 : 2).Select(f => f.path));
             Detail = "文件核验尚未完成";
         }
         internal int Advance()
@@ -136,6 +155,11 @@ namespace Pal98Timer
                 catch (InvalidDataException) { results[activePath] = new IntegrityFileResult { Missing = true }; CloseActive(); break; }
                 catch (Exception ex) when (ReadFailure(ex)) { results[activePath] = new IntegrityFileResult { Error = ex.Message }; CloseActive(); }
             } while (consumed < byteBudget && Stopwatch.GetTimestamp() < deadline);
+            if (!identityResolved && results.TryGetValue("PAL.dll", out var identity)) {
+                identityResolved = true;
+                var selected = identity.Error == null && !identity.Missing ? catalog.SingleOrDefault(m => m.MatchesDll(identity.Size, identity.Hash)) : null;
+                if (selected != null) Configure(selected);
+            }
             if (pending.Count == 0 && stream == null && !directoryComplete && Stopwatch.GetTimestamp() < deadline)
                 AdvanceDirectory(deadline);
             if (pending.Count == 0 && stream == null && directoryComplete && !settingsComplete && Stopwatch.GetTimestamp() < deadline)
@@ -230,6 +254,7 @@ namespace Pal98Timer
         private void Evaluate()
         {
             EvaluatePalDll();
+            if (manifest == null) { State = IntegrityCheckState.Incomplete; Detail = identityResolved ? "该 DLL 构建尚未登记核验清单" : "构建身份核验尚未完成"; return; }
             if (!manifest.frozen) { State = IntegrityCheckState.Incomplete; Detail = "定版清单尚未冻结"; return; }
             State = IntegrityCheckState.Match;
             foreach (var file in manifest.files.Concat(profile == null ? new ReleaseIntegrityFile[0] : profile.files))
@@ -263,11 +288,13 @@ namespace Pal98Timer
         {
             PalDllState = IntegrityCheckState.Incomplete; PalDllVersion = "";
             IntegrityFileResult result;
-            if (!manifest.frozen || !results.TryGetValue("PAL.dll", out result) || result.Error != null) return;
+            if (!results.TryGetValue("PAL.dll", out result) || result.Error != null) return;
+            if (catalog != null && result.Missing) return;
             // Reuse the existing budgeted scan; no additional file IO or hashing.
-            PalDllVersion = result.Missing ? null : manifest.OfficialPalDllVersion(result.Size, result.Hash);
-            PalDllState = PalDllVersion == null ? IntegrityCheckState.Mismatch : IntegrityCheckState.Match;
-            PalDllVersion = PalDllVersion ?? "";
+            PalDllSize = result.Size; PalDllSha256 = result.Hash ?? "";
+            var approved = result.Missing ? null : ReleaseIntegrityManifest.ApprovedPalDllVersion(result.Size, result.Hash);
+            PalDllState = approved == null ? IntegrityCheckState.Mismatch : IntegrityCheckState.Match;
+            PalDllVersion = approved ?? (!result.Missing && manifest != null && manifest.MatchesDll(result.Size, result.Hash) ? manifest.build : "");
         }
         private bool VerifySetting(ReleaseIntegritySetting setting)
         { return VerifySettingCore(setting, false); }

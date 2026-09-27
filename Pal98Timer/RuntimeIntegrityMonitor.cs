@@ -16,6 +16,8 @@ namespace Pal98Timer
         internal RuntimeIntegritySnapshot Runtime;
         internal RuntimeIntegritySnapshot LastAlert;
         internal string ReleaseId = "", Detail = "", GraphicsChain = "", PalDllVersion = "";
+        internal string PalDllSha256 = "", VerificationBuild = "", VerificationManifestSha256 = "", VerificationSourceCommit = "", VerificationSourceState = "";
+        internal long PalDllSize;
         internal bool Frozen, HeartbeatValid, FileMismatchSeen, CodeMismatchSeen, FileRecheckInProgress, PalDllMismatchSeen;
         internal bool ReadFailed, DiagnosticUnavailable;
         internal long FilesVerifiedAt;
@@ -46,6 +48,11 @@ namespace Pal98Timer
             data["ProcessCreationTime"] = Identity == null ? "" : Identity.CreationTime.ToString(System.Globalization.CultureInfo.InvariantCulture);
             data["FileState"] = Files.ToString(); data["CodeState"] = Code.ToString();
             data["PalDllState"] = PalDll.ToString(); data["PalDllVersion"] = PalDllVersion;
+            data["PalDllSha256"] = PalDllSha256; data["PalDllSize"] = PalDllSize;
+            data["PalDllApproved"] = PalDll == IntegrityCheckState.Match;
+            data["VerificationBuild"] = VerificationBuild; data["VerificationManifestSha256"] = VerificationManifestSha256;
+            data["VerificationSourceCommit"] = VerificationSourceCommit; data["VerificationSourceState"] = VerificationSourceState;
+            data["TimerVersion"] = typeof(RuntimeIntegrityMonitor).Assembly.GetName().Version.ToString(4);
             data["PalDllMismatchSeen"] = PalDllMismatchSeen;
             data["FileRecheckInProgress"] = FileRecheckInProgress;
             data["ReadFailed"] = ReadFailed; data["DiagnosticUnavailable"] = DiagnosticUnavailable;
@@ -109,6 +116,13 @@ namespace Pal98Timer
         }
         internal string Summary(bool cloudCertified) { return observed ? evidence.Summary(cloudCertified) : ""; }
         internal void Fill(HObj target, bool cloudCertified) { evidence.Fill(target, cloudCertified); }
+        internal void CompetitionIdentity(out string hash, out string version)
+        {
+            var snapshot = evidence;
+            hash = snapshot.PalDllSha256;
+            version = snapshot.PalDllVersion;
+            if (string.IsNullOrEmpty(version) && snapshot.Runtime != null) version = snapshot.Runtime.Build;
+        }
 
         internal long SelectTarget(Process process)
         {
@@ -213,8 +227,7 @@ namespace Pal98Timer
             }
             session.Generation = generation;
             var state = Copy(session.Evidence);
-            var manifest = session.Manifest;
-            state.Identity = identity; state.ReleaseId = manifest.release_id; state.Frozen = manifest.frozen;
+            state.Identity = identity;
             long now = Stopwatch.GetTimestamp();
             var runtime = RuntimeIntegrityReader.Read(identity, Stopwatch.Frequency, state.Runtime);
             state.HeartbeatValid = runtime != null;
@@ -237,7 +250,7 @@ namespace Pal98Timer
                     state.FilesVerifiedAt = 0;
                 }
                 if (session.Verifier != null) session.Verifier.Dispose();
-                session.Mode = mode; session.Verifier = new ReleaseIntegrityVerifier(Path.GetDirectoryName(identity.ExecutablePath), manifest, mode);
+                session.Mode = mode; session.Verifier = new ReleaseIntegrityVerifier(Path.GetDirectoryName(identity.ExecutablePath), session.Catalog, mode);
                 session.NextFileScan = long.MaxValue; session.NextFileSlice = 0;
             }
             if (!session.Verifier.Complete && now >= session.NextFileSlice)
@@ -248,6 +261,14 @@ namespace Pal98Timer
                     (state.FilesVerifiedAt == 0 ? ObservationMilliseconds : BackgroundSliceMilliseconds) / 1000;
             }
             state.FileRecheckInProgress = !session.Verifier.Complete;
+            var manifest = session.Verifier.SelectedManifest;
+            if (!ReferenceEquals(session.Manifest, manifest)) {
+                session.Manifest = manifest; session.CheckedRegions.Clear(); session.ActiveRegions = null; session.RegionIndex = 0;
+            }
+            state.ReleaseId = manifest?.release_id ?? ""; state.Frozen = manifest?.frozen ?? false;
+            state.VerificationBuild = manifest?.build ?? ""; state.VerificationManifestSha256 = manifest?.ManifestSha256 ?? "";
+            state.VerificationSourceCommit = manifest?.source_commit ?? "Unknown"; state.VerificationSourceState = manifest?.source_state ?? "Unknown";
+            state.PalDllSha256 = session.Verifier.PalDllSha256 ?? ""; state.PalDllSize = session.Verifier.PalDllSize;
             state.PalDll = session.Verifier.PalDllState; state.PalDllVersion = session.Verifier.PalDllVersion;
             if (state.PalDll == IntegrityCheckState.Mismatch) state.PalDllMismatchSeen = true;
             state.ReadFailed = session.Verifier.HasReadFailure;
@@ -268,7 +289,7 @@ namespace Pal98Timer
             // The first stable diagnostic heartbeat is published after native
             // initialization. Preparing refers to role baseline readiness, not RNG.
             state.Code = IntegrityCheckState.Incomplete;
-            if (session.NativeReady && manifest.frozen)
+            if (session.NativeReady && manifest != null && manifest.frozen)
             {
                 if (runtime != null && !string.Equals(runtime.Build, manifest.build, StringComparison.Ordinal))
                 { state.CodeMismatchSeen = true; state.Detail = "运行构建身份与定版清单不匹配"; }
@@ -327,6 +348,8 @@ namespace Pal98Timer
                 CodeMismatchSeen = source.CodeMismatchSeen, StickyAlerts = source.StickyAlerts, Files = source.Files, Code = source.Code,
                 FilesVerifiedAt = source.FilesVerifiedAt, FileRecheckInProgress = source.FileRecheckInProgress,
                 ReadFailed = source.ReadFailed, DiagnosticUnavailable = source.DiagnosticUnavailable,
+                PalDllSha256 = source.PalDllSha256, PalDllSize = source.PalDllSize, VerificationBuild = source.VerificationBuild,
+                VerificationManifestSha256 = source.VerificationManifestSha256, VerificationSourceCommit = source.VerificationSourceCommit, VerificationSourceState = source.VerificationSourceState,
                 PalDll = source.PalDll, PalDllVersion = source.PalDllVersion, PalDllMismatchSeen = source.PalDllMismatchSeen };
         }
         public void Dispose()
@@ -342,7 +365,8 @@ namespace Pal98Timer
         private sealed class Session : IDisposable
         {
             internal readonly IntegrityProcessReader Process;
-            internal readonly ReleaseIntegrityManifest Manifest;
+            internal readonly ReleaseIntegrityManifest[] Catalog;
+            internal ReleaseIntegrityManifest Manifest;
             internal ReleaseIntegrityVerifier Verifier;
             internal RuntimeTimingMode Mode;
             internal Dictionary<string, IntegrityModule> Modules;
@@ -356,7 +380,7 @@ namespace Pal98Timer
             internal readonly HashSet<string> CheckedRegions = new HashSet<string>(StringComparer.Ordinal);
             internal Session(int pid)
             {
-                Manifest = ReleaseIntegrityManifest.LoadEmbedded();
+                Catalog = ReleaseIntegrityManifest.LoadCatalog();
                 Process = new IntegrityProcessReader(pid);
             }
             public void Dispose() { if (Verifier != null) Verifier.Dispose(); Process.Dispose(); }

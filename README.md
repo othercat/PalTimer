@@ -1,4 +1,4 @@
-﻿> v3.37.3 使用 `PAL98.TimingMode.v2` 核对实际内容与时序。正式速通包仍严格对应三类；非速通内容允许四种组合（含 1.2秒&快走速）。只要当前跑次允许计时，任何内容包及设置都可保存到所选核心的最佳时间线；非速通记录不填写传统英文榜单名。新记录携带内容 ID、版本及哈希；跨内容/实际模式导入或接力被拒绝，运行中切换须重置。旧运行时不能核验新记录，旧成绩保留原文件及参考用途。
+> v3.37.3 使用 `PAL98.TimingMode.v2` 核对实际内容与时序。正式速通包仍严格对应三类；非速通内容允许四种组合（含 1.2秒&快走速）。只要当前跑次允许计时，任何内容包及设置都可保存到所选核心的最佳时间线；非速通记录不填写传统英文榜单名。新记录携带内容 ID、版本及哈希；跨内容/实际模式导入或接力被拒绝，运行中切换须重置。旧运行时不能核验新记录，旧成绩保留原文件及参考用途。
 
 # 自动计时器使用说明
 > Repository Owner and current maintainer: `othercat`. Historical upstream: `ihouou/PalTimer`; original authors and contributors remain credited in the application.
@@ -7,7 +7,13 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.6（文件版本 3.37.6.0）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.7（文件版本 3.37.7.1）；需要 .NET Framework 4.7.2 框架**
+
+内部修订 3.37.7.1 为比赛上传增加独立构建激活：未激活仍计时和查榜，原始签封只在后台批准后上传；与忽爷云 ID 分开。详见 [独立上传激活](docs/COMPETITION_UPLOAD_AUTH.md)。
+
+v3.37.7 接入 PalServer PR #11 的比赛设备登记、通关上传、双节点参考排名和独立 OBS 比赛窗口。联机开关、服务器与比赛编号由游戏配置工具“服务器上传配置”管理，随配置切换及锁定，默认关闭。计时器菜单“比赛联机与排名…”管理本机遮罩的字体、颜色、对齐、透明背景和无标题栏拖动缩放。三条远程赛道按实际运行时选择；不切换内核、不修改游戏设置。断网及接口失败只在后台保留待传记录，不改变本地计时、暂停或云服务。用法、隐私、重试及验收边界见 [比赛联机说明](docs/COMPETITION_3.37.7.md)。
+
+本次按发布者指定同时认可 20260925 的 `1.6.8.10` 和最新 `1.6.8.12` 两份确定哈希的 PAL.dll，保留指定的 1.14／1.02；其它 DLL 仍标记“测试版”。正式身份按字节核对，不按版本号通配。新计时器 EXE 需重新登记云激活。
 
 v3.37.6 修复 PAL98、PAL98DX9 和不欢乐内核通关后主时间末位缓慢增长：结束后不再重复启动主秒表及执行结束处理。主时间与末节点各自保留原值，手动调时、跳回节点及接力恢复语义保持。新 EXE 哈希需要重新登记云激活。
 

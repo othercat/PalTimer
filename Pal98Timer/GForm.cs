@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.6";
+        public const string CurrentVersion = "3.37.7";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -115,6 +115,7 @@ namespace Pal98Timer
 
             LoadNonSequentialCheck();
             ApplyAutomationOptions();
+            InitializeCompetition();
 
             CoreBtns = new Dictionary<string, ToolStripMenuItem>();
             List<string> cores = TimerCore.GetAllCores();
@@ -362,6 +363,7 @@ namespace Pal98Timer
             }
             catch { }
             this.core = core;
+            competition?.Invalidate(core.CompetitionToken);
             this.core.LoadCore = LoadCore;
             this.core.InitUI();
             this.core.OnCurrentStepChanged = delegate (int curidx)
@@ -722,6 +724,8 @@ namespace Pal98Timer
 
         private void GForm_FormClosed(object sender, FormClosedEventArgs e)
         {
+            competitionUiTimer?.Dispose();
+            competition?.Dispose();
             cloudRunner?.Dispose();
             _keyboardHook.UninstallHook();
             KeyChangerDel.Close();
@@ -730,6 +734,8 @@ namespace Pal98Timer
 
         private void GForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            if (competitionCloseReady) return;
+            if (competitionClosing) { e.Cancel = true; return; }
             if (core != null && core.CoreName != "S")
             {
                 string sizestr = this.Width + "*" + this.Height + "*" + this.DesktopBounds.X + "*" + this.DesktopBounds.Y;
@@ -744,15 +750,13 @@ namespace Pal98Timer
                     }
                 }
             }
-            if (IsCriticalExitRequested)
-            {
-                return;
-            }
-            if (!Confirm("确定退出计时器么？"))
+            if (!IsCriticalExitRequested && !Confirm("确定退出计时器么？"))
             {
                 e.Cancel = true;
                 return;
             }
+            e.Cancel = true;
+            CloseCompetitionThenExit();
         }
 
         public void OnMainTimerDBClicked()

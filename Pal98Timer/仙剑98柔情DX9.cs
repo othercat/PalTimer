@@ -492,6 +492,17 @@ namespace Pal98Timer
         public override string GetRuntimeIntegrityStatus()
         { return runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0); }
 
+        internal override void CaptureCompetitionIdentity(out string hash, out string version, out int fade, out int speed, out string error)
+        {
+            runtimeIntegrity.CompetitionIdentity(out hash, out version);
+            var actual = RecordedTimingMode;
+            fade = actual == null ? 0 : actual.FadeMilliseconds;
+            speed = actual == null ? 0 : actual.MapSpeedTicks;
+            error = timingRunInvalidated || importedUnverifiedTiming ? "当前成绩身份未通过既有计时规则" : Dx9TimingCategory.RuntimeError(TimingModeMs, TimingMapSpeedTicks, actual);
+        }
+
+        internal override Process CompetitionGameProcess { get { return PalProcess; } }
+
         public override void Unload()
         {
             runtimeIntegrity?.Dispose();

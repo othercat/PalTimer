@@ -119,6 +119,8 @@
       <HintPath>lib\PalCloudLib.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Web" />
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
@@ -166,6 +168,14 @@
     </Compile>
     <Compile Include="GEX.cs" />
     <Compile Include="CloudSessionRunner.cs" />
+    <Compile Include="CompetitionProtocol.cs" />
+    <Compile Include="CompetitionAuth.cs" />
+    <Compile Include="CompetitionTransport.cs" />
+    <Compile Include="CompetitionStorage.cs" />
+    <Compile Include="CompetitionClient.cs" />
+    <Compile Include="CompetitionIntegration.cs" />
+    <Compile Include="CompetitionGameSettings.cs" />
+    <Compile Include="CompetitionWindows.cs" />
     <Compile Include="LegacyCloudStepClient.cs" />
     <Compile Include="PaletteFadeModeReader.cs" />
     <Compile Include="TimingModeReader.cs" />
@@ -281,6 +291,12 @@
     </EmbeddedResource>
     <EmbeddedResource Include="release_integrity.v1.json">
       <LogicalName>Pal98Timer.release_integrity.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="release_integrity.1.6.8.11.v1.json">
+      <LogicalName>Pal98Timer.release_integrity.1.6.8.11.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="release_integrity.1.6.8.12.v1.json">
+      <LogicalName>Pal98Timer.release_integrity.1.6.8.12.v1.json</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="TournamentIntegrityKey.txt" Condition="Exists('TournamentIntegrityKey.txt')">
       <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>

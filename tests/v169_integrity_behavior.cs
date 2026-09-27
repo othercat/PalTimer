@@ -87,15 +87,15 @@ internal static class V169IntegrityBehavior
     {
         var verifier=New("ReleaseIntegrityVerifier",Directory.GetCurrentDirectory(),manifest,mode??Mode());
         int turns=0; TimeSpan cpu=Process.GetCurrentProcess().TotalProcessorTime;
-        while(!(bool)Property(verifier,"Complete")) { var watch=Stopwatch.StartNew(); int bytes=(int)Call(verifier,"Advance"); MaxHashSliceMs=Math.Max(MaxHashSliceMs,watch.Elapsed.TotalMilliseconds); Check(bytes<=1024*1024,"per-slice byte budget"); if(++turns>500)throw new Exception("hash never completes"); }
+        while(!(bool)Property(verifier,"Complete")) { var watch=Stopwatch.StartNew(); int bytes=(int)Call(verifier,"Advance"); MaxHashSliceMs=Math.Max(MaxHashSliceMs,watch.Elapsed.TotalMilliseconds); Check(bytes<=512*1024,"per-slice byte budget"); if(++turns>500)throw new Exception("hash never completes"); }
         HashCpuMs += (Process.GetCurrentProcess().TotalProcessorTime-cpu).TotalMilliseconds;
         Call(verifier,"Advance"); Check(turns>=4,"large file must yield"); return verifier;
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.6.0","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.6.0","file version");
-        Check(GForm.CurrentVersion=="3.37.6","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.37.7.1","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.1","file version");
+        Check(GForm.CurrentVersion=="3.37.7","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -103,7 +103,9 @@ internal static class V169IntegrityBehavior
         var unknown=Snapshot();Put(unknown,24,BitConverter.GetBytes(0x01060901u));
         Check(Decode(unknown)==null,"unknown producer is not silently accepted");
         Check(Decode(Snapshot(),Host.Id+1)==null,"PID identity"); Check(Decode(Snapshot(),null,Birth+1)==null,"creation identity");
-        foreach(int offset in new[]{0,4,6,24,84}) { var b=Snapshot(); b[offset]^=1; Check(Decode(b)==null,"bad field offset "+offset); }
+        var r11=Snapshot();Put(r11,24,BitConverter.GetBytes(0x0106080Bu));Check(Decode(r11)!=null,"r11 keeps same diagnostic layout");
+        var r12=Snapshot();Put(r12,24,BitConverter.GetBytes(0x0106080Cu));Check(Decode(r12)!=null,"r12 keeps same diagnostic layout");
+        foreach(int offset in new[]{0,4,6,84}) { var b=Snapshot(); b[offset]^=1; Check(Decode(b)==null,"bad field offset "+offset); }
         var odd=Snapshot();Put(odd,12,BitConverter.GetBytes(3u));Check(Decode(odd)==null,"odd seqlock");
         var stale=Snapshot();Put(stale,32,BitConverter.GetBytes(Stopwatch.GetTimestamp()-4*Stopwatch.Frequency));Check(Decode(stale)==null,"stale heartbeat");
         Check(Decode(Snapshot(128))==null,"unknown alert bit");
@@ -459,7 +461,11 @@ internal static class V169IntegrityBehavior
                     Check(core.GetScoreValidationError()==before,"new diagnostics do not change existing timing gate");
                     core.Reset();Check(((string)Call(monitor,"Summary",false)).Contains("数值改写已拦截"),"score reset preserves process evidence");
                 }
-                var second=New("RuntimeIntegrityMonitor");try { Thread.Sleep(260);Call(second,"Observe",Host);Thread.Sleep(100);Check(((string)Call(second,"Summary",false)).Contains("数值改写已拦截"),"new core keeps same-process ledger"); }finally{((IDisposable)second).Dispose();}
+                var second=New("RuntimeIntegrityMonitor");try {
+                    // Wait for asynchronous publication, not an assumed 100 ms
+                    // machine-dependent catalog load/scheduler latency.
+                    WaitUntil(()=> { Call(second,"Observe",Host); return ((string)Call(second,"Summary",false)).Contains("数值改写已拦截"); },"new core keeps same-process ledger");
+                }finally{((IDisposable)second).Dispose();}
             }
             finally { ((IDisposable)monitor).Dispose(); }
         }
@@ -469,6 +475,8 @@ internal static class V169IntegrityBehavior
         foreach(string version in new[]{"1.6.8.1","1.6.8.2"})Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions",version,"PAL98.Settings.v1","1.6.8.1","3.37.4.4"),"legacy signed lock supported");
         Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.9.0","PAL98.Settings.v1","1.6.9.0","3.37.5.0"),"current lock supported");
         Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.10","PAL98.Settings.v1","1.6.8.10","3.37.5.0"),"r10 lock supported");
+        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.11","PAL98.Settings.v1","1.6.8.11","3.37.6.1"),"r11 lock supported");
+        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.12","PAL98.Settings.v1","1.6.8.12","3.37.6.2"),"r12 lock supported");
         Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.2","PAL98.Settings.v1","1.6.9.0","3.37.5.0"),"mixed version tuple rejected");
     }
     static void WriteLock(string root, string producer, int version=2)
@@ -489,7 +497,8 @@ internal static class V169IntegrityBehavior
         {
             data["configuration_id"]=Guid.NewGuid().ToString("D");data["configuration_sha256"]=new string('c',64);
             data["producer_version"]=producer;data["settings_contract"]="PAL98.Settings.v1";
-            data["minimum_runtime"]=producer=="1.6.9.0"?"1.6.9.0":"1.6.8.1";data["minimum_timer"]=producer=="1.6.9.0"?"3.37.5.0":"3.37.4.4";
+            bool recent=producer=="1.6.9.0"||producer=="1.6.8.10"||producer=="1.6.8.11"||producer=="1.6.8.12";
+            data["minimum_runtime"]=recent?producer:"1.6.8.1";data["minimum_timer"]=producer=="1.6.8.12"?"3.37.6.2":producer=="1.6.8.11"?"3.37.6.1":recent?"3.37.5.0":"3.37.4.4";
             File.WriteAllBytes(Path.Combine(root,"DATA.MKF"),new byte[]{1,2,3});
             data["dependencies"]=new object[]{new Dictionary<string,object>{{"path","DATA.MKF"},{"size",3},{"sha256",Hash(new byte[]{1,2,3})}}};data["absent_files"]=new string[0];
         }
@@ -501,7 +510,7 @@ internal static class V169IntegrityBehavior
     }
     static void SignedLocks()
     {
-        foreach(string producer in new[]{"1.6.8.1","1.6.8.2","1.6.9.0"})
+        foreach(string producer in new[]{"1.6.8.1","1.6.8.2","1.6.9.0","1.6.8.10","1.6.8.11","1.6.8.12"})
         {
             string root=Path.Combine(Directory.GetCurrentDirectory(),producer);Directory.CreateDirectory(root);WriteLock(root,producer);
             string signature=Path.Combine(root,"palmod","TournamentLock","v1","manifest.sig");byte[] before=File.ReadAllBytes(signature);
@@ -545,14 +554,14 @@ internal static class V169IntegrityBehavior
                 var session=Field(monitor,"session");Check((bool)Field(session,"NativeReady"),"native ready is latched by stable heartbeat");
                 // Inject a synthetic *compiled contract object* into this isolated
                 // host session; production still only loads its embedded resource.
-                Set(session,"Manifest",Manifest(MemoryFixture(false)));
+                Set(Field(session,"Verifier"),"manifest",Manifest(MemoryFixture(false)));
                 var state=Field(session,"Evidence");Set(state,"CodeMismatchSeen",false);Set(state,"StickyAlerts",0u);
                 view.WriteArray(0,new byte[320],0,320);ObserveNow(monitor,Host);
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"worker completes after mapping loss");
                 Check(!(bool)Evidence(monitor).GetValue<bool>("CodeMismatchSeen"),"unknown protection skips conditional dispatch");
                 Check(!Evidence(monitor).GetValue<bool>("HeartbeatValid"),"lost heartbeat remains incomplete");
                 Check((int)Property(Field(session,"CheckedRegions"),"Count")==1,"unconditional region still checked without heartbeat");
-                Set(session,"Manifest",Manifest(MemoryFixture(true)));ObserveNow(monitor,Host);
+                Set(Field(session,"Verifier"),"manifest",Manifest(MemoryFixture(true)));ObserveNow(monitor,Host);
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"independent mismatch worker completes");
                 Check(Evidence(monitor).GetValue<bool>("CodeMismatchSeen"),"unconditional code mismatch found despite missing IPC");
                 string summary=(string)Call(monitor,"Summary",false);
@@ -715,6 +724,10 @@ internal static class V169IntegrityBehavior
         json=json.Replace("\"path\":\"","\"path\":\""+prefix+"/")
             .Replace("\"file\":\"config.ini\"","\"file\":\""+prefix+"/config.ini\"")
             .Replace("\"absent_files\":[\"ReShade.dll\"]","\"absent_files\":[\""+prefix+"/ReShade.dll\"]");
+        byte[] fixtureDll=new byte[1024*1024+13];fixtureDll[0]=0x4d;fixtureDll[1]=0x5a;
+        File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(Host.MainModule.FileName),"PAL.dll"),fixtureDll);
+        int files=json.IndexOf("\"files\":[",StringComparison.Ordinal)+9;
+        json=json.Insert(files,FileJson("PAL.dll",fixtureDll)+",");
         using(var mapping=MemoryMappedFile.CreateNew("Local\\PAL98.RuntimeIntegrity.v1."+Host.Id,320))
         using(var view=mapping.CreateViewAccessor())
         {
@@ -723,16 +736,17 @@ internal static class V169IntegrityBehavior
                 var bytes=Snapshot();view.WriteArray(0,bytes,0,bytes.Length);ObserveNow(monitor,Host);
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"bootstrap fixture session");
                 var session=Field(monitor,"session");var old=Field(session,"Verifier") as IDisposable;if(old!=null)old.Dispose();
-                Set(session,"Manifest",Manifest(json));Set(session,"Verifier",null);Set(session,"Evidence",New("RuntimeIntegrityEvidence"));
+                var fixtureManifest=Manifest(json);var catalog=Array.CreateInstance(Type("ReleaseIntegrityManifest"),1);catalog.SetValue(fixtureManifest,0);
+                Set(session,"Catalog",catalog);Set(session,"Manifest",null);Set(session,"Verifier",null);Set(session,"Evidence",New("RuntimeIntegrityEvidence"));
                 Set(session,"NextFileScan",0L);Set(session,"NativeReady",true);
                 var mode=Mode();var timing=Field(monitor,"timingReader");Set(timing,"cached",mode);Set(timing,"observedProcess",Host);Set(timing,"nextRetry",long.MaxValue);
                 for(int i=0;i<100;++i){AdvanceMonitor(monitor,session,view);if(Evidence(monitor).GetValue<string>("FileState")=="Match"&&Evidence(monitor).GetValue<string>("CodeState")=="Match")break;}
-                Check((string)Call(monitor,"Summary",false)=="","first complete scan becomes quiet");
+                Check((string)Call(monitor,"Summary",false)=="[测试版]","supported synthetic candidate remains unapproved without progress labels");
                 Check((long)Field(session,"NextFileScan")-Stopwatch.GetTimestamp()>299*Stopwatch.Frequency,"full rescan waits five minutes after completion");
                 long verified=long.Parse(Evidence(monitor).GetValue<string>("FilesVerifiedAtQpc"));Check(verified>0,"completed file check has timestamp");
                 Set(session,"NextFileScan",0L);AdvanceMonitor(monitor,session,view);
                 Check(Evidence(monitor).GetValue<bool>("FileRecheckInProgress")&&Evidence(monitor).GetValue<string>("FileState")=="Match","routine unfinished rescan retains last complete match");
-                Check((string)Call(monitor,"Summary",false)=="","routine rescan does not flash incomplete");
+                Check((string)Call(monitor,"Summary",false)=="[测试版]","routine rescan does not flash incomplete");
                 var verifier=Field(session,"Verifier");long position=((FileStream)Field(verifier,"stream")).Position;
                 bytes=Snapshot();view.WriteArray(0,bytes,0,bytes.Length);ObserveNow(monitor,Host);WaitUntil(()=> (int)Field(monitor,"working")==0,"heartbeat without due file slice");
                 Check(((FileStream)Field(verifier,"stream")).Position==position,"lightweight heartbeat does not consume another file slice before one second");
@@ -741,23 +755,24 @@ internal static class V169IntegrityBehavior
                 {
                     bytes=Snapshot();Put(bytes,12,BitConverter.GetBytes(4u));view.WriteArray(0,bytes,0,bytes.Length);Set(session,"NextFileSlice",0L);ObserveNow(monitor,Host);
                     WaitUntil(()=> {var s=Field(Field(session,"Evidence"),"Runtime");return s!=null&&(uint)Field(s,"Sequence")==4;},"worker stages new evidence");
-                    Check((string)Call(monitor,"Summary",false)=="","intermediate code state is not published while worker runs");
+                    Check((string)Call(monitor,"Summary",false)=="[测试版]","intermediate code state is not published while worker runs");
                 }finally{Monitor.Exit(barrier);}
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"publication completes");
                 for(int i=0;i<100 && Evidence(monitor).GetValue<bool>("FileRecheckInProgress");++i)
-                {AdvanceMonitor(monitor,session,view);Check((string)Call(monitor,"Summary",false)=="","all background slices remain quiet");}
+                {AdvanceMonitor(monitor,session,view);Check((string)Call(monitor,"Summary",false)=="[测试版]","all background slices retain classification without progress labels");}
                 Check(!Evidence(monitor).GetValue<bool>("FileRecheckInProgress"),"background round completes");
                 using(var locked=new FileStream("PAL.EXE",FileMode.Open,FileAccess.ReadWrite,FileShare.None))
                 {
                     Set(session,"NextFileScan",0L);AdvanceMonitor(monitor,session,view);
-                    Check(Evidence(monitor).GetValue<string>("FileState")=="Incomplete"&&((string)Call(monitor,"Summary",false)).Contains("核验读取失败"),"actual read failure immediately invalidates old success");
+                    for(int i=0;i<30&&!Evidence(monitor).GetValue<bool>("ReadFailed");++i)AdvanceMonitor(monitor,session,view);
+                    Check(Evidence(monitor).GetValue<string>("FileState")=="Incomplete"&&((string)Call(monitor,"Summary",false)).Contains("核验读取失败"),"actual read failure invalidates old success after the identity scan");
                 }
                 Set(session,"NextFileScan",0L);
                 for(int i=0;i<100;++i){AdvanceMonitor(monitor,session,view);if(!Evidence(monitor).GetValue<bool>("FileRecheckInProgress"))break;}
-                Check((string)Call(monitor,"Summary",false)=="","successful retry recovers unavailable file state");
+                Check((string)Call(monitor,"Summary",false)=="[测试版]","successful retry recovers unavailable file state");
                 File.WriteAllBytes("DATA.MKF",new byte[]{9,2,3});Set(session,"NextFileScan",0L);
                 for(int i=0;i<100&&!Evidence(monitor).GetValue<bool>("FileMismatchSeen");++i)AdvanceMonitor(monitor,session,view);
-                Check(Evidence(monitor).GetValue<bool>("FileMismatchSeen")&&!((string)Call(monitor,"Summary",false)).Contains("[测试版]"),"changed non-DLL core remains recorded without a test-version title");
+                Check(Evidence(monitor).GetValue<bool>("FileMismatchSeen")&&(string)Call(monitor,"Summary",false)=="[测试版]","changed non-DLL core does not change the candidate classification");
             }finally{((IDisposable)monitor).Dispose();}
         }
         var standalone=Manifest(Fixture());using(var verifier=(IDisposable)New("ReleaseIntegrityVerifier",Directory.GetCurrentDirectory(),standalone,Mode()))
@@ -785,7 +800,9 @@ internal static class V169IntegrityBehavior
             }
         };
         long currentSize=(long)Property(current,"size");string currentHash=(string)Property(current,"sha256");
-        verify(currentSize,currentHash,"current",false);
+        verify(currentSize,currentHash,"1.6.8.10",false);
+        verify(2064384,"064A85DEF9EBE62652CC89B228413A9F1055335961016F1F927F2748CD9A440E","1.6.8.12",false);
+        verify(2064385,"064A85DEF9EBE62652CC89B228413A9F1055335961016F1F927F2748CD9A440E",null,false);
         verify(526336,"B3BC8A7B53CB92A8E7910C3B6E3176CDFEB888CA50CBA79C8E26C4F8E9B634E6","1.14",false);
         verify(477184,"CB47B9E66119DE098C3D4D9BC6A1FE2D9C0672D1AFC2A13D8110F3A98A8AC8B0","1.02",false);
         verify(1986560,"252e2938d30775f0d9d1ed6f82ada672f2d7e1abab4ed37e6d0760a2d8098c51",null,false);
@@ -806,6 +823,37 @@ internal static class V169IntegrityBehavior
         Set(evidence,"PalDll",Enum.Parse(Type("IntegrityCheckState"),"Match"));Set(evidence,"PalDllMismatchSeen",true);
         Check((string)Call(evidence,"Summary",false)=="[测试版]","confirmed DLL mismatch remains in the same-process record");
     }
+    static void BuildCatalogSelectsHashNotVersion()
+    {
+        string json=Fixture();byte[] a={1,6,8,10}, b={1,6,8,11};
+        Func<byte[],string,string> definition=(bytes,version)=>json.Replace("\"files\":["+FileJson("PAL.EXE",File.ReadAllBytes("PAL.EXE")),
+            "\"files\":["+FileJson("PAL.dll",bytes)+","+FileJson("PAL.EXE",File.ReadAllBytes("PAL.EXE"))).Replace("fixture-build",version);
+        var first=Manifest(definition(a,"1.6.8.10"));var second=Manifest(definition(b,"1.6.8.11"));
+        Array catalog=Array.CreateInstance(Type("ReleaseIntegrityManifest"),2);catalog.SetValue(first,0);catalog.SetValue(second,1);
+        foreach(var bytes in new[]{a,b,new byte[]{1,6,8,99}}) {
+            File.WriteAllBytes("PAL.dll",bytes);
+            using(var verifier=(IDisposable)New("ReleaseIntegrityVerifier",Directory.GetCurrentDirectory(),catalog,Mode())) {
+                int turns=0;while(!(bool)Property(verifier,"Complete")) {Check((int)Call(verifier,"Advance")<=512*1024,"catalog discovery keeps slice budget");if(++turns>500)throw new Exception("catalog scan never completes");}
+                string build=bytes==a?"1.6.8.10":bytes==b?"1.6.8.11":null;
+                object selected=Property(verifier,"SelectedManifest");
+                Check(build==null?selected==null:(string)Property(selected,"build")==build,"baseline follows full DLL hash");
+                Check(Property(verifier,"State").ToString()==(build==null?"Incomplete":"Match"),"unknown build never reuses another code baseline");
+                Check(Property(verifier,"PalDllState").ToString()=="Mismatch","supported synthetic candidate is not an approved DLL");
+                Check((string)Property(verifier,"PalDllVersion")== (build??""),"record explicit revision instead of current");
+                Check((string)Property(verifier,"PalDllSha256")==Hash(bytes),"record actual DLL SHA256");
+                Check(selected==null || ((string)Property(selected,"ManifestSha256")).Length==64,"record exact manifest identity");
+            }
+        }
+        var embedded=(Array)Static("ReleaseIntegrityManifest","LoadCatalog");Check(embedded.Length>=3,"prior and candidate manifests retained");
+        var revisions=embedded.Cast<object>().Select(m=>(string)Property(m,"build")).ToArray();
+        Check(revisions.Contains("1.6.8.10") && revisions.Contains("1.6.8.11") && revisions.Contains("1.6.8.12"),"same display version has independent baselines");
+        foreach(var manifest in embedded.Cast<object>()) if((string)Property(manifest,"build")=="1.6.8.11" || (string)Property(manifest,"build")=="1.6.8.12") {
+            var dll=((IEnumerable)Property(manifest,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+            string approved = (string)Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(dll,"size"),(string)Property(dll,"sha256"));
+            Check((string)Property(manifest,"build")=="1.6.8.12" ? approved=="1.6.8.12" : approved==null,"only explicitly designated current build gains official approval");
+            Check(!string.IsNullOrEmpty((string)Property(manifest,"source_commit")) && ((string)Property(manifest,"source_state")).Contains("working-tree"),"dirty source identity is explicit");
+        }
+    }
     [STAThread] static int Main(string[] args)
     {
         if(args.Length==1 && args[0]=="--integrity-child") {Thread.Sleep(30000);return 0;}
@@ -818,6 +866,7 @@ internal static class V169IntegrityBehavior
             Scenario("indirect_trampoline",IndirectTrampoline);Scenario("settings_comments",SettingsValuesAndComments);Scenario("exact_scripts",ExactScriptDirectory);Scenario("settings_budget",SettingsBudgetAndCache);Scenario("module_duplicates",DuplicateModuleIdentity);Scenario("real_proxy_paths",RealProxyModulePaths);
             Scenario("r10_module_switches",R10ModuleSwitches);Scenario("r10_unknown_content",R10UncoveredStillChecksCore);Scenario("r10_setting_ranges",R10SettingRanges);
             Scenario("quiet_summary",QuietSuccessfulSummary);Scenario("seqlock_read",SeqlockReadAndExpiry);Scenario("periodic_scan",PeriodicVerificationStability);Scenario("diagnostic_grace",DiagnosticStartupGrace);Scenario("normal_detach",DetachedTargetClearsAvailabilityOnly);Scenario("official_dlls",OfficialPalDllClassification);
+            Scenario("build_catalog",BuildCatalogSelectsHashNotVersion);
         }
         var result=new HObj();result["passed"]=Passed;result["failed"]=Failed;result["assertions"]=Assertions;result["failures"]=string.Join("\n",Failures);
         result["realGameUsed"]=false;result["realCloudUsed"]=false;

@@ -30,7 +30,10 @@ def _kernel_has_permission_prompt(path: Path) -> bool:
         and "PalHandle = new IntPtr(handle);" in text
         and "Kernel32.CloseHandle(handle);" in text
         and "PalHandle = new IntPtr(Kernel32.OpenProcess" not in text
-        and "catch { return true; }" in text
+        # DX9 now validates PID + creation time on the opened handle instead of
+        # the older permissive catch. The other kernels retain their old guard.
+        and ("catch { return true; }" in text or
+             "if (!identities[res[0].Id].SameInstance(openedIdentity))" in text)
         and "if (!CanOpenPalProcess(res[0]))" in text
         and text.find(open_call) != -1
         and text.find(pid_assign, text.find(open_call)) != -1
@@ -67,7 +70,8 @@ def _gform_closes_after_elevated_pal_error() -> bool:
         and "cryerr == TimerCore.ElevatedPalProcessErrorMessage" in text
         and "IsCriticalExitRequested = true;" in text
         and "Close();" in text
-        and "if (IsCriticalExitRequested)" in text
+        and 'if (!IsCriticalExitRequested && !Confirm("确定退出计时器么？"))' in text
+        and "CloseCompetitionThenExit();" in text
         and "using System.Security.Principal;" not in text
         and "ShowElevationGuidanceIfNeeded" not in text
     )
