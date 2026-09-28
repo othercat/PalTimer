@@ -169,6 +169,8 @@
     <Compile Include="GEX.cs" />
     <Compile Include="CloudSessionRunner.cs" />
     <Compile Include="CompetitionProtocol.cs" />
+    <Compile Include="GameplayIdentity.cs" />
+    <Compile Include="Pal98Dx9Automatic.cs" />
     <Compile Include="CompetitionAuth.cs" />
     <Compile Include="CompetitionTransport.cs" />
     <Compile Include="CompetitionStorage.cs" />
@@ -297,6 +299,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="release_integrity.1.6.8.12.v1.json">
       <LogicalName>Pal98Timer.release_integrity.1.6.8.12.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="release_integrity.1.6.8.14.v1.json">
+      <LogicalName>Pal98Timer.release_integrity.1.6.8.14.v1.json</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="TournamentIntegrityKey.txt" Condition="Exists('TournamentIntegrityKey.txt')">
       <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>

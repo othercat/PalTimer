@@ -90,6 +90,17 @@ namespace Pal98Timer
             }
         }
 
+        internal CompetitionHardcore CaptureCompetition()
+        {
+            lock (sync) {
+                bool requested = started ? requestedSeen : current != null && current.Requested;
+                bool verified = started && !invalid && identity != null;
+                return new CompetitionHardcore { requested = requested, run_verified = requested && verified,
+                    rules_version = requested ? (int)((identity ?? current)?.RulesVersion ?? 0) : 0,
+                    evidence_status = !requested ? "ordinary" : verified ? "runtime_observed" : "unverified" };
+            }
+        }
+
         internal void Fill(HObj data)
         {
             lock (sync)

@@ -28,7 +28,7 @@ namespace Pal98Timer
             // r10 renamed the existing v1.69 candidate; its v1 IPC layout did
             // not change. Decode only these known producers. File/build/code
             // checks still independently reject an old or mismatched release.
-            return version == 0x0106080Au || version == 0x0106080Bu || version == 0x0106080Cu || version == 0x01060900u;
+            return version == 0x0106080Au || version == 0x0106080Bu || version == 0x0106080Cu || version == 0x0106080Du || version == 0x0106080Eu || version == 0x01060900u;
         }
         internal static RuntimeIntegritySnapshot Read(PalLiveProcessIdentity identity, long frequency, RuntimeIntegritySnapshot previous)
         {

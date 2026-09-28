@@ -155,7 +155,7 @@ namespace Pal98Timer
             }
             catch (Exception ex)
             {
-                LoadCore(new 仙剑98柔情DX9(this));
+                LoadCore(new Pal98Dx9Automatic(this));
             }
             
             rr.SetVersion(CurrentVersion);
@@ -1027,7 +1027,7 @@ namespace Pal98Timer
         {
             if (core != null)
             {
-                if (!File.Exists("best" + core.CoreName + ".txt"))
+                if (!File.Exists(core.ActiveBestPath))
                 {
                     try
                     {
@@ -1039,7 +1039,7 @@ namespace Pal98Timer
                         return;
                     }
                 }
-                BestEditForm bef = new BestEditForm(core.CoreName);
+                BestEditForm bef = new BestEditForm(Path.GetFullPath(core.ActiveBestPath));
                 bef.ShowDialog(this);
                 if (bef.Saved) core.RefreshBestReference();
             }

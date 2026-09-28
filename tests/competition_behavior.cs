@@ -52,7 +52,7 @@ internal static class CompetitionBehavior
     sealed class Fake : ICompetitionTransport
     {
         internal int Active, MaxActive, Gets, Posts, Registers;
-        internal bool HoldGet, BadJson;
+        internal bool HoldGet, BadJson, V2;
         internal bool Approved = true, RejectChallenge;
         internal string DeniedBuild;
         internal int AuthChecks;
@@ -92,14 +92,14 @@ internal static class CompetitionBehavior
                 if (HoldGet) await Task.Delay(30000, stop);
                 if (GetGate != null) await GetGate.Task;
                 var query = HttpUtility.ParseQueryString(new Uri(url).Query);
-                return BadJson ? new CompetitionHttpResult { Status = 200, Body = "bad json" } : Response(query["route_sha256"], query["checkpoint_id"], query["track_id"], query["elapsed_ms"]);
+                return BadJson ? new CompetitionHttpResult { Status = 200, Body = "bad json" } : Response(query["route_sha256"], query["checkpoint_id"], query["track_id"], query["elapsed_ms"], query["board"]);
             }
             finally { Interlocked.Decrement(ref Active); }
         }
-        static CompetitionReply Envelope() { return new CompetitionReply { protocol = CompetitionProtocol.Name, @event = "wuqiang", ruleset_id = "wuqiang-2026-v1", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
-        static CompetitionHttpResult Response(string route, string node, string track = "wuqiang", string elapsed = null)
+        CompetitionReply Envelope() { return new CompetitionReply { supported_run_protocols = V2 ? new[] { CompetitionProtocol.Name, CompetitionProtocol.NameV2 } : null, protocol = CompetitionProtocol.Name, @event = "wuqiang", ruleset_id = "wuqiang-2026-v1", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
+        CompetitionHttpResult Response(string route, string node, string track = "wuqiang", string elapsed = null, string board = null)
         {
-            var reply = Envelope(); reply.track_id = track; reply.route_sha256 = route;
+            var reply = Envelope(); reply.board = board; reply.track_id = track; reply.route_sha256 = route;
             if (node != null) reply.node = new CompetitionNode { checkpoint_id = node, elapsed_ms = long.Parse(elapsed),
                 best_complete_line = new CompetitionComparison { rank = 2, comparison_players = 2 }, personal_checkpoint_best = new CompetitionComparison { rank = 3, comparison_players = 3 } };
             return new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(reply) };
@@ -217,6 +217,52 @@ internal static class CompetitionBehavior
         string log = File.ReadAllText(Path.Combine(store.Root, "network.log"));
         Check(!log.Contains(store.Credential(Config().Server).Secret) && !log.Contains("fixture-device") && !log.Contains("https://"), "network log excludes credentials HWID and endpoint"); await client.CloseAsync();
     }
+
+    static CompetitionObservation AutoObservation(string token, int step, bool hardcore = false) {
+        var value=Observation(token,step); value.Core="PAL98DX9_AUTO";
+        value.Gameplay=new GameplayIdentity { rules_sha256=new string('a',64),content_id="wuqiang-fixture",content_sha256=new string('b',64),family="standard",fade_ms=1200,map_speed_ticks=10 };
+        value.Hardcore=new CompetitionHardcore {requested=hardcore,run_verified=hardcore,rules_version=hardcore?4:0,evidence_status=hardcore?"runtime_observed":"ordinary"};
+        value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(p=>p.checkpoint_id)),hardcore);
+        return value;
+    }
+    static async Task GameplayCases() {
+        var store=Store("v2");var fake=new Fake{V2=true};var auth=new FakeAuth();var client=new CompetitionClient(store,fake,auth);client.Configure(Config());
+        await Until(()=>fake.Registers>0,"v2 server capability registered");
+        var before=Observation("v2",-1);before.Core="PAL98DX9_AUTO";client.Publish(before);
+        client.Publish(AutoObservation("v2",0,true));client.Publish(AutoObservation("v2",1,true));
+        await Until(()=>client.View.Reply?.node!=null,"automatic node uses ordinary reference by default");
+        var style=Config();style.ReferenceBoard="hardcore";client.Configure(style);
+        await Until(()=>client.Settings.ReferenceBoard=="hardcore","hardcore reference selected without switching gameplay");
+        await Until(()=>client.View.Reply?.board=="hardcore"&&client.View.Reply.node!=null,"hardcore response bound to selected board");
+        client.Publish(AutoObservation("v2",2,true));await Until(()=>fake.Posts==1,"v2 completion uploaded without pre-start identity race");
+        var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
+        Check(run.protocol==CompetitionProtocol.NameV2&&run.hardcore.run_verified&&run.hardcore.rules_version==4,"v2 signed body carries continuous hardcore evidence");
+        Check(run.timeline_id==AutoObservation("v2",2,true).TimelineId&&CompetitionProtocol.Validate(run)=="","v2 identity formula matches signed route");
+        run.hardcore.requested=false;Check(CompetitionProtocol.Validate(run).Length>0,"changed hardcore classification invalidates body");
+        await client.CloseAsync();
+
+        store=Store("old-v2-server");fake=new Fake();auth=new FakeAuth();client=new CompetitionClient(store,fake,auth);client.Configure(Config());
+        await Until(()=>fake.Registers>0,"old server registered");client.Publish(AutoObservation("old",0));client.Publish(AutoObservation("old",2));
+        await Until(()=>store.LoadPending(Config()).Any(p=>!string.IsNullOrEmpty(p.SealedRun)),"v2 run sealed locally even on old server");
+        string original=store.LoadPending(Config()).Single().Payload;await Task.Delay(550);
+        Check(fake.Posts==0&&auth.Seals==1,"old server never receives downgraded or stripped v2");
+        fake.V2=true;client.Retry();await Until(()=>fake.Posts==1,"v2 server upgrade releases original signed bytes");
+        Check(fake.Payloads.Single()==original&&auth.Seals==1,"pending v2 is not resealed after server upgrade");await client.CloseAsync();
+
+        store=Store("v2-rule-change");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
+        await Until(()=>fake.Registers>0,"rule change fixture ready");client.Publish(AutoObservation("rules",0));
+        var changed=AutoObservation("rules",2,true);client.Publish(changed);
+        await Until(()=>store.LoadPending(Config()).Any(),"changed identity retains local record");
+        Check(store.LoadPending(Config()).Single().LocalRejected&&fake.Posts==0,"mid-run normal to hardcore cannot claim either board");await client.CloseAsync();
+
+        store=Store("board-stale");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
+        await Until(()=>fake.Registers>0,"board fixture ready");client.Publish(AutoObservation("board",0));await Task.Delay(350);
+        fake.GetGate=new TaskCompletionSource<bool>();int gets=fake.Gets;client.Publish(AutoObservation("board",1));
+        await Until(()=>fake.Gets>gets,"overall reply held while changing board");style=Config();style.ReferenceBoard="hardcore";client.Configure(style);
+        fake.GetGate.SetResult(true);await Until(()=>client.Settings.ReferenceBoard=="hardcore"&&client.View.Reply?.board=="hardcore","old overall reply cannot replace hardcore view");
+        client.Invalidate("next");Check(client.View.Reply==null,"reset clears previous board rank to unknown");await client.CloseAsync();
+    }
+
     static void ModelCases()
     {
         Check(CompetitionProtocol.RouteHash(new[] { "鬼将军", "拜月" }) == "fe3a4dc38528a7d49eafcd6e8b75e79f6946d45b28b3b09012a3ae6e8a41dc92", "Python/C# route digest exact UTF8 LF");
@@ -383,7 +429,7 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
-        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); }
+        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

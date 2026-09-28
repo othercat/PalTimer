@@ -103,7 +103,7 @@ namespace Pal98Timer
                     if (pending == null || pending.Settings == null || pending.Settings.Validate().Length != 0 ||
                         pending.Settings.Server != settings.Server || pending.Settings.Event != settings.Event || pending.Run == null ||
                         pending.Run.run_id + ".json" != System.IO.Path.GetFileName(path) ||
-                        pending.Payload != CompetitionProtocol.Json().Serialize(pending.Run)) pending = null;
+                        CompetitionProtocol.SerializeRun(CompetitionProtocol.Json().Deserialize<CompetitionRun>(pending.Payload)) != CompetitionProtocol.SerializeRun(pending.Run)) pending = null;
                     if (pending != null) pending.Path = path;
                 }
                 catch (Exception ex) when (ex is IOException || ex is ArgumentException || ex is InvalidOperationException) { }

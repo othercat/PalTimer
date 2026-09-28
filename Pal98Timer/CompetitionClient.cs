@@ -37,6 +37,8 @@ namespace Pal98Timer
         private DateTimeOffset started;
         private DateTime nextRegister, nextQuery;
         private bool registrationRejected, beganHere;
+        private bool serverSupportsV2;
+        private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
         private readonly Task worker;
@@ -115,7 +117,12 @@ namespace Pal98Timer
                 if (lease == null)
                     lease = new CompetitionRunContext { Token = observation.Token, RunId = Guid.NewGuid().ToString("D"), Settings = settings.Copy(),
                         StartedAt = observation.ObservedAt, BeganHere = observation.BeganHere && observation.Step <= 0 && !observation.Finished,
-                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks };
+                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks, TimelineId = observation.TimelineId };
+                if (observation.Step <= 0 && !lease.Started)
+                {
+                    lease = lease.Copy(); lease.TimelineId = observation.TimelineId;
+                    lease.Fade = observation.FadeMilliseconds; lease.Speed = observation.MapSpeedTicks;
+                }
                 if (observation.Step == 0 && !lease.Started)
                 { lease = lease.Copy(); lease.Started = true; lease.StartedAt = observation.ObservedAt; }
                 if (observation.Step <= 0 && lease.Fade == 0)
@@ -150,6 +157,7 @@ namespace Pal98Timer
         }
         private void ApplyConfiguration(CompetitionSettings copy, string replacementSecret, long? gameEpoch = null)
         {
+                bool boardChanged = settings.ReferenceBoard != copy.ReferenceBoard;
                 bool networkChanged = settings.Server != copy.Server || settings.Event != copy.Event || settings.Ruleset != copy.Ruleset || settings.Enabled != copy.Enabled || replacementSecret != null;
                 CompetitionCredential preparedCredential;
                 List<CompetitionPending> preparedPending;
@@ -167,6 +175,11 @@ namespace Pal98Timer
                 {
                     if (gameEpoch.HasValue && gameEpoch != Interlocked.Read(ref gameGeneration)) return;
                     settings = copy; credential = preparedCredential;
+                    if (boardChanged) {
+                        Interlocked.Increment(ref querySerial); nextQuery = DateTime.MinValue;
+                        var old = view; view = new CompetitionView { Hwid = old.Hwid, Pending = old.Pending, NodeName = old.NodeName,
+                            Reply = new CompetitionReply { board = copy.ReferenceBoard, track_id = old.Reply?.track_id, player = old.Reply?.player } };
+                    }
                     // A queued appearance save must not re-enable the previous
                     // game's endpoint while a new target is still being read.
                     enabled = copy.Enabled && !closing && (!gameManaged || gameEpoch.HasValue || enabled);
@@ -206,7 +219,8 @@ namespace Pal98Timer
         {
             // Validation and publication are atomic with Reset/core switching.
             lock (publication)
-                if (epoch == Interlocked.Read(ref generation) && serial == Interlocked.Read(ref querySerial) && token == activeToken)
+                if (epoch == Interlocked.Read(ref generation) && serial == Interlocked.Read(ref querySerial) && token == activeToken &&
+                    (reply == null || (reply.board ?? "overall") == settings.ReferenceBoard))
                     SetStatus(status, stale, reply, node);
         }
         private async Task Loop()
@@ -277,6 +291,9 @@ namespace Pal98Timer
             bool missingIdentity = !CompetitionProtocol.Digest(observation.DllHash) || string.IsNullOrEmpty(observation.GameVersion);
             var boundCredential = storage.Credential(contextSettings.Server);
             var run = new CompetitionRun {
+                protocol = observation.Gameplay == null ? CompetitionProtocol.Name : CompetitionProtocol.NameV2,
+                gameplay = observation.Gameplay?.Copy(), hardcore = observation.Gameplay == null ? null : observation.Hardcore,
+                timeline_id = observation.Gameplay == null ? null : observation.TimelineId,
                 run_id = contextRunId, hwid = boundCredential.Hwid, track_id = contextSettings.Track, ruleset_id = contextSettings.Ruleset,
                 route_sha256 = route, started_at = started.ToString("o"), finished_at = bound.FinishedAt.ToString("o"),
                 total_ms = observation.TotalMilliseconds, timer_version = typeof(CompetitionClient).Assembly.GetName().Version.ToString(4),
@@ -285,9 +302,9 @@ namespace Pal98Timer
             };
             string error = missingIdentity ? "通关记录已保存，等待本轮 DLL 身份核验后上传" : !beganHere ? "本轮在联机开启前已开始或为导入成绩，仅保留本地记录" :
                 track == null || track != contextSettings.Track ? "本轮比赛速度发生变化，仅保留本地记录" :
-                !string.IsNullOrEmpty(observation.ValidationError) ? "本轮不符合既有计时规则，仅保留本地记录" : CompetitionProtocol.Validate(run);
+                (bound.TimelineId != observation.TimelineId || !string.IsNullOrEmpty(observation.ValidationError)) ? "本轮不符合既有计时规则，仅保留本地记录" : CompetitionProtocol.Validate(run);
             var item = new CompetitionPending { Settings = contextSettings.Copy(), Run = run,
-                Payload = CompetitionProtocol.Json().Serialize(run), Rejected = error.Length != 0, LocalRejected = error.Length != 0, LastStatus = error, Token = observation.Token };
+                Payload = CompetitionProtocol.SerializeRun(run), Rejected = error.Length != 0, LocalRejected = error.Length != 0, LastStatus = error, Token = observation.Token };
             if (error.Length == 0)
             {
                 // Seal only when this process first produces the completed record.
@@ -323,14 +340,14 @@ namespace Pal98Timer
         {
             var cfg = settings; long epoch = Interlocked.Read(ref generation), serial = Interlocked.Read(ref querySerial);
             string token = Volatile.Read(ref activeToken);
-            if (registeredKey == cfg.Server + "|" + cfg.Event) return true;
+            if (registeredKey == cfg.Server + "|" + cfg.Event && DateTime.UtcNow < capabilityExpires) return true;
             if (registrationRejected || DateTime.UtcNow < nextRegister) return false;
             var response = await transport.Send("POST", cfg.Endpoint + "/devices", credential.Hwid, credential.Secret,
                 CompetitionProtocol.Json().Serialize(new { protocol = CompetitionProtocol.Name, hwid = credential.Hwid }), 5000, stop.Token).ConfigureAwait(false);
             if (epoch != Interlocked.Read(ref generation)) return false;
             var reply = Parse(response, cfg);
             if (reply != null)
-            { registeredKey = cfg.Server + "|" + cfg.Event; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "比赛实时参考（含预热）" : "等待主办方绑定玩家名字", false, reply); return true; }
+            { registeredKey = cfg.Server + "|" + cfg.Event; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.NameV2) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "比赛实时参考（含预热）" : "等待主办方绑定玩家名字", false, reply); return true; }
             registrationRejected = !response.Retryable && !response.Success;
             nextRegister = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             storage.LogNetwork("device-register-retry", response.Status);
@@ -381,6 +398,10 @@ namespace Pal98Timer
             var cfg = settings;
             var item = pending.FirstOrDefault(p => !p.Rejected && p.Settings.Server == cfg.Server && p.Settings.Event == cfg.Event && p.Settings.Ruleset == cfg.Ruleset && p.NextAttemptUtc <= DateTime.UtcNow);
             if (item == null) return;
+            if (item.Run.protocol == CompetitionProtocol.NameV2 && !serverSupportsV2) {
+                item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5); storage.SavePending(item);
+                storage.LogNetwork("awaiting-v2-server", 0); return;
+            }
             if (string.IsNullOrEmpty(item.SealedRun))
             {
                 item.LocalRejected = item.Rejected = true;
@@ -445,6 +466,7 @@ namespace Pal98Timer
         {
             if (DateTime.UtcNow < nextQuery) return;
             var observation = current; var cfg = contextSettings ?? settings;
+            string board = settings.ReferenceBoard;
             // Never send the active endpoint's credential to an older run's server.
             if (cfg.Server != settings.Server || cfg.Event != settings.Event || cfg.Ruleset != settings.Ruleset) return;
             string token = Volatile.Read(ref activeToken);
@@ -452,7 +474,7 @@ namespace Pal98Timer
             if (observation != null && observation.Token != token) return;
             var track = observation == null ? "wuqiang" : CompetitionProtocol.TrackFor(observation.FadeMilliseconds, observation.MapSpeedTicks);
             if (track == null) { SetStatus("当前速度不属于本次比赛的三条赛道；本地计时保持原规则"); return; }
-            string url = cfg.Endpoint + "/standings?track_id=" + Uri.EscapeDataString(track);
+            string url = cfg.Endpoint + "/standings?track_id=" + Uri.EscapeDataString(track) + "&board=" + board;
             CompetitionSplit split = null;
             if (observation != null && observation.Step > 0 && route != null)
             {
@@ -466,7 +488,7 @@ namespace Pal98Timer
             nextQuery = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             if (epoch != Interlocked.Read(ref generation) || serial != Interlocked.Read(ref querySerial) || token != Volatile.Read(ref activeToken)) return;
             var reply = Parse(response, cfg);
-            if (reply == null || reply.track_id != track || split != null && reply.route_sha256 != route ||
+            if (reply == null || (reply.board ?? "overall") != board || reply.track_id != track || split != null && reply.route_sha256 != route ||
                 split != null && split.status == "completed" && (reply.node == null || reply.node.checkpoint_id != CompetitionProtocol.CheckpointId(split.checkpoint_id) || reply.node.elapsed_ms != split.elapsed_ms))
             { storage.LogNetwork("standings-query-failed", response.Status); return; }
             PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "实时参考（含预热） · " + CompetitionProtocol.TrackLabel(track) : "等待主办方绑定玩家名字", false, reply, split == null ? "" : split.checkpoint_id);

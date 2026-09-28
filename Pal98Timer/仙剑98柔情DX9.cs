@@ -52,7 +52,7 @@ namespace Pal98Timer
         // Other derived content cores retain their existing rules and identities.
         protected virtual int TimingModeMs { get { return CoreName == "PAL98DX9" ? 1200 : 0; } }
         protected virtual int TimingMapSpeedTicks { get { return TimingModeMs == 0 ? 0 : 10; } }
-        private string RelayFileName { get { return TimingModeMs == 800 ? "SRPG." + CoreName + ".bin" : "SRPG.bin"; } }
+        protected virtual string RelayFileName { get { return TimingModeMs == 800 ? "SRPG." + CoreName + ".bin" : "SRPG.bin"; } }
         protected string TournamentDisplayName { get; private set; } = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
@@ -501,6 +501,11 @@ namespace Pal98Timer
             error = timingRunInvalidated || importedUnverifiedTiming ? "当前成绩身份未通过既有计时规则" : Dx9TimingCategory.RuntimeError(TimingModeMs, TimingMapSpeedTicks, actual);
         }
 
+        internal bool GameplayRunStarted => _IsFirstStarted || MT.CurrentTSOnly.Ticks > 0;
+        internal CompetitionHardcore CaptureHardcoreEvidence() => hardcoreRun.CaptureCompetition();
+        internal override void CaptureCompetitionGameplay(CompetitionObservation observation)
+        { observation.Hardcore = CaptureHardcoreEvidence(); }
+
         internal override Process CompetitionGameProcess { get { return PalProcess; } }
 
         public override void Unload()
@@ -543,15 +548,15 @@ namespace Pal98Timer
             return version + Dx9TimingCategory.Suffix(mode);
         }
 
-        private void ValidateTimerImport(string json)
+        protected virtual void ValidateTimerImport(string json)
         {
             if (PalProcess == null) GetPalHandle();
-            Dx9TimingCategory.ValidateImport(CoreName, TimingModeMs, new HObj(json), RecordedTimingMode);
+            Dx9TimingCategory.ValidateImport(CoreName, TimingModeMs, new HObj(json), RecordedTimingMode, TimingMapSpeedTicks);
             if (timingRunInvalidated)
                 throw new InvalidDataException(GetScoreValidationError());
         }
 
-        private RuntimeTimingMode RecordedTimingMode
+        internal RuntimeTimingMode RecordedTimingMode
         {
             get
             {
@@ -909,6 +914,7 @@ namespace Pal98Timer
                         so.RPG = CaptureRelaySaveBuffer();
                     SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
                     validatePendingSave();
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(FilePath)));
                     if (File.Exists(FilePath))
                     {
                         File.Delete(FilePath);
@@ -1052,7 +1058,7 @@ namespace Pal98Timer
             importedUnverifiedTiming = !ho.HasValue("TimingRulesVersion") || ho.GetValue<int>("TimingRulesVersion") != 2 ||
                 !ho.HasValue("TimingRulesVerified") || !ho.GetValue<bool>("TimingRulesVerified");
             runTimingMode = RecordedTimingMode;
-            AdvanceScoreRunSequence();
+            AdvanceScoreRunSequence(imported: true);
             hardcoreRun.ImportUnverified();
             try
             {

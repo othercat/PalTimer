@@ -64,8 +64,9 @@ namespace Pal98Timer
 
         // Run before any RPG/sidecar write, and at the direct timer-restore entry.
         // Legacy untagged records belong only to the existing Classic 1.2s line.
-        internal static void ValidateImport(string core, int expected, HObj record, RuntimeTimingMode current = null)
+        internal static void ValidateImport(string core, int expected, HObj record, RuntimeTimingMode current = null, int? expectedMapSpeedTicks = null)
         {
+            int requestedSpeed = expectedMapSpeedTicks ?? (core == SpeedCore ? 9 : 10);
             if (expected != 0 && record.HasValue("TimingRulesVersion") && record.GetValue<int>("TimingRulesVersion") == 2)
             {
                 bool valid = current != null && current.HasContentIdentity &&
@@ -80,8 +81,8 @@ namespace Pal98Timer
                     (!record.HasValue("TimingValidationError") || string.IsNullOrEmpty(record.GetValue<string>("TimingValidationError"))) &&
                     record.HasValue("TimerCore") && record.GetValue<string>("TimerCore") == core &&
                     record.HasValue("TimingModeMs") && record.GetValue<int>("TimingModeMs") == expected &&
-                    record.HasValue("TimingMapSpeedTicks") && record.GetValue<int>("TimingMapSpeedTicks") == (core == SpeedCore ? 9 : 10) &&
-                    RuntimeError(expected, core == SpeedCore ? 9 : 10, current).Length == 0;
+                    record.HasValue("TimingMapSpeedTicks") && record.GetValue<int>("TimingMapSpeedTicks") == requestedSpeed &&
+                    RuntimeError(expected, requestedSpeed, current).Length == 0;
                 if (!valid) throw new InvalidDataException(Text("内容或实际时序不一致，未导入计时状态或存档；请先连接对应游戏。",
                     "內容或實際時序不一致，未匯入計時狀態或存檔；請先連接對應遊戲。"));
                 return;
@@ -100,7 +101,7 @@ namespace Pal98Timer
             else if (expected == 1200)
                 mismatch |= (selected != 0 && selected != 1200) ||
                     (actual != 0 && actual != 1200) || legacyFast;
-            int expectedSpeed = core == SpeedCore ? 9 : 10;
+            int expectedSpeed = requestedSpeed;
             bool newFormat = record.HasValue("TimingRulesVersion") || record.HasValue("MapSpeedTicks") ||
                 record.HasValue("TimingMapSpeedTicks");
             if (newFormat)

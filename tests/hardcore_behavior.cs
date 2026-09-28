@@ -74,11 +74,11 @@ internal static class HardcoreBehavior
 
     static void RuleVersions()
     {
-        foreach(uint version in new uint[]{1,2,3,4,uint.MaxValue})
+        foreach(uint version in new uint[]{1,2,3,4,5,uint.MaxValue})
         foreach(uint blacklist in new uint[]{1,2})
         {
             var bytes=NewBytes();U32(bytes,12,0x01060703);U32(bytes,32,version);U32(bytes,36,blacklist);
-            var snapshot=Decode(bytes);bool supported=version<=3&&blacklist==1;
+            var snapshot=Decode(bytes);bool supported=version<=4&&blacklist==1;
             Check(snapshot!=null&&snapshot.Requested&&snapshot.RulesSupported==supported,"rule request retained "+version+"/"+blacklist);
             var guard=new HardcoreKeyChangerGuard(()=>snapshot.Requested);
             Check(guard.BeginAutoStart()<0&&guard.BeginRequest()<0&&!guard.TryRun(()=>{throw new Exception("remap ran");}),

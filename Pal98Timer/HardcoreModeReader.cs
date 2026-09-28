@@ -25,7 +25,7 @@ namespace Pal98Timer
         // The wire contract and the gameplay rule revision are independent.
         // Unknown rules still carry a request that must disable key changing,
         // but cannot certify a run until this consumer supports those rules.
-        internal bool RulesSupported { get { return RulesVersion >= 1 && RulesVersion <= 3 && BlacklistVersion == 1; } }
+        internal bool RulesSupported { get { return RulesVersion >= 1 && RulesVersion <= 4 && BlacklistVersion == 1; } }
 
         internal HardcoreSnapshot(byte[] bytes, string config, string binding, string name, string reason)
         {

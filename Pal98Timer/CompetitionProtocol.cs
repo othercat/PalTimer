@@ -13,6 +13,13 @@ namespace Pal98Timer
     internal static class CompetitionProtocol
     {
         internal const string Name = "PAL98.TimerCompetition.v1";
+        internal const string NameV2 = "PAL98.TimerCompetition.v2";
+        internal static string SerializeRun(CompetitionRun run) {
+            var serializer = Json();
+            var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
+            if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
+            return serializer.Serialize(fields);
+        }
         internal const long MaxMilliseconds = 86400000;
         internal static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength = 1048576, RecursionLimit = 32 }; }
         internal static string Hash(string text)
@@ -37,12 +44,16 @@ namespace Pal98Timer
         internal static string Validate(CompetitionRun run)
         {
             Guid id; Version version;
-            if (run == null || run.protocol != Name || !Guid.TryParse(run.run_id, out id) ||
+            if (run == null || (run.protocol != Name && run.protocol != NameV2) || !Guid.TryParse(run.run_id, out id) ||
                 run.hwid == null || !Regex.IsMatch(run.hwid, "^[A-Za-z0-9._:-]{8,128}$") ||
                 !Identifier(run.track_id) || !Identifier(run.ruleset_id) || !Digest(run.pal_dll_sha256) ||
                 !Version.TryParse(run.timer_version, out version) || version.Revision < 0 ||
                 !Version.TryParse(run.game_version, out version) || version.Revision < 0 ||
                 run.total_ms <= 0 || run.total_ms > MaxMilliseconds) return "成绩身份或总时间不完整，已保留本地记录。";
+            if (run.protocol == NameV2 && (run.gameplay == null || !run.gameplay.Valid || run.hardcore == null ||
+                !run.hardcore.Valid || run.track_id != TrackFor(run.gameplay.fade_ms, run.gameplay.map_speed_ticks) ||
+                run.timeline_id != TimelineIdentity.Create(run.gameplay.rules_sha256, run.route_sha256, run.hardcore.requested)))
+                return "玩法或硬核证据不完整，已保留本地记录。";
             DateTimeOffset start, finish;
             if (!DateTimeOffset.TryParse(run.started_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out start) ||
                 !DateTimeOffset.TryParse(run.finished_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out finish) || finish < start)
@@ -61,7 +72,7 @@ namespace Pal98Timer
                 else if ((split.status != "auto_skipped" && split.status != "manual_skipped") || split.elapsed_ms.HasValue) return "节点状态未完成，未上传。";
             }
             if (run.splits[run.splits.Length - 1].status != "completed") return "尚未通关，未上传。";
-            return Encoding.UTF8.GetByteCount(Json().Serialize(run)) > 65536 ? "成绩超过服务器容量，已保留本地记录。" : "";
+            return Encoding.UTF8.GetByteCount(SerializeRun(run)) > 65536 ? "成绩超过服务器容量，已保留本地记录。" : "";
         }
     }
 
@@ -74,9 +85,10 @@ namespace Pal98Timer
         public float OverlayFontSize { get; set; } = 12F;
         public string OverlayColor { get; set; } = "#FFFFFF";
         public string OverlayAlignment { get; set; } = "left";
+        public string ReferenceBoard { get; set; } = "overall";
         public bool OverlayEditable { get; set; } = true;
         public int OverlayWidth { get; set; } = 555;
-        public int OverlayHeight { get; set; } = 245;
+        public int OverlayHeight { get; set; } = 330;
         public int? OverlayLeft { get; set; }
         public int? OverlayTop { get; set; }
         public string Server { get; set; } = "https://www.pallab.top";
@@ -91,11 +103,11 @@ namespace Pal98Timer
             Overlay = source.Overlay; Transparent = source.Transparent; OverlayFont = source.OverlayFont;
             OverlayFontSize = source.OverlayFontSize; OverlayColor = source.OverlayColor; OverlayAlignment = source.OverlayAlignment;
             OverlayEditable = source.OverlayEditable; OverlayWidth = source.OverlayWidth; OverlayHeight = source.OverlayHeight;
-            OverlayLeft = source.OverlayLeft; OverlayTop = source.OverlayTop;
+            OverlayLeft = source.OverlayLeft; OverlayTop = source.OverlayTop; ReferenceBoard = source.ReferenceBoard;
         }
         internal string ValidateAppearance()
         {
-            if (string.IsNullOrWhiteSpace(OverlayFont) || OverlayFont.Length > 128 || OverlayFont.Any(char.IsControl) ||
+            if ((ReferenceBoard != "overall" && ReferenceBoard != "hardcore") || string.IsNullOrWhiteSpace(OverlayFont) || OverlayFont.Length > 128 || OverlayFont.Any(char.IsControl) ||
                 float.IsNaN(OverlayFontSize) || float.IsInfinity(OverlayFontSize) || OverlayFontSize < 8 || OverlayFontSize > 72 ||
                 !Regex.IsMatch(OverlayColor ?? "", "\\A#[0-9a-fA-F]{6}\\z") ||
                 (OverlayAlignment != "left" && OverlayAlignment != "center" && OverlayAlignment != "right") ||
@@ -139,11 +151,16 @@ namespace Pal98Timer
         public string game_version { get; set; }
         public string pal_dll_sha256 { get; set; }
         public CompetitionSplit[] splits { get; set; }
+        public string timeline_id { get; set; }
+        public GameplayIdentity gameplay { get; set; }
+        public CompetitionHardcore hardcore { get; set; }
     }
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
     {
-        internal string Token, Core, DllHash, GameVersion, ValidationError;
+        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId;
+        internal GameplayIdentity Gameplay;
+        internal CompetitionHardcore Hardcore;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
         internal DateTimeOffset ObservedAt;
@@ -158,6 +175,7 @@ namespace Pal98Timer
         internal DateTimeOffset StartedAt, FinishedAt;
         internal bool BeganHere, Started;
         internal int Fade, Speed;
+        internal string TimelineId;
         internal CompetitionRunContext Copy() { return (CompetitionRunContext)MemberwiseClone(); }
     }
     internal sealed class CompetitionPlayer { public string id { get; set; } public string display_name { get; set; } public bool bound { get; set; } }
@@ -166,11 +184,15 @@ namespace Pal98Timer
     internal sealed class CompetitionBest { public string run_id { get; set; } public long total_ms { get; set; } public int? rank { get; set; } public string phase { get; set; } public bool ranked { get; set; } }
     internal sealed class CompetitionOverall { public CompetitionBest personal_best { get; set; } public CompetitionBest submitted_run { get; set; } }
     internal sealed class CompetitionReceipt { public string run_id { get; set; } public string phase { get; set; } public bool replayed { get; set; } }
+    internal sealed class CompetitionHardcoreRank { public int rank { get; set; } public string display_name { get; set; } public long total_ms { get; set; } }
     internal sealed class CompetitionReply
     {
         public string protocol { get; set; }
         public string @event { get; set; }
         public string event_title { get; set; }
+        public string board { get; set; }
+        public string[] supported_run_protocols { get; set; }
+        public CompetitionHardcoreRank[] hardcore_top { get; set; }
         public string track_id { get; set; }
         public string ruleset_id { get; set; }
         public string route_sha256 { get; set; }

@@ -42,6 +42,12 @@ internal sealed class CompletedDx9Core : 仙剑98柔情DX9
     internal CompletedDx9Core(GForm form) : base(form) { }
     protected override void OnCheckPointEnd() { ++EndCalls; Thread.Sleep(2); base.OnCheckPointEnd(); }
 }
+internal sealed class CompletedAutomaticCore : Pal98Dx9Automatic
+{
+    internal int EndCalls;
+    internal CompletedAutomaticCore(GForm form) : base(form) { }
+    protected override void OnCheckPointEnd() { ++EndCalls; Thread.Sleep(2); base.OnCheckPointEnd(); }
+}
 internal sealed class CompletedUnhappyCore : 仙剑98柔情不欢乐模式
 {
     internal int EndCalls;
@@ -135,7 +141,7 @@ internal static class V165TimingBehavior
     static string Error(int expected,int speed,object actual)
     { return (string)Category.GetMethod("RuntimeError",Static).Invoke(null,new[]{(object)expected,speed,actual}); }
     static void Validate(string core,int fade,HObj record,object actual)
-    { Category.GetMethod("ValidateImport",Static).Invoke(null,new[]{(object)core,fade,record,actual}); }
+    { Category.GetMethod("ValidateImport",Static).Invoke(null,new[]{(object)core,fade,record,actual,Type.Missing}); }
     static HObj Record(TimerCore core,object mode) { Attach(core,mode); return new HObj(core.GetRStr()); }
     static PTimer Watch(TimerCore core) { return (PTimer)Field(core,"MT"); }
     static HObj Clone(HObj record) { return new HObj(record.ToJson()); }
@@ -151,14 +157,14 @@ internal static class V165TimingBehavior
         SoundConfig.ins.GlobalEnabled=false;
         try
         {
-            foreach(int kind in new[]{0,1,2}) foreach(int route in new[]{0,1,2})
+            foreach(int kind in new[]{0,1,2,3}) foreach(int route in new[]{0,1,2})
             {
                 var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
                 form.IsNonSequentialCheck=route!=0;
                 TimerCore core=kind==0?(TimerCore)new CompletedPal98Core(form):
-                    kind==1?(TimerCore)new CompletedDx9Core(form):new CompletedUnhappyCore(form);
+                    kind==1?(TimerCore)new CompletedDx9Core(form):kind==2?(TimerCore)new CompletedUnhappyCore(form):new CompletedAutomaticCore(form);
                 Set(form,"core",core);
-                if(kind==1) Attach(core,Mode(1200,10,true));
+                if(kind==1||kind==3) Attach(core,Mode(1200,10,true));
                 bool[] ready={false,false,false}; int checks=0;
                 Action initialize=delegate {
                     core.CheckPoints=Enumerable.Range(0,3).Select(index=>new CheckPoint(index,
@@ -197,7 +203,7 @@ internal static class V165TimingBehavior
                 Check(watch.IsRunning&&core.CurrentStep==1,"Jump back reopens route");watch.Stop();
                 core.Reset();initialize();ready[0]=ready[1]=ready[2]=false;
                 Check(core.GetMainWatch()==TimeSpan.Zero&&!(bool)Field(core,"_hasCallPointEnd"),"Reset clears time and one-run end flag");
-                if(kind==1)Attach(core,Mode(1200,10,true));
+                if(kind==1||kind==3)Attach(core,Mode(1200,10,true));
                 Call(core,"StartAndCheckMainTimer");Check(watch.IsRunning&&core.CurrentStep==0,"Reset can start a new run");watch.Stop();
             }
 

@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace Pal98Timer
@@ -13,7 +14,7 @@ namespace Pal98Timer
         private readonly TextBox secret;
         private readonly Label status, hwid, activation, source, fontName;
         private readonly NumericUpDown fontSize;
-        private readonly ComboBox alignment;
+        private readonly ComboBox alignment, board;
         private readonly Button color;
         private readonly Timer refresh;
         private string selectedFont;
@@ -64,16 +65,20 @@ namespace Pal98Timer
             var reset = new Button { Text = "重置遮罩位置", AutoSize = true };
             buttons.Controls.AddRange(new Control[] { save, retry, copy, folder, reset }); layout.Controls.Add(buttons, 0, 12); layout.SetColumnSpan(buttons, 2);
             status = AddNote(layout, 13, "", 645); activation = AddNote(layout, 14, "", 645);
+            board = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210 };
+            board.Items.AddRange(new object[] { "综合榜节点参考", "硬核榜节点参考" }); board.SelectedIndex = cfg.ReferenceBoard == "hardcore" ? 1 : 0;
+            layout.Controls.Add(new Label { Text = "节点参考榜", AutoSize = true }, 0, 15); layout.Controls.Add(board, 1, 15);
             save.Click += delegate {
                 try {
                     var next = client.Settings; next.Overlay = overlay.Checked; next.Transparent = transparent.Checked; next.OverlayEditable = editable.Checked;
                     next.OverlayFont = selectedFont; next.OverlayFontSize = (float)fontSize.Value;
                     next.OverlayColor = "#" + selectedColor.R.ToString("X2") + selectedColor.G.ToString("X2") + selectedColor.B.ToString("X2");
+                    next.ReferenceBoard = board.SelectedIndex == 1 ? "hardcore" : "overall";
                     next.OverlayAlignment = alignment.SelectedIndex == 1 ? "center" : alignment.SelectedIndex == 2 ? "right" : "left";
                     client.ConfigureAppearance(next, secret.Text.Length == 0 ? null : secret.Text.Trim()); secret.Clear(); status.Text = "已交给后台保存。";
                 } catch (Exception ex) { status.Text = ex.Message; }
             };
-            reset.Click += delegate { var next = client.Settings; next.OverlayLeft = next.OverlayTop = null; next.OverlayWidth = 555; next.OverlayHeight = 245; client.ConfigureAppearance(next); };
+            reset.Click += delegate { var next = client.Settings; next.OverlayLeft = next.OverlayTop = null; next.OverlayWidth = 555; next.OverlayHeight = 330; client.ConfigureAppearance(next); };
             retry.Click += delegate { client.Retry(); };
             copy.Click += delegate { try { if (client.View.Hwid.Length > 0) Clipboard.SetText(client.View.Hwid); } catch { status.Text = "剪贴板暂不可用。"; } };
             folder.Click += delegate { try { Process.Start(new ProcessStartInfo(client.DataDirectory) { UseShellExecute = true }); } catch { status.Text = "本机记录目录尚未创建。"; } };
@@ -116,7 +121,7 @@ namespace Pal98Timer
         {
             this.client = client;
             Text = ObsWindowTitle; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = true; TopMost = false;
-            AutoScaleMode = AutoScaleMode.None; ClientSize = new Size(555, 245); MinimumSize = new Size(320, 140); MaximumSize = new Size(3840, 2160);
+            AutoScaleMode = AutoScaleMode.None; ClientSize = new Size(555, 330); MinimumSize = new Size(320, 140); MaximumSize = new Size(3840, 2160);
             DoubleBuffered = true; SetStyle(ControlStyles.ResizeRedraw, true);
             StartPosition = FormStartPosition.Manual;
             Resize += delegate { UpdateFont(); };
@@ -148,8 +153,10 @@ namespace Pal98Timer
             return "玩家：" + player + "\n" + CompetitionProtocol.TrackLabel(reply == null ? null : reply.track_id) + " · 实时参考（含预热）\n" +
                 "当前节点：" + (string.IsNullOrEmpty(value.NodeName) ? "尚未完成节点" : value.NodeName) + "\n" +
                 "完整最佳线：" + Rank(node == null || node.best_complete_line == null ? null : node.best_complete_line.rank) + "    单节点最佳：" + Rank(node == null || node.personal_checkpoint_best == null ? null : node.personal_checkpoint_best.rank) + "\n" +
-                "历史总榜：" + Rank(overall == null || overall.personal_best == null ? null : overall.personal_best.rank) +
+                (reply?.board == "hardcore" ? "硬核总榜：" : "综合总榜：") + Rank(overall == null || overall.personal_best == null ? null : overall.personal_best.rank) +
                 "    本次通关：" + Rank(overall == null || overall.submitted_run == null || !overall.submitted_run.ranked ? null : overall.submitted_run.rank) + "\n" +
+                "硬核前三：" + (reply?.hardcore_top == null || reply.hardcore_top.Length == 0 ? "未知" :
+                    string.Join("；", reply.hardcore_top.Select(p => p.rank + ". " + p.display_name + " " + TimeSpan.FromMilliseconds(p.total_ms).ToString(@"hh\:mm\:ss\.fff")))) + "\n" +
                 "排名以服务器最近返回的结果为准";
         }
         private void RefreshView()

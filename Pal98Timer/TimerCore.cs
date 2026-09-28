@@ -283,9 +283,10 @@ namespace Pal98Timer
         /// <summary>
         /// 从文件里加载最佳时间线
         /// </summary>
-        protected void LoadBest()
+        public virtual string ActiveBestPath => "best" + CoreName + ".txt";
+        protected virtual void LoadBest()
         {
-            string BestFile = "best" + CoreName + ".txt";
+            string BestFile = ActiveBestPath;
             if (File.Exists(BestFile))
             {
                 string beststr = "";
@@ -370,7 +371,8 @@ namespace Pal98Timer
         /// 保存最佳文件
         /// </summary>
         /// <param name="str"></param>
-        protected virtual string GetScoreSavePath(DateTime now) { return "best" + CoreName + ".txt"; }
+        protected virtual string GetScoreSavePath(DateTime now) { return ActiveBestPath; }
+        protected virtual string GetExportPath(DateTime now) => CoreName + now.ToString("yyyyMMddHHmmss") + ".txt";
 
         protected void SaveBest(string str)
         {
@@ -400,7 +402,7 @@ namespace Pal98Timer
         private bool IsActiveBestPath(string filename)
         {
             return string.Equals(Path.GetFullPath(filename),
-                Path.GetFullPath("best" + CoreName + ".txt"), StringComparison.OrdinalIgnoreCase);
+                Path.GetFullPath(ActiveBestPath), StringComparison.OrdinalIgnoreCase);
         }
 
         private string SaveBestValue(string contents)
@@ -415,7 +417,7 @@ namespace Pal98Timer
             return filename;
         }
 
-        public void RefreshBestReference()
+        public virtual void RefreshBestReference()
         {
             // Update only reference fields. Never recreate checkpoints, jump,
             // reset the run, or import score/runtime identity from the best line.
@@ -432,7 +434,7 @@ namespace Pal98Timer
         // unverified run into a claimed score merely to create an editor file.
         public void CreateBestReferenceIfMissing()
         {
-            string path = "best" + CoreName + ".txt";
+            string path = ActiveBestPath;
             if (File.Exists(path)) return;
             HObj data = new HObj();
             data["TimerCore"] = CoreName;
@@ -448,21 +450,24 @@ namespace Pal98Timer
                 points.Add(item);
             }
             data["CheckPoints"] = points;
+            FillReferenceIdentity(data);
             BestTimelineStorage.Write(path, data.ToJson(), false);
         }
         /// <summary>
         /// 导出当前成绩
         /// </summary>
         /// <param name="str"></param>
+        protected virtual void FillReferenceIdentity(HObj data) { }
         protected void ExportCurrent(string str)
         {
             EnsureScoreValid();
             DateTime now = DateTime.Now;
-            string filename = now.ToString("yyyyMMddHHmmss");
+            string filename = GetExportPath(now);
 
             try
             {
-                using (FileStream fileStream = new FileStream(CoreName + filename + ".txt", FileMode.Create))
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filename)));
+                using (FileStream fileStream = new FileStream(filename, FileMode.Create))
                 {
                     using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
                     {
@@ -470,8 +475,8 @@ namespace Pal98Timer
                         //streamWriter.Flush();
                     }
                 }
-                form.Success("已将此次成绩保存至" + CoreName + filename + ".txt");
-                SendPluginsEvent("ExportCurrent", CoreName + filename + ".txt");
+                form.Success("已将此次成绩保存至" + filename);
+                SendPluginsEvent("ExportCurrent", filename);
             }
             catch (Exception ex)
             {
@@ -905,8 +910,10 @@ namespace Pal98Timer
         /// </summary>
         private long scoreRunSequence;
         public long ScoreRunSequence { get { return System.Threading.Interlocked.Read(ref scoreRunSequence); } }
-        protected void AdvanceScoreRunSequence()
+        private bool competitionImportedRun;
+        protected void AdvanceScoreRunSequence(bool imported = false)
         {
+            competitionImportedRun = imported;
             System.Threading.Interlocked.Increment(ref scoreRunSequence);
             form?.InvalidateCompetition(this, competitionCoreId + ":" + ScoreRunSequence);
         }
@@ -917,8 +924,10 @@ namespace Pal98Timer
         private int competitionStep = -2;
         private string competitionFingerprint = "";
         private bool competitionBeganHere;
+        internal bool CanBeginCompetitionHere(int step) => !competitionImportedRun && step <= 0;
         internal virtual void CaptureCompetitionIdentity(out string hash, out string version, out int fade, out int speed, out string error)
         { hash = version = ""; fade = speed = 0; error = "此内核尚未接入比赛联机"; }
+        internal virtual void CaptureCompetitionGameplay(CompetitionObservation observation) { }
         private void PublishCompetitionIfChanged()
         {
             if (form == null || !form.CompetitionEnabled(this) || CheckPoints == null || CheckPoints.Count == 0) return;
@@ -928,8 +937,10 @@ namespace Pal98Timer
             competitionPoll = now + Stopwatch.Frequency;
             string hash, version, error; int fade, speed;
             CaptureCompetitionIdentity(out hash, out version, out fade, out speed, out error);
-            if (sequence != competitionSequence) competitionBeganHere = step <= 0;
-            string fingerprint = coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
+            if (sequence != competitionSequence) competitionBeganHere = CanBeginCompetitionHere(step);
+            var observation = new CompetitionObservation();
+            CaptureCompetitionGameplay(observation);
+            string fingerprint = (observation.TimelineId ?? "") + "|" + observation.ValidationError + "|" + (observation.Hardcore?.run_verified ?? false) + "|" + coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
             if (fingerprint == competitionFingerprint) return;
             var splits = new CompetitionSplit[CheckPoints.Count];
             for (int index = 0; index < splits.Length; index++)
@@ -942,10 +953,10 @@ namespace Pal98Timer
             long totalMilliseconds = MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond;
             if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
-            form.PublishCompetition(this, new CompetitionObservation { Token = coreIdentity + ":" + sequence, Core = CoreName,
+            form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
                 Step = step, TotalMilliseconds = totalMilliseconds,
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
-                DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = error, Splits = splits });
+                DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });
         }
         protected virtual void ValidateBestReference(HObj reference) { }
 

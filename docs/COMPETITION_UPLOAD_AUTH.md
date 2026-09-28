@@ -1,6 +1,6 @@
 # 比赛上传的独立构建激活
 
-显示版本 3.37.7；本次内部版本 3.37.7.1。忽爷的云 ID、PalCloudLib.dll
+显示版本 3.37.7；本次内部版本 3.37.7.4。忽爷的云 ID、PalCloudLib.dll
 和云存读档协议完全独立，不读取云 ID 来授予 PalServer 上传权限。
 
 ## 玩家行为
@@ -23,13 +23,15 @@
 进程定位真实 EXE，核对冻结 SHA-256，并自行读取域隔离 HWID；调用方不能传入
 另一份官方 EXE 代替宿主。组件从应用目录加载，不依赖当前工作目录。
 
+本次支持完整签封自动玩法的 `PAL98.TimerCompetition.v2` 字段，外层认证合同不变。计时器 EXE 和认证 DLL 成对冻结；服务端只需要公开登记材料中的 EXE 哈希、组件哈希、版本、公钥及后续批准，不部署认证 DLL，不接收私有源码或私钥。旧签封继续保留原字节，不回填硬核资格。
+
 `PAL98.TimerUploadAuth.v1` 使用 RSA-2048 / PKCS#1 v1.5 / SHA-256。
 签名输入为以下字段的 UTF-8、LF 分隔、含末尾 LF；字段禁止换行。服务器严格
 拒绝重复 JSON 字段、未知字段和非规范 base64，不能先重写消息再验证。
 
 成绩签封：protocol、`run`、key_id、timer_exe_sha256、timer_version、
 component_sha256、server_origin、event、hwid、run_id、原成绩字节的 SHA-256。
-原成绩仍是 `PAL98.TimerCompetition.v1` 的原始 UTF-8 JSON，通过 payload_base64
+原成绩是旧核心的 `PAL98.TimerCompetition.v1` 或自动玩法核心的 `PAL98.TimerCompetition.v2` 原始 UTF-8 JSON，通过 payload_base64
 封装；原主时间与末节点分别保存，三赛道规则不变。
 
 上传证明：protocol、`request`、key_id、timer_exe_sha256、timer_version、

@@ -12,6 +12,7 @@ namespace Pal98Timer
         internal static void Write(string path, string contents, bool replaceExisting = true)
         {
             string target = Path.GetFullPath(path);
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
             string stamp = DateTime.Now.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N");
             string pending = target + ".pending-" + stamp;
             string backup = Path.Combine(Path.GetDirectoryName(target),
