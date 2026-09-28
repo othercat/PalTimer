@@ -1,0 +1,32 @@
+[
+  {
+    "rules": {
+      "content": "3333333333333333333333333333333333333333333333333333333333333333",
+      "family": "standard",
+      "fade_ms": "1200",
+      "map_speed_ticks": "10",
+      "module.OriginalLove": "enabled",
+      "resource.SKILL.GLOBAL": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "configuration_id": "2710e4b1d18ba31e9b4cf3fbd25a94bbae146c77c18914809175982e60fc138c"
+  },
+  {
+    "rules": {
+      "A": "繁體\\\"",
+      "z": "\n\t\u0000"
+    },
+    "configuration_id": "bd0ae6ce926f0e2e4806347fd54665437baf3b0c1bfec8a3fb54c3e185650430"
+  },
+  {
+    "rules": {
+      "module.Test": "enabled",
+      "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "family": "drawcard",
+      "fade_ms": "800",
+      "map_speed_ticks": "9",
+      "card.alpha": "granted",
+      "card.beta": "granted"
+    },
+    "configuration_id": "19b6ce2e308589a2e5e0040e3f6d1940369cf7fe790f17e54987df7db49518b7"
+  }
+]

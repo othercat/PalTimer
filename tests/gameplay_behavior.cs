@@ -3,12 +3,15 @@ using HFrame.ENT;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 
 internal sealed class StorageAutomaticCore : Pal98Dx9Automatic
 {
@@ -44,7 +47,9 @@ internal static class GameplayBehavior
             Check(GameplayModeReader.Decode(frame,process.Id,creation,2,2)?.covered==true,"bounded runtime frame accepted");
             var revision14=(byte[])frame.Clone();Array.Copy(BitConverter.GetBytes(0x0106080Eu),0,revision14,12,4);
             Check(GameplayModeReader.Decode(revision14,process.Id,creation,2,2)?.covered==true,"1.6.8.14 runtime frame accepted");
-            var future=(byte[])frame.Clone();Array.Copy(BitConverter.GetBytes(0x0106080Fu),0,future,12,4);
+            var revision15=(byte[])frame.Clone();Array.Copy(BitConverter.GetBytes(0x0106080Fu),0,revision15,12,4);
+            Check(GameplayModeReader.Decode(revision15,process.Id,creation,2,2)?.covered==true,"1.6.8.15 keeps the local gameplay reader compatible");
+            var future=(byte[])frame.Clone();Array.Copy(BitConverter.GetBytes(0x01060810u),0,future,12,4);
             Check(GameplayModeReader.Decode(future,process.Id,creation,2,2)==null,"unknown future producer is not silently accepted");
             Check(GameplayModeReader.Decode(frame,process.Id+1,creation,2,2)==null,"PID reuse cannot transfer facts");
             Check(GameplayModeReader.Decode(frame,process.Id,creation+1,2,2)==null,"creation identity checked");
@@ -90,6 +95,24 @@ internal static class GameplayBehavior
             var s=Snapshot(route);s.rules["fade_ms"]=speed[0].ToString();s.rules["map_speed_ticks"]=speed[1].ToString();ids.Add(TimelineIdentity.Create(Rules(s.rules),route,false));
         }Check(ids.Count==3,"three speed categories isolated");
         b.rules=new Dictionary<string,string>(a.rules.Reverse().ToDictionary(p=>p.Key,p=>p.Value));Check(Rules(b.rules)==a.rules_sha256,"field ordering does not create a line");
+    }
+    static void LiveRanking()
+    {
+        var core=new StorageAutomaticCore();Call(core,"InitCheckPoints");string route=(string)Get(core,"route");
+        var first=Snapshot(route);var changed=Snapshot(route);
+        Func<GameplaySnapshot,string,RankingConfiguration> ranking=(snapshot,poison)=>{
+            var rules=new Dictionary<string,string>(snapshot.rules) { ["family"]="standard",["mechanics.poison_zero"]=poison };
+            return new RankingConfiguration {schema="PAL98.RankingConfiguration.v1",covered=true,rules=rules,configuration_id=RankingConfiguration.Digest(rules)};
+        };
+        first.ranking=ranking(first,"0");changed.ranking=ranking(changed,"1");
+        Call(core,"SelectIdentity",first,false);Set(core,"frozen",first.OrdinaryTimelineId);
+        Set(Get(core,"gameplayReader"),"current",changed);
+        var observed=new CompetitionObservation();core.CaptureCompetitionGameplay(observed);
+        Check(observed.Ranking.configuration_id==changed.ranking.configuration_id,"online facts observe a ranking-only change after local identity freezes");
+        Check(observed.TimelineId==first.OrdinaryTimelineId&&core.ActiveBestPath.Contains(first.OrdinaryTimelineId),"new ranking contract does not repartition existing local best directories");
+        changed.ranking.covered=false;observed=new CompetitionObservation();core.CaptureCompetitionGameplay(observed);
+        Check(!string.IsNullOrEmpty(observed.ValidationError),"invalid current ranking cannot reuse frozen start eligibility");
+        core.Unload();
     }
     static void Cores() {
         var auto=new Pal98Dx9Automatic(null);Call(auto,"InitCheckPoints");
@@ -145,7 +168,107 @@ internal static class GameplayBehavior
         Check(File.Exists(TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory,facts.HardcoreTimelineId,false,"best.json")),"unverified hardcore saves to quarantine");
         core.Unload();reopened.Unload();
     }
-    static int Main(string[] args) { try { Decoder();Identity();Cores();Storage();
-        foreach(var path in args){var bytes=File.ReadAllBytes(path);var decoded=GameplayModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));Check(decoded!=null&&decoded.covered,"actual native snapshot validates in managed reader: "+Path.GetDirectoryName(path));}
+    static void Presentation()
+    {
+        var core = new Pal98Dx9Automatic(null);
+        var legacy = new 仙剑98柔情DX9(null);
+        Set(core, "DX9Version", "1.68 r14");
+        Check(core.GetGameVersion() == "等待游戏运行", "no invented gameplay in disconnected caption");
+        string route = CompetitionProtocol.RouteHash(new[] { "鬼将军", "拜月" });
+        var facts = Snapshot(route);
+        facts.rules["wuqiang"] = "1";
+        foreach (var speed in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 } })
+        foreach (bool hardcore in new[] { false, true })
+        {
+            facts.fade_ms = speed[0]; facts.map_speed_ticks = speed[1];
+            Set(core, "selected", facts); Set(core, "requested", hardcore);
+            Set(core, "lastConfirmedTimingMode", new RuntimeTimingMode(speed[0], speed[1], true,
+                "classic-v5", "1.0.22", facts.content_sha256, "速通 v5"));
+            string modes = (speed[0] == 800 ? "0.8秒" : "1.2秒") + "&" +
+                (speed[1] == 9 ? "快走速" : "普通走速") + "&吴强&" + (hardcore ? "硬核模式" : "普通模式");
+            Check(core.GetGameVersion() == "98柔情原版 1.68－" + modes, "caption merges actual gameplay once with ampersands");
+            Set(core, "lastConfirmedTournamentDisplayName", "吴强杯比赛专用");
+            Check(core.GetGameVersion() == "吴强杯比赛专用－" + modes, "merged caption retains tournament identity");
+            Set(core, "lastConfirmedTournamentDisplayName", "");
+            Check(core.GetMoreInfo() == legacy.GetMoreInfo() && !core.GetMoreInfo().Contains("\n"),
+                "bottom remains the original one-line item and encounter statistics");
+            Check((string)Call(core, "FormatPaletteFadeVersion", "1.68") == "1.68" +
+                Dx9TimingCategory.Suffix(core.RecordedTimingMode), "structured version suffix does not gain gameplay text");
+        }
+        Set(core, "requested", false);
+        string example = "[测试版] " + core.GetGameVersion();
+        facts.family = "drawcard";
+        foreach (string key in new[] { "random_items", "random_skills.enabled", "love.enabled", "village" }) facts.rules[key] = "1";
+        string longTitle = "[随机数待核验][测试版] " + core.GetGameVersion();
+        foreach (string label in new[] { "抽卡", "随机物品", "随机技能", "爱无限", "村村通" })
+            Check(longTitle.Contains(label), "merged caption retains " + label);
+        Set(core, "selected", null);
+        Check(core.GetGameVersion().EndsWith("&未归类"), "pending gameplay is not presented as ordinary mode");
+        Set(core, "selected", facts); Set(core, "timingRunInvalidated", true);
+        Check(core.GetScoreValidationError().Length != 0 && core.GetGameVersion() == core.GetScoreValidationError(),
+            "existing timing warning takes priority over gameplay caption");
+
+        foreach (var size in new[] { new Size(346, 916), new Size(270, 200), new Size(560, 916) })
+        using (var panel = new Panel { Size = size })
+        using (var board = new GBoard())
+        {
+            var render = new GRender(panel); render.SetGBoard(board);
+            render.SetTitle("自动计时器"); render.SetVersion("3.37.7"); render.SetMainTimer(TimeSpan.Zero);
+            render.SetMoreInfo(legacy.GetMoreInfo()); render.SetSubTimer("0.00s");
+            render.AddBtn("隐藏", null); render.AddBtn("重置", null); render.AddBtn("功能", null); render.AddBtn("云", null);
+            if (size.Height > 250) {
+                Call(legacy, "InitCheckPoints");
+                foreach (var point in legacy.CheckPoints) render.AddItem(point.Name, TimeSpan.Zero);
+            }
+            render.SetGameVersion(""); render.Draw();
+            var header = (Rectangle)Get(render, "rcGameVersion");
+            using (var empty = new Bitmap(panel.BackgroundImage))
+            {
+                render.SetGameVersion(example); render.Draw();
+                SavePreview(panel, "caption-" + size.Width + "x" + size.Height + ".png");
+                Check((string)Get(render, "MoreInfo") == legacy.GetMoreInfo(), "renderer does not duplicate gameplay at the bottom");
+                render.SetGameVersion(longTitle); render.Draw();
+                var expandedHeader = (Rectangle)Get(render, "rcGameVersion");
+                var items = (Rectangle)Get(render, "rcItems");
+                var dots = (Rectangle)Get(render, "rcDots");
+                Check(dots.Top >= expandedHeader.Bottom && items.Top >= dots.Bottom,
+                    "wrapped caption reserves space before indicators and checkpoint rows");
+                bool bounded = true;
+                using (var current = new Bitmap(size.Width, size.Height))
+                using (var graphics = Graphics.FromImage(current))
+                {
+                    Set(render, "isGameVersionChanged", true);
+                    Call(render, "DrawGameVersion", graphics, null);
+                    for (int y = 0; y < size.Height; ++y)
+                    for (int x = 0; x < size.Width; ++x)
+                        if (!expandedHeader.Contains(x, y) && current.GetPixel(x, y).A != 0) bounded = false;
+                }
+                Check(bounded, "long header does not paint over other rows at " + size);
+                SavePreview(panel, "caption-long-" + size.Width + "x" + size.Height + ".png");
+                render.SetGameVersion(""); render.Draw();
+                bool restored = true;
+                using (var current = new Bitmap(panel.BackgroundImage))
+                    for (int y = header.Top; y < header.Bottom; ++y)
+                    for (int x = header.Left; x < header.Right; ++x)
+                        if (empty.GetPixel(x, y) != current.GetPixel(x, y)) restored = false;
+                Check(restored, "shortened caption clears all previous title pixels");
+                Check(!render.Draw(), "unchanged caption does not trigger another repaint");
+            }
+            ((Graphics)Get(render, "CG")).Dispose(); panel.BackgroundImage.Dispose();
+        }
+        core.Unload(); legacy.Unload();
+    }
+    static void SavePreview(Panel panel, string filename)
+    {
+        using (var bitmap = new Bitmap(panel.Width, panel.Height))
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.Black); graphics.DrawImageUnscaled(panel.BackgroundImage, 0, 0);
+            bitmap.Save(filename, ImageFormat.Png);
+        }
+    }
+    [STAThread]
+    static int Main(string[] args) { try { Decoder();Identity();Cores();Storage();LiveRanking();Presentation();
+        foreach(var path in args){var bytes=File.ReadAllBytes(path);var decoded=GameplayModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));Check(decoded!=null&&decoded.covered,"actual native snapshot validates in managed reader: "+Path.GetDirectoryName(path));Check(decoded.ranking!=null&&decoded.ranking.Valid(decoded.Identity),"actual native online ranking validates independently of local timeline");}
         Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}catch(Exception error){Console.Error.WriteLine(error);return 1;} }
 }

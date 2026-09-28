@@ -14,7 +14,7 @@ namespace Pal98Timer
         private readonly TextBox secret;
         private readonly Label status, hwid, activation, source, fontName;
         private readonly NumericUpDown fontSize;
-        private readonly ComboBox alignment, board;
+        private readonly ComboBox alignment, board, rankingScope;
         private readonly Button color;
         private readonly Timer refresh;
         private string selectedFont;
@@ -22,15 +22,15 @@ namespace Pal98Timer
         internal CompetitionSettingsForm(CompetitionClient client)
         {
             this.client = client;
-            Text = "比赛联机与排名"; StartPosition = FormStartPosition.CenterParent;
+            Text = "联机与排名"; StartPosition = FormStartPosition.CenterParent;
             AutoScaleMode = AutoScaleMode.Dpi; ClientSize = new Size(690, 610); MinimumSize = new Size(670, 550);
             Font = new Font("Microsoft YaHei UI", 9F);
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, AutoScroll = true };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); Controls.Add(layout);
             var cfg = client.Settings;
-            source = AddNote(layout, 0, "服务器、比赛编号和规则由游戏配置工具的“服务器上传配置”页面管理。", 645);
-            AddNote(layout, 1, "仅上传目的赛道按实际黑屏和走速选择；不切换计时器内核或游戏配置。\n下面的显示偏好仅保存在本机，不受比赛锁限制。", 645);
-            overlay = AddCheck(layout, 2, "显示独立比赛排名遮罩（OBS 可单独捕获）", cfg.Overlay);
+            source = AddNote(layout, 0, "服务器、配置编号和自定义比赛由游戏配置工具的“服务器上传配置”页面管理。", 645);
+            AddNote(layout, 1, "按游戏实际玩法参与日常榜；有效锁定的自定义比赛另按举办方规则归榜。\n下面的显示偏好仅保存在本机，不受比赛锁限制。", 645);
+            overlay = AddCheck(layout, 2, "显示独立联机排名遮罩（OBS 可单独捕获）", cfg.Overlay);
             transparent = AddCheck(layout, 3, "透明背景", cfg.Transparent);
             editable = AddCheck(layout, 4, "允许拖动及边缘缩放（显示编辑边框；录制时可关闭）", cfg.OverlayEditable);
             layout.Controls.Add(new Label { Text = "字体", AutoSize = true }, 0, 5);
@@ -68,11 +68,16 @@ namespace Pal98Timer
             board = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210 };
             board.Items.AddRange(new object[] { "综合榜节点参考", "硬核榜节点参考" }); board.SelectedIndex = cfg.ReferenceBoard == "hardcore" ? 1 : 0;
             layout.Controls.Add(new Label { Text = "节点参考榜", AutoSize = true }, 0, 15); layout.Controls.Add(board, 1, 15);
+            rankingScope = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
+            rankingScope.Items.AddRange(new object[] { "自动跟随（日常／自定义比赛）", "同配置日常榜" });
+            rankingScope.SelectedIndex = cfg.ReferenceScope == "daily" ? 1 : 0;
+            layout.Controls.Add(new Label { Text = "排名范围", AutoSize = true }, 0, 16); layout.Controls.Add(rankingScope, 1, 16);
             save.Click += delegate {
                 try {
                     var next = client.Settings; next.Overlay = overlay.Checked; next.Transparent = transparent.Checked; next.OverlayEditable = editable.Checked;
                     next.OverlayFont = selectedFont; next.OverlayFontSize = (float)fontSize.Value;
                     next.OverlayColor = "#" + selectedColor.R.ToString("X2") + selectedColor.G.ToString("X2") + selectedColor.B.ToString("X2");
+                    next.ReferenceScope = rankingScope.SelectedIndex == 1 ? "daily" : "automatic";
                     next.ReferenceBoard = board.SelectedIndex == 1 ? "hardcore" : "overall";
                     next.OverlayAlignment = alignment.SelectedIndex == 1 ? "center" : alignment.SelectedIndex == 2 ? "right" : "left";
                     client.ConfigureAppearance(next, secret.Text.Length == 0 ? null : secret.Text.Trim()); secret.Clear(); status.Text = "已交给后台保存。";
@@ -99,7 +104,7 @@ namespace Pal98Timer
         {
             var cfg = client.Settings; var value = client.View;
             source.Text = "联机设置由游戏配置工具的“服务器上传配置”页面管理。\n" + (cfg.Enabled
-                ? cfg.Server + "  比赛：" + cfg.Event + "  规则：" + cfg.Ruleset : "当前游戏未开启比赛联机，或尚未连接游戏。");
+                ? cfg.Server + "  " + (cfg.CustomCompetitionId == null ? "日常排名" : "自定义比赛：" + cfg.CustomCompetitionId) : "当前游戏未开启联机，或尚未连接游戏。");
             hwid.Text = value.Hwid.Length == 0 ? "设备标识：联机开启后在本机生成" : "设备标识：" + value.Hwid;
             activation.Text = client.ActivationText;
             if (value.Status.StartsWith("比赛设置未能保存", StringComparison.Ordinal) || value.Status.StartsWith("本机比赛设置或凭据不可读取", StringComparison.Ordinal) || value.Status.StartsWith("比赛记录未能落盘", StringComparison.Ordinal)) status.Text = value.Status;
@@ -109,7 +114,7 @@ namespace Pal98Timer
 
     internal sealed class CompetitionOverlayForm : Form
     {
-        internal const string ObsWindowTitle = "仙剑98自动计时器 - 比赛排名";
+        internal const string ObsWindowTitle = "仙剑98自动计时器 - 联机排名";
         private readonly CompetitionClient client;
         private readonly Timer refresh;
         private CompetitionSettings style;
@@ -127,7 +132,7 @@ namespace Pal98Timer
             Resize += delegate { UpdateFont(); };
             ResizeBegin += delegate { moving = true; };
             ResizeEnd += delegate { moving = false; SaveBounds(); };
-            var menu = new ContextMenuStrip(); var hide = new ToolStripMenuItem("隐藏比赛排名遮罩");
+            var menu = new ContextMenuStrip(); var hide = new ToolStripMenuItem("隐藏联机排名遮罩");
             hide.Click += delegate { Close(); }; menu.Items.Add(hide); ContextMenuStrip = menu;
             refresh = new Timer { Interval = 500 }; refresh.Tick += delegate { RefreshView(); }; refresh.Start(); RefreshView();
         }
@@ -150,12 +155,12 @@ namespace Pal98Timer
         {
             var reply = value.Reply; var node = reply == null ? null : reply.node; var overall = reply == null ? null : reply.overall;
             string player = reply != null && reply.player != null && reply.player.bound ? reply.player.display_name : "尚未绑定玩家";
-            return "玩家：" + player + "\n" + CompetitionProtocol.TrackLabel(reply == null ? null : reply.track_id) + " · 实时参考（含预热）\n" +
+            return "玩家：" + player + "\n" + (string.IsNullOrWhiteSpace(reply?.title) ? "联机排名" : reply.title) + "\n" +
                 "当前节点：" + (string.IsNullOrEmpty(value.NodeName) ? "尚未完成节点" : value.NodeName) + "\n" +
                 "完整最佳线：" + Rank(node == null || node.best_complete_line == null ? null : node.best_complete_line.rank) + "    单节点最佳：" + Rank(node == null || node.personal_checkpoint_best == null ? null : node.personal_checkpoint_best.rank) + "\n" +
                 (reply?.board == "hardcore" ? "硬核总榜：" : "综合总榜：") + Rank(overall == null || overall.personal_best == null ? null : overall.personal_best.rank) +
                 "    本次通关：" + Rank(overall == null || overall.submitted_run == null || !overall.submitted_run.ranked ? null : overall.submitted_run.rank) + "\n" +
-                "硬核前三：" + (reply?.hardcore_top == null || reply.hardcore_top.Length == 0 ? "未知" :
+                (string.IsNullOrEmpty(reply?.custom_competition_id) ? "硬核领先：" : "硬核前三：") + (reply?.hardcore_top == null || reply.hardcore_top.Length == 0 ? "未知" :
                     string.Join("；", reply.hardcore_top.Select(p => p.rank + ". " + p.display_name + " " + TimeSpan.FromMilliseconds(p.total_ms).ToString(@"hh\:mm\:ss\.fff")))) + "\n" +
                 "排名以服务器最近返回的结果为准";
         }

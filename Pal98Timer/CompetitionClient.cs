@@ -102,7 +102,7 @@ namespace Pal98Timer
                 publishedStep = int.MinValue;
                 Interlocked.Increment(ref querySerial);
                 Interlocked.Exchange(ref latest, null);
-                view = new CompetitionView { Status = settings.Enabled ? "等待本轮节点" : "比赛联机未开启", Hwid = view.Hwid, Pending = view.Pending };
+                view = new CompetitionView { Status = settings.Enabled ? "等待本轮节点" : "联机未开启", Hwid = view.Hwid, Pending = view.Pending };
             }
         }
         internal void Publish(CompetitionObservation observation)
@@ -117,10 +117,10 @@ namespace Pal98Timer
                 if (lease == null)
                     lease = new CompetitionRunContext { Token = observation.Token, RunId = Guid.NewGuid().ToString("D"), Settings = settings.Copy(),
                         StartedAt = observation.ObservedAt, BeganHere = observation.BeganHere && observation.Step <= 0 && !observation.Finished,
-                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks, TimelineId = observation.TimelineId };
+                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks, TimelineId = observation.TimelineId, ConfigurationId = observation.Ranking?.configuration_id };
                 if (observation.Step <= 0 && !lease.Started)
                 {
-                    lease = lease.Copy(); lease.TimelineId = observation.TimelineId;
+                    lease = lease.Copy(); lease.TimelineId = observation.TimelineId; lease.ConfigurationId = observation.Ranking?.configuration_id;
                     lease.Fade = observation.FadeMilliseconds; lease.Speed = observation.MapSpeedTicks;
                 }
                 if (observation.Step == 0 && !lease.Started)
@@ -134,7 +134,7 @@ namespace Pal98Timer
                 {
                     publishedStep = observation.Step; publishedFade = observation.FadeMilliseconds; publishedSpeed = observation.MapSpeedTicks;
                     var previous = view;
-                    view = new CompetitionView { Hwid = previous.Hwid, Pending = previous.Pending, Status = "比赛实时参考（含预热）",
+                    view = new CompetitionView { Hwid = previous.Hwid, Pending = previous.Pending, Status = "联机实时参考",
                         NodeName = observation.Step <= 0 ? "" : observation.Splits[Math.Min(observation.Step, observation.Splits.Length) - 1].checkpoint_id,
                         Reply = new CompetitionReply { track_id = CompetitionProtocol.TrackFor(publishedFade, publishedSpeed), player = previous.Reply == null ? null : previous.Reply.player } };
                 }
@@ -150,15 +150,15 @@ namespace Pal98Timer
             if (replacementSecret != null && !CompetitionProtocol.Digest(replacementSecret)) throw new ArgumentException("设备凭据应为 64 位小写十六进制。");
             // Pause publication while changing endpoint/credentials. Previously
             // accepted completions retain their immutable original destination.
-            bool changingNetwork = settings.Server != copy.Server || settings.Event != copy.Event || settings.Ruleset != copy.Ruleset || settings.Enabled != copy.Enabled || replacementSecret != null;
+            bool changingNetwork = settings.Server != copy.Server || settings.CustomCompetitionId != copy.CustomCompetitionId || settings.Enabled != copy.Enabled || replacementSecret != null;
             if (changingNetwork) enabled = false;
             Interlocked.Increment(ref generation);
             commands.Enqueue(() => ApplyConfiguration(copy, replacementSecret));
         }
         private void ApplyConfiguration(CompetitionSettings copy, string replacementSecret, long? gameEpoch = null)
         {
-                bool boardChanged = settings.ReferenceBoard != copy.ReferenceBoard;
-                bool networkChanged = settings.Server != copy.Server || settings.Event != copy.Event || settings.Ruleset != copy.Ruleset || settings.Enabled != copy.Enabled || replacementSecret != null;
+                bool boardChanged = settings.ReferenceBoard != copy.ReferenceBoard || settings.ReferenceScope != copy.ReferenceScope;
+                bool networkChanged = settings.Server != copy.Server || settings.CustomCompetitionId != copy.CustomCompetitionId || settings.Enabled != copy.Enabled || replacementSecret != null;
                 CompetitionCredential preparedCredential;
                 List<CompetitionPending> preparedPending;
                 try
@@ -166,7 +166,7 @@ namespace Pal98Timer
                     preparedCredential = networkChanged ? (copy.Enabled ? storage.Credential(copy.Server, replacementSecret) : null) : credential;
                     preparedPending = networkChanged ? storage.LoadPending(copy).ToList() : null;
                     var stored = copy.Copy();
-                    if (gameManaged) { stored.Enabled = false; stored.Server = new CompetitionSettings().Server; stored.Event = "wuqiang"; stored.Ruleset = "wuqiang-2026-v1"; }
+                    if (gameManaged) { stored.Enabled = false; stored.Server = new CompetitionSettings().Server; stored.Event = "wuqiang"; stored.Ruleset = "wuqiang-2026-v1"; stored.CustomCompetitionId = null; stored.ConfigurationId = null; }
                     storage.SaveSettings(stored);
                 }
                 catch { enabled = false; SetStatus("比赛设置未能保存，联机已停止；请检查本机记录目录权限", true); return; }
@@ -194,7 +194,7 @@ namespace Pal98Timer
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
                 approvals.Clear(); activationText = "仅本地保存";
                 contextToken = ""; current = null; contextSettings = null; route = null; contextRunId = null; nextQuery = DateTime.MinValue;
-                SetStatus(copy.Enabled ? "已启用；从下一轮完整计时开始自动上传" : "比赛联机未开启");
+                SetStatus(copy.Enabled ? "已启用；从下一轮完整计时开始自动上传" : "联机未开启");
         }
         internal void Retry()
         {
@@ -234,7 +234,7 @@ namespace Pal98Timer
                     lock (publication) enabled = settings.Enabled && !closing;
                     if (settings.Enabled) credential = storage.Credential(settings.Server);
                     pending.AddRange(storage.LoadPending(settings));
-                    SetStatus(settings.Enabled ? "比赛实时参考（含预热）" : "比赛联机未开启");
+                    SetStatus(settings.Enabled ? "联机实时参考" : "联机未开启");
                 }
                 catch { SetStatus("本机比赛设置或凭据不可读取；本地计时不受影响"); }
                 while (!stop.IsCancellationRequested)
@@ -283,6 +283,7 @@ namespace Pal98Timer
             if (bound == null) return;
             contextRunId = bound.RunId; contextSettings = bound.Settings.Copy();
             contextSettings.Track = CompetitionProtocol.TrackFor(bound.Fade, bound.Speed) ?? "wuqiang";
+            contextSettings.ConfigurationId = bound.ConfigurationId;
             contextSettings.FadeMilliseconds = bound.Fade; contextSettings.MapSpeedTicks = bound.Speed;
             started = bound.StartedAt; beganHere = bound.BeganHere;
             current = observation;
@@ -291,9 +292,10 @@ namespace Pal98Timer
             bool missingIdentity = !CompetitionProtocol.Digest(observation.DllHash) || string.IsNullOrEmpty(observation.GameVersion);
             var boundCredential = storage.Credential(contextSettings.Server);
             var run = new CompetitionRun {
-                protocol = observation.Gameplay == null ? CompetitionProtocol.Name : CompetitionProtocol.NameV2,
+                protocol = CompetitionProtocol.Online,
+                ranking = observation.Ranking?.Copy(), custom_competition_id = contextSettings.CustomCompetitionId,
                 gameplay = observation.Gameplay?.Copy(), hardcore = observation.Gameplay == null ? null : observation.Hardcore,
-                timeline_id = observation.Gameplay == null ? null : observation.TimelineId,
+                timeline_id = observation.Gameplay == null ? null : TimelineIdentity.Create(observation.Gameplay.rules_sha256, route, observation.Hardcore?.requested == true),
                 run_id = contextRunId, hwid = boundCredential.Hwid, track_id = contextSettings.Track, ruleset_id = contextSettings.Ruleset,
                 route_sha256 = route, started_at = started.ToString("o"), finished_at = bound.FinishedAt.ToString("o"),
                 total_ms = observation.TotalMilliseconds, timer_version = typeof(CompetitionClient).Assembly.GetName().Version.ToString(4),
@@ -301,8 +303,8 @@ namespace Pal98Timer
                 splits = observation.Splits.Select(s => new CompetitionSplit { checkpoint_id = CompetitionProtocol.CheckpointId(s.checkpoint_id), elapsed_ms = s.elapsed_ms, status = s.status }).ToArray()
             };
             string error = missingIdentity ? "通关记录已保存，等待本轮 DLL 身份核验后上传" : !beganHere ? "本轮在联机开启前已开始或为导入成绩，仅保留本地记录" :
-                track == null || track != contextSettings.Track ? "本轮比赛速度发生变化，仅保留本地记录" :
-                (bound.TimelineId != observation.TimelineId || !string.IsNullOrEmpty(observation.ValidationError)) ? "本轮不符合既有计时规则，仅保留本地记录" : CompetitionProtocol.Validate(run);
+                observation.FadeMilliseconds != bound.Fade || observation.MapSpeedTicks != bound.Speed ? "本轮游戏速度发生变化，仅保留本地记录" :
+                (bound.ConfigurationId != observation.Ranking?.configuration_id || bound.TimelineId != observation.TimelineId || !string.IsNullOrEmpty(observation.ValidationError)) ? "本轮不符合既有计时规则，仅保留本地记录" : CompetitionProtocol.Validate(run);
             var item = new CompetitionPending { Settings = contextSettings.Copy(), Run = run,
                 Payload = CompetitionProtocol.SerializeRun(run), Rejected = error.Length != 0, LocalRejected = error.Length != 0, LastStatus = error, Token = observation.Token };
             if (error.Length == 0)
@@ -310,7 +312,7 @@ namespace Pal98Timer
                 // Seal only when this process first produces the completed record.
                 // Loading an old outbox can never acquire a new producer identity.
                 item.SealAttempted = true;
-                string sealedJson = authentication.Seal(item.Settings.Server, item.Settings.Event, item.Payload);
+                string sealedJson = authentication.Seal(item.Settings.Server, CompetitionProtocol.Scope, item.Payload);
                 if (sealedJson != null)
                 {
                     item.SealedRun = CompetitionAuthProtocol.Encode(sealedJson);
@@ -322,7 +324,7 @@ namespace Pal98Timer
             storage.SavePending(item); // Commit the original bytes/run_id before first POST.
             pending.RemoveAll(p => p.Run.run_id == item.Run.run_id); pending.Add(item);
             if (!missingIdentity) completed.Add(observation.Token);
-            SetStatus(error.Length == 0 ? "比赛实时参考（含预热）" : error);
+            SetStatus(error.Length == 0 ? "联机实时参考" : error);
         }
         private CompetitionReply Parse(CompetitionHttpResult response, CompetitionSettings expected)
         {
@@ -330,8 +332,7 @@ namespace Pal98Timer
             try
             {
                 var result = CompetitionProtocol.Json().Deserialize<CompetitionReply>(response.Body);
-                if (result != null && result.protocol == CompetitionProtocol.Name && result.@event == expected.Event &&
-                    result.ruleset_id == expected.Ruleset && result.reference_only && result.includes_warmup) return result;
+                if (result != null && result.protocol == CompetitionProtocol.Online && result.scope == CompetitionProtocol.Scope) return result;
             }
             catch { }
             return null;
@@ -340,14 +341,14 @@ namespace Pal98Timer
         {
             var cfg = settings; long epoch = Interlocked.Read(ref generation), serial = Interlocked.Read(ref querySerial);
             string token = Volatile.Read(ref activeToken);
-            if (registeredKey == cfg.Server + "|" + cfg.Event && DateTime.UtcNow < capabilityExpires) return true;
+            if (registeredKey == cfg.Server + "|" + CompetitionProtocol.Scope && DateTime.UtcNow < capabilityExpires) return true;
             if (registrationRejected || DateTime.UtcNow < nextRegister) return false;
             var response = await transport.Send("POST", cfg.Endpoint + "/devices", credential.Hwid, credential.Secret,
-                CompetitionProtocol.Json().Serialize(new { protocol = CompetitionProtocol.Name, hwid = credential.Hwid }), 5000, stop.Token).ConfigureAwait(false);
+                CompetitionProtocol.Json().Serialize(new { protocol = CompetitionProtocol.Online, hwid = credential.Hwid }), 5000, stop.Token).ConfigureAwait(false);
             if (epoch != Interlocked.Read(ref generation)) return false;
             var reply = Parse(response, cfg);
             if (reply != null)
-            { registeredKey = cfg.Server + "|" + cfg.Event; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.NameV2) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "比赛实时参考（含预热）" : "等待主办方绑定玩家名字", false, reply); return true; }
+            { registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.Online) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply); return true; }
             registrationRejected = !response.Retryable && !response.Success;
             nextRegister = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             storage.LogNetwork("device-register-retry", response.Status);
@@ -355,7 +356,7 @@ namespace Pal98Timer
         }
         private async Task<bool> Approved(CompetitionSettings cfg, string key, string exe, bool currentBuild)
         {
-            string cacheKey = cfg.Server + "|" + cfg.Event + "|" + key + "|" + exe;
+            string cacheKey = cfg.Server + "|" + CompetitionProtocol.Scope + "|" + key + "|" + exe;
             Approval approval;
             if (!approvals.TryGetValue(cacheKey, out approval)) approvals[cacheKey] = approval = new Approval();
             if (DateTime.UtcNow >= approval.NextCheck)
@@ -370,7 +371,7 @@ namespace Pal98Timer
                 {
                     try {
                         var status = CompetitionProtocol.Json().Deserialize<CompetitionAuthStatus>(response.Body);
-                        if (status != null && status.protocol == CompetitionAuthProtocol.Name && status.@event == cfg.Event && status.server_origin == cfg.Server &&
+                        if (status != null && status.protocol == CompetitionAuthProtocol.Name && status.scope == CompetitionProtocol.Scope && status.server_origin == cfg.Server &&
                             status.key_id == key && status.timer_exe_sha256 == exe && status.approved.HasValue)
                         { approval.Approved = status.approved; approval.NextCheck = DateTime.UtcNow.AddMinutes(5); accepted = true; }
                     } catch { }
@@ -378,7 +379,7 @@ namespace Pal98Timer
                 if (!accepted) storage.LogNetwork("activation-check-failed", response.Status);
             }
             if (currentBuild && approval.Approved.HasValue)
-                activationText = approval.Approved.Value ? "比赛上传：已激活" : "未激活，仅本地保存";
+                activationText = approval.Approved.Value ? "联机上传：已激活" : "未激活，仅本地保存";
             return approval.Approved == true;
         }
         private static bool AwaitingApproval(CompetitionHttpResult response)
@@ -396,9 +397,9 @@ namespace Pal98Timer
         private async Task UploadOne()
         {
             var cfg = settings;
-            var item = pending.FirstOrDefault(p => !p.Rejected && p.Settings.Server == cfg.Server && p.Settings.Event == cfg.Event && p.Settings.Ruleset == cfg.Ruleset && p.NextAttemptUtc <= DateTime.UtcNow);
+            var item = pending.FirstOrDefault(p => !p.Rejected && p.Settings.Server == cfg.Server && p.Run.protocol == CompetitionProtocol.Online && p.NextAttemptUtc <= DateTime.UtcNow);
             if (item == null) return;
-            if (item.Run.protocol == CompetitionProtocol.NameV2 && !serverSupportsV2) {
+            if (!serverSupportsV2) {
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5); storage.SavePending(item);
                 storage.LogNetwork("awaiting-v2-server", 0); return;
             }
@@ -442,10 +443,10 @@ namespace Pal98Timer
                 response = await transport.Send("POST", item.Settings.Endpoint + "/runs", credential.Hwid, credential.Secret, envelope, 5000, stop.Token).ConfigureAwait(false);
             }
             var reply = Parse(response, item.Settings);
-            if (reply != null && reply.receipt != null && reply.receipt.run_id == item.Run.run_id && reply.track_id == item.Run.track_id && reply.route_sha256 == item.Run.route_sha256)
+            if (reply != null && reply.receipt != null && reply.receipt.run_id == item.Run.run_id && reply.configuration_id == item.Run.ranking?.configuration_id && reply.route_sha256 == item.Run.route_sha256)
             {
                 storage.Receipt(item, reply); pending.Remove(item);
-                PublishResponse(epoch, serial, item.Token, "比赛实时参考（含预热）", false, reply);
+                nextQuery = DateTime.MinValue; // QueryLatest owns node/view publication; receipt alone cannot change its scope.
                 return;
             }
             item.Attempts++;
@@ -468,13 +469,15 @@ namespace Pal98Timer
             var observation = current; var cfg = contextSettings ?? settings;
             string board = settings.ReferenceBoard;
             // Never send the active endpoint's credential to an older run's server.
-            if (cfg.Server != settings.Server || cfg.Event != settings.Event || cfg.Ruleset != settings.Ruleset) return;
+            if (cfg.Server != settings.Server || cfg.CustomCompetitionId != settings.CustomCompetitionId) return;
             string token = Volatile.Read(ref activeToken);
             long epoch = Interlocked.Read(ref generation), serial = Interlocked.Read(ref querySerial);
             if (observation != null && observation.Token != token) return;
-            var track = observation == null ? "wuqiang" : CompetitionProtocol.TrackFor(observation.FadeMilliseconds, observation.MapSpeedTicks);
-            if (track == null) { SetStatus("当前速度不属于本次比赛的三条赛道；本地计时保持原规则"); return; }
-            string url = cfg.Endpoint + "/standings?track_id=" + Uri.EscapeDataString(track) + "&board=" + board;
+            string configurationId = observation?.Ranking?.configuration_id;
+            if (observation?.Ranking == null || !observation.Ranking.Valid(observation.Gameplay)) return;
+            string custom = settings.ReferenceScope == "daily" ? null : cfg.CustomCompetitionId;
+            string url = cfg.Endpoint + "/standings?configuration_id=" + configurationId + "&board=" + board;
+            if (custom != null) url += "&custom_competition_id=" + Uri.EscapeDataString(custom);
             CompetitionSplit split = null;
             if (observation != null && observation.Step > 0 && route != null)
             {
@@ -488,10 +491,11 @@ namespace Pal98Timer
             nextQuery = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             if (epoch != Interlocked.Read(ref generation) || serial != Interlocked.Read(ref querySerial) || token != Volatile.Read(ref activeToken)) return;
             var reply = Parse(response, cfg);
-            if (reply == null || (reply.board ?? "overall") != board || reply.track_id != track || split != null && reply.route_sha256 != route ||
+            if (reply == null || (reply.board ?? "overall") != board || reply.configuration_id != configurationId || reply.custom_competition_id != custom || split != null && reply.route_sha256 != route ||
                 split != null && split.status == "completed" && (reply.node == null || reply.node.checkpoint_id != CompetitionProtocol.CheckpointId(split.checkpoint_id) || reply.node.elapsed_ms != split.elapsed_ms))
             { storage.LogNetwork("standings-query-failed", response.Status); return; }
-            PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "实时参考（含预热） · " + CompetitionProtocol.TrackLabel(track) : "等待主办方绑定玩家名字", false, reply, split == null ? "" : split.checkpoint_id);
+            if (!reply.published) { reply.node = null; reply.overall = null; reply.hardcore_top = null; }
+            PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "尚未绑定玩家", false, reply, split == null ? "" : split.checkpoint_id);
         }
         // Close never waits on HTTP. Let the already accepted disk work finish;
         // production UI closes only after this task drains local completions.

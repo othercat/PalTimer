@@ -157,10 +157,15 @@ namespace Pal98Timer
         }
         internal override void CaptureCompetitionGameplay(CompetitionObservation observation)
         {
-            base.CaptureCompetitionGameplay(observation);
-            observation.Gameplay = selected?.Identity;
+            observation.Hardcore = CaptureHardcoreEvidence();
+            // Local best-line selection is frozen, but online eligibility must
+            // keep observing current rules. Added ranking-only facts must not
+            // be hidden by the unchanged legacy TimelineIdentity.
+            var current = gameplayReader.Current;
+            observation.Gameplay = current?.Identity;
+            observation.Ranking = current?.ranking;
             observation.TimelineId = frozen ?? identity;
-            if (selected == null || !selected.covered || validation.Length != 0) observation.ValidationError = "本局玩法未登记或证据无效";
+            if (current == null || !current.covered || current.ranking?.covered != true || validation.Length != 0) observation.ValidationError = "本局玩法未登记或证据无效";
         }
         protected override string GetExportPath(DateTime now) => Path.Combine(Path.GetDirectoryName(GetScoreSavePath(now)), now.ToString("yyyyMMddHHmmssfff") + ".json");
         protected override void FillReferenceIdentity(HObj data) { data["TimelineIdentity"] = identity ?? ""; data["GameplayVerified"] = false; }
@@ -185,7 +190,12 @@ namespace Pal98Timer
             identity = null; selected = null; ++epoch;
             lock (timelineSync) { referenceJson = null; referenceReady = false; }
         }
-        public override string GetMoreInfo() => base.GetMoreInfo() + "\n" + (selected == null ? "自动玩法：未归类" : selected.Label(requested));
+        protected override string FormatGameTitle(string version)
+        {
+            var snapshot = selected;
+            return snapshot == null ? base.FormatGameTitle(version) + "&未归类" :
+                version + "－" + snapshot.Label(requested);
+        }
         public override void InitUI()
         {
             base.InitUI();

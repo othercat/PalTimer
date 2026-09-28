@@ -1,5 +1,21 @@
 # Project Resume / AI Handoff
 
+## 当前实验交付恢复点（2026-09-28）
+
+当前维护分支为 `codex/gameplay-timelines`，本轮源码基于 `7bb2997` 整理。计时器内部版本 3.37.7.6（显示 3.37.7），配套 DLL/Helper/Config 为 1.6.8.15（显示 1.68）。独立日常榜、自定义比赛榜和配置编号以 `docs/TIMER_ONLINE_3.37.7.6.md` 为当前说明；原标题融合及长标题换行修复包含在此版本中。
+
+Timer SHA-256 `7d7a574e3b679c3d49d5a3bb445303a8e4339506863ae889d73615d463dd1e62`；配套 Auth SHA-256 `566fbbb7423e33b2b4631cf283339982a8959beef376e48b6ee8f15e0b9dc0ab`。20260928 完整包已核对这些冻结字节；本次用户授权提交推送源码及文档，不重建或改写玩家包。构建/定向测试证据在 `D:\Workspace\RuntimeRuns\PAL98-timer-online-20260928`，六包及18组实际启动合同核验在 `D:\Workspace\RuntimeRuns\PAL98-pr12-audit-20260928`，提交前快照在 `D:\Workspace\RuntimeRuns\PAL98-publish-20260928`。
+
+私有认证源码及密钥仍仅留本机。真实服务批准、完整路线、实物硬核、OBS、AMD、Win7 和 Windows ARM 验收仍按各自证据记录；本机启动和合同核验不能替代这些验收。
+
+## 历史实验交付：3.37.7.3（已由上方恢复点取代）
+
+当前为 `codex/gameplay-timelines@b5f176b` 加未提交工作。计时器已按本轮授权冻结为 3.37.7.3（显示 3.37.7），DLL/Helper/Config 为 1.6.8.14；不要根据下面旧历史再次降低或随意增加版本。
+
+本轮加入经典 v5 1.0.22 抽卡来源识别及独立构建核验，自动玩法与硬核榜客户端沿用前轮实现。详见 `docs/GAMEPLAY_TIMELINES_EXPERIMENT.md`。产物、验证、正式目录保留证明及最终哈希在 `D:\Workspace\RuntimeRuns\PAL98-draw-v5-overlay-20260928`；覆盖 ZIP 交付到 `D:\PAL\更新包`。正式目录未部署，未提交、推送或操作服务器。
+
+Timer SHA-256 `41941312e576081e7ad42ff711305f95d7396c9b83bb396e3d420724adc08769`；配套 Auth SHA-256 `4bc12d27f3b1ad1074a7fdc7199c804192f37629a2659931d0e9e2357eed71f0`。冻结后不要无故重建产品；测试宿主可单独编译。两套真实激活、实物硬核、完整游玩、OBS、AMD、Win7、ARM仍待验收。私有认证源码、生成头文件、密钥和 PDB 不入公共仓或玩家包。
+
 > 这是本项目的 AI 交接文件。
 > 任何新的 AI Agent / Codex / Claude Code / ChatGPT 接手本项目时，应先阅读本文件，再根据本文件指引继续工作。
 > 不要依赖上一轮聊天上下文，所有判断以仓库文件、Git 状态和本文件为准。

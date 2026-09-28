@@ -14,11 +14,26 @@ namespace Pal98Timer
     {
         internal const string Name = "PAL98.TimerCompetition.v1";
         internal const string NameV2 = "PAL98.TimerCompetition.v2";
+        internal const string Online = "PAL98.TimerOnline.v1";
+        internal const string Scope = "timer-online";
         internal static string SerializeRun(CompetitionRun run) {
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
-            return serializer.Serialize(fields);
+            if (run.protocol == Online) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
+            else { fields.Remove("ranking"); fields.Remove("custom_competition_id"); }
+            return run.protocol == Online ? CanonicalJson(fields) : serializer.Serialize(fields);
+        }
+        // Preserve a deterministic body across the legacy serializer's different
+        // dictionary/property traversal orders. The sealed original bytes are
+        // retained; this is only the producer encoding and local equality check.
+        private static string CanonicalJson(object value)
+        {
+            if (value is IDictionary<string, object> fields)
+                return "{" + string.Join(",", fields.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => GameplayModeReader.Quote(p.Key) + ":" + CanonicalJson(p.Value))) + "}";
+            if (value is System.Collections.IEnumerable array && !(value is string))
+                return "[" + string.Join(",", array.Cast<object>().Select(CanonicalJson)) + "]";
+            return Json().Serialize(value);
         }
         internal const long MaxMilliseconds = 86400000;
         internal static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength = 1048576, RecursionLimit = 32 }; }
@@ -44,16 +59,19 @@ namespace Pal98Timer
         internal static string Validate(CompetitionRun run)
         {
             Guid id; Version version;
-            if (run == null || (run.protocol != Name && run.protocol != NameV2) || !Guid.TryParse(run.run_id, out id) ||
+            if (run == null || (run.protocol != Name && run.protocol != NameV2 && run.protocol != Online) || !Guid.TryParse(run.run_id, out id) ||
                 run.hwid == null || !Regex.IsMatch(run.hwid, "^[A-Za-z0-9._:-]{8,128}$") ||
-                !Identifier(run.track_id) || !Identifier(run.ruleset_id) || !Digest(run.pal_dll_sha256) ||
+                (run.protocol != Online && (!Identifier(run.track_id) || !Identifier(run.ruleset_id))) || !Digest(run.pal_dll_sha256) ||
                 !Version.TryParse(run.timer_version, out version) || version.Revision < 0 ||
                 !Version.TryParse(run.game_version, out version) || version.Revision < 0 ||
                 run.total_ms <= 0 || run.total_ms > MaxMilliseconds) return "成绩身份或总时间不完整，已保留本地记录。";
-            if (run.protocol == NameV2 && (run.gameplay == null || !run.gameplay.Valid || run.hardcore == null ||
-                !run.hardcore.Valid || run.track_id != TrackFor(run.gameplay.fade_ms, run.gameplay.map_speed_ticks) ||
+            if ((run.protocol == NameV2 || run.protocol == Online) && (run.gameplay == null || !run.gameplay.Valid || run.hardcore == null ||
+                !run.hardcore.Valid || (run.protocol != Online && run.track_id != TrackFor(run.gameplay.fade_ms, run.gameplay.map_speed_ticks)) ||
                 run.timeline_id != TimelineIdentity.Create(run.gameplay.rules_sha256, run.route_sha256, run.hardcore.requested)))
                 return "玩法或硬核证据不完整，已保留本地记录。";
+            if (run.protocol == Online && (run.ranking == null || !run.ranking.Valid(run.gameplay) ||
+                run.custom_competition_id != null && !Regex.IsMatch(run.custom_competition_id, "\\A[a-z0-9-]{1,60}\\z")))
+                return "联机配置身份不完整，仅保留本地记录。";
             DateTimeOffset start, finish;
             if (!DateTimeOffset.TryParse(run.started_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out start) ||
                 !DateTimeOffset.TryParse(run.finished_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out finish) || finish < start)
@@ -86,6 +104,9 @@ namespace Pal98Timer
         public string OverlayColor { get; set; } = "#FFFFFF";
         public string OverlayAlignment { get; set; } = "left";
         public string ReferenceBoard { get; set; } = "overall";
+        public string ReferenceScope { get; set; } = "automatic";
+        public string CustomCompetitionId { get; set; }
+        public string ConfigurationId { get; set; }
         public bool OverlayEditable { get; set; } = true;
         public int OverlayWidth { get; set; } = 555;
         public int OverlayHeight { get; set; } = 330;
@@ -103,11 +124,11 @@ namespace Pal98Timer
             Overlay = source.Overlay; Transparent = source.Transparent; OverlayFont = source.OverlayFont;
             OverlayFontSize = source.OverlayFontSize; OverlayColor = source.OverlayColor; OverlayAlignment = source.OverlayAlignment;
             OverlayEditable = source.OverlayEditable; OverlayWidth = source.OverlayWidth; OverlayHeight = source.OverlayHeight;
-            OverlayLeft = source.OverlayLeft; OverlayTop = source.OverlayTop; ReferenceBoard = source.ReferenceBoard;
+            OverlayLeft = source.OverlayLeft; OverlayTop = source.OverlayTop; ReferenceBoard = source.ReferenceBoard; ReferenceScope = source.ReferenceScope;
         }
         internal string ValidateAppearance()
         {
-            if ((ReferenceBoard != "overall" && ReferenceBoard != "hardcore") || string.IsNullOrWhiteSpace(OverlayFont) || OverlayFont.Length > 128 || OverlayFont.Any(char.IsControl) ||
+            if ((ReferenceScope != "automatic" && ReferenceScope != "daily") || (ReferenceBoard != "overall" && ReferenceBoard != "hardcore") || string.IsNullOrWhiteSpace(OverlayFont) || OverlayFont.Length > 128 || OverlayFont.Any(char.IsControl) ||
                 float.IsNaN(OverlayFontSize) || float.IsInfinity(OverlayFontSize) || OverlayFontSize < 8 || OverlayFontSize > 72 ||
                 !Regex.IsMatch(OverlayColor ?? "", "\\A#[0-9a-fA-F]{6}\\z") ||
                 (OverlayAlignment != "left" && OverlayAlignment != "center" && OverlayAlignment != "right") ||
@@ -121,13 +142,13 @@ namespace Pal98Timer
             Uri uri;
             if (!Uri.TryCreate(Server, UriKind.Absolute, out uri) || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/" ||
                 (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback))) return "服务器须为 HTTPS 域名；仅本机测试允许 HTTP。";
-            if (!Regex.IsMatch(Event ?? "", "^[a-z0-9-]{1,60}$") || !CompetitionProtocol.Identifier(Track) || !CompetitionProtocol.Identifier(Ruleset)) return "比赛、赛道或规则编号无效。";
+            if (CustomCompetitionId != null && !Regex.IsMatch(CustomCompetitionId, "\\A[a-z0-9-]{1,60}\\z")) return "自定义比赛ID无效。";
             if (FadeMilliseconds != 800 && FadeMilliseconds != 1200 || MapSpeedTicks != 9 && MapSpeedTicks != 10) return "比赛速度设置无效。";
             Server = uri.GetLeftPart(UriPartial.Authority);
             return "";
         }
-        internal string Key { get { return Server + "|" + Event + "|" + Track + "|" + Ruleset + "|" + FadeMilliseconds + "|" + MapSpeedTicks; } }
-        internal string Endpoint { get { return Server.TrimEnd('/') + "/api/v1/" + Event + "/timer"; } }
+        internal string Key { get { return Server + "|" + CustomCompetitionId + "|" + ConfigurationId + "|" + FadeMilliseconds + "|" + MapSpeedTicks; } }
+        internal string Endpoint { get { return Server.TrimEnd('/') + "/api/v1/timer"; } }
     }
 
     internal sealed class CompetitionSplit
@@ -138,7 +159,7 @@ namespace Pal98Timer
     }
     internal sealed class CompetitionRun
     {
-        public string protocol { get; set; } = CompetitionProtocol.Name;
+        public string protocol { get; set; } = CompetitionProtocol.Online;
         public string run_id { get; set; }
         public string hwid { get; set; }
         public string track_id { get; set; }
@@ -154,12 +175,15 @@ namespace Pal98Timer
         public string timeline_id { get; set; }
         public GameplayIdentity gameplay { get; set; }
         public CompetitionHardcore hardcore { get; set; }
+        public RankingConfiguration ranking { get; set; }
+        public string custom_competition_id { get; set; }
     }
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
     {
         internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId;
         internal GameplayIdentity Gameplay;
+        internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
@@ -175,7 +199,7 @@ namespace Pal98Timer
         internal DateTimeOffset StartedAt, FinishedAt;
         internal bool BeganHere, Started;
         internal int Fade, Speed;
-        internal string TimelineId;
+        internal string TimelineId, ConfigurationId;
         internal CompetitionRunContext Copy() { return (CompetitionRunContext)MemberwiseClone(); }
     }
     internal sealed class CompetitionPlayer { public string id { get; set; } public string display_name { get; set; } public bool bound { get; set; } }
@@ -183,12 +207,28 @@ namespace Pal98Timer
     internal sealed class CompetitionNode { public string checkpoint_id { get; set; } public long? elapsed_ms { get; set; } public CompetitionComparison best_complete_line { get; set; } public CompetitionComparison personal_checkpoint_best { get; set; } }
     internal sealed class CompetitionBest { public string run_id { get; set; } public long total_ms { get; set; } public int? rank { get; set; } public string phase { get; set; } public bool ranked { get; set; } }
     internal sealed class CompetitionOverall { public CompetitionBest personal_best { get; set; } public CompetitionBest submitted_run { get; set; } }
-    internal sealed class CompetitionReceipt { public string run_id { get; set; } public string phase { get; set; } public bool replayed { get; set; } }
+    internal sealed class CompetitionReceipt {
+        public long id { get; set; }
+        public string run_id { get; set; }
+        public string phase { get; set; }
+        public string received_at { get; set; }
+        public bool replayed { get; set; }
+        public bool complete_line { get; set; }
+        public string daily_status { get; set; }
+        public string custom_status { get; set; }
+        public string custom_reason { get; set; }
+        public int? custom_rules_revision { get; set; }
+    }
     internal sealed class CompetitionHardcoreRank { public int rank { get; set; } public string display_name { get; set; } public long total_ms { get; set; } }
     internal sealed class CompetitionReply
     {
         public string protocol { get; set; }
         public string @event { get; set; }
+        public string scope { get; set; }
+        public string configuration_id { get; set; }
+        public string custom_competition_id { get; set; }
+        public string title { get; set; }
+        public bool published { get; set; }
         public string event_title { get; set; }
         public string board { get; set; }
         public string[] supported_run_protocols { get; set; }

@@ -18,7 +18,7 @@ namespace Pal98Timer
         private void InitializeCompetition()
         {
             competition = new CompetitionClient(gameManaged: true);
-            var item = new ToolStripMenuItem("比赛联机与排名…");
+            var item = new ToolStripMenuItem("联机与排名…");
             item.Click += delegate {
                 if (competitionSettingsForm == null || competitionSettingsForm.IsDisposed)
                 {

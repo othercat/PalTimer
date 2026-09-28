@@ -23,7 +23,7 @@ namespace Pal98Timer
         public string timer_exe_sha256 { get; set; }
         public string timer_version { get; set; }
         public string server_origin { get; set; }
-        public string @event { get; set; }
+        public string scope { get; set; }
         public string hwid { get; set; }
         public string run_id { get; set; }
         public string payload_base64 { get; set; }
@@ -31,7 +31,7 @@ namespace Pal98Timer
     internal sealed class CompetitionAuthStatus
     {
         public string protocol { get; set; }
-        public string @event { get; set; }
+        public string scope { get; set; }
         public string server_origin { get; set; }
         public string timer_exe_sha256 { get; set; }
         public string key_id { get; set; }
@@ -45,7 +45,7 @@ namespace Pal98Timer
     }
     internal static class CompetitionAuthProtocol
     {
-        internal const string Name = "PAL98.TimerUploadAuth.v1";
+        internal const string Name = "PAL98.TimerUploadAuth.v2";
         internal static string Encode(string value) { return Convert.ToBase64String(new UTF8Encoding(false, true).GetBytes(value)); }
         internal static string Decode(string value)
         {
@@ -58,7 +58,7 @@ namespace Pal98Timer
         {
             var seal = CompetitionProtocol.Json().Deserialize<CompetitionAuthSeal>(Decode(value));
             if (seal == null || seal.protocol != Name || seal.key_id == null || !System.Text.RegularExpressions.Regex.IsMatch(seal.key_id, "^[0-9a-f]{32}$") ||
-                !CompetitionProtocol.Digest(seal.timer_exe_sha256) || seal.server_origin != settings.Server || seal.@event != settings.Event ||
+                !CompetitionProtocol.Digest(seal.timer_exe_sha256) || seal.server_origin != settings.Server || seal.scope != CompetitionProtocol.Scope ||
                 seal.hwid != run.hwid || seal.run_id != run.run_id || seal.timer_version != run.timer_version || Decode(seal.payload_base64) != payload)
                 throw new InvalidDataException("签封与原始成绩不一致");
             return seal;

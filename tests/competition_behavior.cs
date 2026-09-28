@@ -1,4 +1,4 @@
-using Pal98Timer;
+﻿using Pal98Timer;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
-[assembly: AssemblyVersion("3.37.7.1")]
+[assembly: AssemblyVersion("3.37.7.6")]
 internal static class CompetitionBehavior
 {
     static int count;
@@ -24,7 +24,9 @@ internal static class CompetitionBehavior
     }
     static CompetitionObservation Observation(string token, int step, int fade = 1200, int speed = 10)
     {
-        return new CompetitionObservation { Token = token, Core = "PAL98DX9", Step = step, BeganHere = true, Finished = step == 2,
+        var game=new GameplayIdentity { rules_sha256=new string('a',64),content_id="fixture",content_sha256=new string('b',64),family="standard",fade_ms=fade,map_speed_ticks=speed };
+        var facts=new System.Collections.Generic.Dictionary<string,string> { ["content"]=game.content_sha256,["family"]=game.family,["fade_ms"]=fade.ToString(),["map_speed_ticks"]=speed.ToString() };
+        return new CompetitionObservation { Gameplay=game,Hardcore=new CompetitionHardcore(),Ranking=new RankingConfiguration { covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts) },Token = token, Core = "PAL98DX9", Step = step, BeganHere = true, Finished = step == 2,
             TotalMilliseconds = 1100, DllHash = new string('1', 64), GameVersion = "1.6.8.12", FadeMilliseconds = fade, MapSpeedTicks = speed,
             ObservedAt = DateTimeOffset.UtcNow, ValidationError = "", Splits = new[] {
                 new CompetitionSplit { checkpoint_id = "鬼将军", elapsed_ms = step > 0 ? (long?)500 : null, status = step > 0 ? "completed" : "in_progress" },
@@ -44,7 +46,7 @@ internal static class CompetitionBehavior
             var run = CompetitionProtocol.Json().Deserialize<CompetitionRun>(payload);
             return CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name, kind = "run", key_id = Identity().key_id,
                 timer_exe_sha256 = Identity().timer_exe_sha256, timer_version = run.timer_version, component_sha256 = Identity().component_sha256,
-                server_origin = origin, @event = eventId, hwid = run.hwid, run_id = run.run_id,
+                server_origin = origin, scope = eventId, hwid = run.hwid, run_id = run.run_id,
                 payload_base64 = CompetitionAuthProtocol.Encode(payload), signature_base64 = "unit-test-not-a-valid-cryptographic-signature" });
         }
         public string Prove(string sealedJson, string challenge) { return Available ? "{}" : null; }
@@ -52,7 +54,7 @@ internal static class CompetitionBehavior
     sealed class Fake : ICompetitionTransport
     {
         internal int Active, MaxActive, Gets, Posts, Registers;
-        internal bool HoldGet, BadJson, V2;
+        internal bool HoldGet, BadJson; internal bool V2=true; internal bool Published=true;
         internal bool Approved = true, RejectChallenge;
         internal string DeniedBuild;
         internal int AuthChecks;
@@ -71,7 +73,7 @@ internal static class CompetitionBehavior
                 {
                     AuthChecks++; var authQuery = HttpUtility.ParseQueryString(new Uri(url).Query);
                     return new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name,
-                        @event = "wuqiang", server_origin = new Uri(url).GetLeftPart(UriPartial.Authority), key_id = authQuery["key_id"],
+                        scope = CompetitionProtocol.Scope, server_origin = new Uri(url).GetLeftPart(UriPartial.Authority), key_id = authQuery["key_id"],
                         timer_exe_sha256 = authQuery["timer_exe_sha256"], approved = Approved && authQuery["timer_exe_sha256"] != DeniedBuild }) };
                 }
                 if (url.EndsWith("/auth/challenges")) return new CompetitionHttpResult { Status = RejectChallenge ? 403 : 200,
@@ -84,22 +86,22 @@ internal static class CompetitionBehavior
                     Posts++; Payloads.Enqueue(body);
                     if (UploadStatus != 201) return new CompetitionHttpResult { Status = UploadStatus, RetryAfterSeconds = UploadStatus == 429 ? 60 : 0 };
                     var run = CompetitionProtocol.Json().Deserialize<CompetitionRun>(body);
-                    var reply = Envelope(); reply.track_id = run.track_id; reply.route_sha256 = run.route_sha256;
-                    reply.receipt = new CompetitionReceipt { run_id = run.run_id, phase = "warmup" };
+                    var reply = Envelope(); reply.configuration_id = run.ranking.configuration_id; reply.custom_competition_id=run.custom_competition_id; reply.route_sha256 = run.route_sha256;
+                    reply.receipt = new CompetitionReceipt { run_id = run.run_id, phase = "warmup",daily_status="pending_publication",custom_status="not_requested",custom_reason="",received_at=DateTimeOffset.UtcNow.ToString("o") };
                     return new CompetitionHttpResult { Status = 201, Body = CompetitionProtocol.Json().Serialize(reply) };
                 }
                 Gets++;
                 if (HoldGet) await Task.Delay(30000, stop);
                 if (GetGate != null) await GetGate.Task;
                 var query = HttpUtility.ParseQueryString(new Uri(url).Query);
-                return BadJson ? new CompetitionHttpResult { Status = 200, Body = "bad json" } : Response(query["route_sha256"], query["checkpoint_id"], query["track_id"], query["elapsed_ms"], query["board"]);
+                return BadJson ? new CompetitionHttpResult { Status = 200, Body = "bad json" } : Response(query["route_sha256"], query["checkpoint_id"], query["configuration_id"], query["elapsed_ms"], query["board"],query["custom_competition_id"]);
             }
             finally { Interlocked.Decrement(ref Active); }
         }
-        CompetitionReply Envelope() { return new CompetitionReply { supported_run_protocols = V2 ? new[] { CompetitionProtocol.Name, CompetitionProtocol.NameV2 } : null, protocol = CompetitionProtocol.Name, @event = "wuqiang", ruleset_id = "wuqiang-2026-v1", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
-        CompetitionHttpResult Response(string route, string node, string track = "wuqiang", string elapsed = null, string board = null)
+        CompetitionReply Envelope() { return new CompetitionReply { supported_run_protocols = V2 ? new[] { CompetitionProtocol.Online } : null, protocol = CompetitionProtocol.Online, scope=CompetitionProtocol.Scope,published=Published,title="测试日常榜", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
+        CompetitionHttpResult Response(string route, string node, string configuration = null, string elapsed = null, string board = null, string custom = null)
         {
-            var reply = Envelope(); reply.board = board; reply.track_id = track; reply.route_sha256 = route;
+            var reply = Envelope(); reply.board = board; reply.configuration_id = configuration; reply.custom_competition_id=custom; reply.route_sha256 = route;
             if (node != null) reply.node = new CompetitionNode { checkpoint_id = node, elapsed_ms = long.Parse(elapsed),
                 best_complete_line = new CompetitionComparison { rank = 2, comparison_players = 2 }, personal_checkpoint_best = new CompetitionComparison { rank = 3, comparison_players = 3 } };
             return new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(reply) };
@@ -110,14 +112,14 @@ internal static class CompetitionBehavior
     {
         var store = Store("three"); var fake = new Fake(); var client = new CompetitionClient(store, fake, new FakeAuth()); client.Configure(Config());
         await Until(() => fake.Registers > 0, "registered asynchronously");
-        foreach (var tuple in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 } })
+        foreach (var tuple in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 }, new[] { 1200, 9 } })
         {
             var token = Guid.NewGuid().ToString();
             client.Invalidate(token);
             client.Publish(Observation(token, 0, tuple[0], tuple[1]));
             await Task.Delay(350);
             client.Publish(Observation(token, 1, tuple[0], tuple[1]));
-            await Until(() => client.View.Reply != null && client.View.Reply.node != null && client.View.Reply.track_id == CompetitionProtocol.TrackFor(tuple[0], tuple[1]), "node track " + tuple[0] + "/" + tuple[1]);
+            await Until(() => client.View.Reply != null && client.View.Reply.node != null && client.View.Reply.configuration_id == Observation(token,1,tuple[0],tuple[1]).Ranking.configuration_id, "node track " + tuple[0] + "/" + tuple[1]);
             Check(client.View.Reply.node.best_complete_line.rank == 2 && client.View.Reply.node.personal_checkpoint_best.rank == 3, "both rankings displayed");
             int posts = fake.Posts; client.Publish(Observation(token, 2, tuple[0], tuple[1]));
             await Until(() => fake.Posts > posts && Directory.Exists(Path.Combine(store.Root, "receipts")) && Directory.GetFiles(Path.Combine(store.Root, "receipts"), "*.json", SearchOption.AllDirectories).Length > posts, "completion receipt persisted");
@@ -125,7 +127,7 @@ internal static class CompetitionBehavior
             Check(fake.Posts == posts + 1, "repeated completion not duplicated");
         }
         var uploads = fake.Payloads.Select(s => CompetitionProtocol.Json().Deserialize<CompetitionRun>(s)).ToArray();
-        Check(uploads.Select(u => u.track_id).SequenceEqual(new[] { "wuqiang", "wuqiang-800", "wuqiang-800-speed" }), "three separate wire tracks");
+        Check(uploads.All(u=>u.protocol==CompetitionProtocol.Online && u.track_id==null) && uploads.Select(u=>u.ranking.configuration_id).Distinct().Count()==4, "four daily configurations do not use event tracks");
         Check(uploads.All(u => u.total_ms == 1100 && u.splits.Last().elapsed_ms == 1200), "main and final split preserved independently");
         Check(fake.MaxActive == 1, "one network request at a time");
         await client.CloseAsync();
@@ -236,12 +238,12 @@ internal static class CompetitionBehavior
         await Until(()=>client.View.Reply?.board=="hardcore"&&client.View.Reply.node!=null,"hardcore response bound to selected board");
         client.Publish(AutoObservation("v2",2,true));await Until(()=>fake.Posts==1,"v2 completion uploaded without pre-start identity race");
         var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
-        Check(run.protocol==CompetitionProtocol.NameV2&&run.hardcore.run_verified&&run.hardcore.rules_version==4,"v2 signed body carries continuous hardcore evidence");
+        Check(run.protocol==CompetitionProtocol.Online&&run.hardcore.run_verified&&run.hardcore.rules_version==4,"v2 signed body carries continuous hardcore evidence");
         Check(run.timeline_id==AutoObservation("v2",2,true).TimelineId&&CompetitionProtocol.Validate(run)=="","v2 identity formula matches signed route");
         run.hardcore.requested=false;Check(CompetitionProtocol.Validate(run).Length>0,"changed hardcore classification invalidates body");
         await client.CloseAsync();
 
-        store=Store("old-v2-server");fake=new Fake();auth=new FakeAuth();client=new CompetitionClient(store,fake,auth);client.Configure(Config());
+        store=Store("old-v2-server");fake=new Fake{V2=false};auth=new FakeAuth();client=new CompetitionClient(store,fake,auth);client.Configure(Config());
         await Until(()=>fake.Registers>0,"old server registered");client.Publish(AutoObservation("old",0));client.Publish(AutoObservation("old",2));
         await Until(()=>store.LoadPending(Config()).Any(p=>!string.IsNullOrEmpty(p.SealedRun)),"v2 run sealed locally even on old server");
         string original=store.LoadPending(Config()).Single().Payload;await Task.Delay(550);
@@ -265,12 +267,16 @@ internal static class CompetitionBehavior
 
     static void ModelCases()
     {
+        var vectorPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"ranking-configuration-vectors.json");
+        var vectors=CompetitionProtocol.Json().Deserialize<RankingConfiguration[]>(File.ReadAllText(vectorPath));
+        foreach(var vector in vectors) Check(RankingConfiguration.Digest(vector.rules)==vector.configuration_id,"shared ranking canonical vector");
         Check(CompetitionProtocol.RouteHash(new[] { "鬼将军", "拜月" }) == "fe3a4dc38528a7d49eafcd6e8b75e79f6946d45b28b3b09012a3ae6e8a41dc92", "Python/C# route digest exact UTF8 LF");
         Check(CompetitionProtocol.CheckpointId("鬼将军") == "鬼将军" && CompetitionProtocol.CheckpointId("a b").StartsWith("id-sha256-"), "stable names and explicit whitespace mapping");
         Check(new CompetitionSettings { Server = "http://example.com" }.Validate().Length > 0, "reject insecure remote endpoint");
         Check(new CompetitionSettings { Server = "http://127.0.0.1:8776" }.Validate().Length == 0, "allow loopback test endpoint");
         Check(new CompetitionSettings { Server = "https://user:pw@example.com" }.Validate().Length > 0, "reject credentials in URL");
         Check(CompetitionProtocol.TrackFor(1200, 9) == null, "unsupported fourth mode not mixed into three tracks");
+        Check(CompetitionGameSettings.Parse("{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://fixture.invalid\",\"use_custom_competition\":true,\"custom_competition_id\":\"cup\"}}}").CustomCompetitionId==null,"unlocked custom id cannot confer competition membership");
         var store = Store("identity"); var credential = store.Credential(Config().Server);
         Check(credential.Hwid == store.Credential(Config().Server).Hwid && credential.Secret == store.Credential(Config().Server).Secret, "device identity persists across directory versions");
         Check(!File.ReadAllText(Directory.GetFiles(store.Root, "*.device").Single()).Contains(credential.Secret), "credential encrypted with DPAPI");
@@ -289,7 +295,7 @@ internal static class CompetitionBehavior
         Check(!client.View.Status.Contains("激活"), "activation state never enters rank view status");
         fake.Approved = true; client.Retry();
         await Until(() => fake.Posts == 1, "approval releases original sealed result");
-        Check(client.ActivationText == "比赛上传：已激活" && auth.Seals == 1, "approval does not re-sign past data"); await client.CloseAsync();
+        Check(client.ActivationText == "联机上传：已激活" && auth.Seals == 1, "approval does not re-sign past data"); await client.CloseAsync();
 
         store = Store("mixed-producers"); fake = new Fake { Approved = false }; auth = new FakeAuth();
         client = new CompetitionClient(store, fake, auth); client.Configure(Config());
@@ -323,7 +329,7 @@ internal static class CompetitionBehavior
         Check(fake.Posts == 0 && client.ActivationText == "仅本地保存", "missing component has no cloud dependency or upload fallback"); await client.CloseAsync();
 
         store = Store("revocation"); fake = new Fake { RejectChallenge = true }; auth = new FakeAuth(); client = new CompetitionClient(store, fake, auth); client.Configure(Config());
-        await Until(() => client.ActivationText == "比赛上传：已激活", "initially approved fixture ready"); client.Publish(Observation("revocation", 0)); client.Publish(Observation("revocation", 2));
+        await Until(() => client.ActivationText == "联机上传：已激活", "initially approved fixture ready"); client.Publish(Observation("revocation", 0)); client.Publish(Observation("revocation", 2));
         await Until(() => store.LoadPending(Config()).Any(p => p.Attempts == 1), "server revocation pauses queue even after cached approval");
         var revoked = store.LoadPending(Config()).Single(); Check(!revoked.Rejected && revoked.NextAttemptUtc > DateTime.UtcNow.AddMinutes(4) && fake.Posts == 0, "revocation retains original evidence with low-frequency retry");
         await client.CloseAsync();
@@ -417,7 +423,7 @@ internal static class CompetitionBehavior
         var store = Store("http"); var cfg = Config(); cfg.Server = server;
         var client = new CompetitionClient(store); client.Configure(cfg);
         await Until(() => client.View.Status.Contains("绑定"), "real PR11 device registration");
-        foreach (var mode in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 } })
+        foreach (var mode in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 }, new[] { 1200, 9 } })
         {
             int receipts = Directory.Exists(Path.Combine(store.Root, "receipts")) ? Directory.GetFiles(Path.Combine(store.Root, "receipts"), "*.json", SearchOption.AllDirectories).Length : 0;
             string token = Guid.NewGuid().ToString(); client.Invalidate(token); client.Publish(Observation(token, 0, mode[0], mode[1])); await Task.Delay(350);

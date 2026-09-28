@@ -940,7 +940,7 @@ namespace Pal98Timer
             if (sequence != competitionSequence) competitionBeganHere = CanBeginCompetitionHere(step);
             var observation = new CompetitionObservation();
             CaptureCompetitionGameplay(observation);
-            string fingerprint = (observation.TimelineId ?? "") + "|" + observation.ValidationError + "|" + (observation.Hardcore?.run_verified ?? false) + "|" + coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
+            string fingerprint = (observation.TimelineId ?? "") + "|" + observation.Ranking?.configuration_id + "|" + observation.ValidationError + "|" + (observation.Hardcore?.run_verified ?? false) + "|" + coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
             if (fingerprint == competitionFingerprint) return;
             var splits = new CompetitionSplit[CheckPoints.Count];
             for (int index = 0; index < splits.Length; index++)
@@ -953,7 +953,7 @@ namespace Pal98Timer
             long totalMilliseconds = MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond;
             if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
-            form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
+            form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
                 Step = step, TotalMilliseconds = totalMilliseconds,
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
                 DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });

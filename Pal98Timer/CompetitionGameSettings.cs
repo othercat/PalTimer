@@ -21,11 +21,13 @@ namespace Pal98Timer
         public string server { get; set; }
         public string event_id { get; set; }
         public string ruleset_id { get; set; }
+        public bool use_custom_competition { get; set; }
+        public string custom_competition_id { get; set; }
     }
     internal static class CompetitionGameSettings
     {
         internal const string PathInGame = "palmod/common-tools.v1.json";
-        internal static CompetitionSettings Parse(string json)
+        internal static CompetitionSettings Parse(string json, bool locked = false)
         {
             var settings = new CompetitionSettings();
             if (json == null) return settings;
@@ -33,9 +35,10 @@ namespace Pal98Timer
             if (envelope == null || envelope.schema != "PAL98.ToolLaunchSettings.v1") throw new InvalidDataException("游戏的工具配置格式不受支持。");
             if (envelope.competition_upload == null) return settings;
             var upload = envelope.competition_upload;
-            if (upload.schema != "PAL98.CompetitionUploadSettings.v1" || upload.xiaorou == null) throw new InvalidDataException("服务器上传配置格式不受支持。");
+            if ((upload.schema != "PAL98.CompetitionUploadSettings.v1" && upload.schema != "PAL98.TimerOnlineSettings.v1") || upload.xiaorou == null) throw new InvalidDataException("服务器上传配置格式不受支持。");
             settings.Enabled = upload.xiaorou.enabled; settings.Server = upload.xiaorou.server;
-            settings.Event = upload.xiaorou.event_id; settings.Ruleset = upload.xiaorou.ruleset_id;
+            settings.CustomCompetitionId = locked ? (upload.schema == "PAL98.CompetitionUploadSettings.v1"
+                ? upload.xiaorou.event_id : upload.xiaorou.use_custom_competition ? upload.xiaorou.custom_competition_id : null) : null;
             string error = settings.Validate();
             if (error.Length != 0) throw new InvalidDataException(error);
             return settings;
@@ -60,7 +63,7 @@ namespace Pal98Timer
             if (locked.State == TournamentLockReadState.Invalid) throw new InvalidDataException("游戏配置锁未能验证，比赛联机保持关闭。");
             // A legacy lock lacking this signed setting cannot grant upload by
             // placing a different live file next to it. Do not rewrite old locks.
-            if (locked.State == TournamentLockReadState.Locked) return Parse(locked.CommonToolsSnapshot);
+            if (locked.State == TournamentLockReadState.Locked) return Parse(locked.CommonToolsSnapshot, true);
             string path = Path.Combine(root, PathInGame);
             return Parse(File.Exists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
         }

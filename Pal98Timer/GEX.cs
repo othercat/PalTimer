@@ -167,6 +167,9 @@ namespace Pal98Timer
         }
 
         private string GameVersion;
+        private string gameVersionDisplay;
+        private int gameVersionHeight = 26;
+        private int GameVersionExtraHeight { get { return gameVersionHeight - 26; } }
         private bool isGameVersionChanged = false;
         public void SetGameVersion(string val)
         {
@@ -1211,10 +1214,10 @@ namespace Pal98Timer
         private void BuildRects()
         {
             ModifyRect(ref rcTitle, 5, 5, Width - 100, 26);
-            ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.7F), 26);
-            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - 2 * rcGameVersion.X - rcGameVersion.Width, rcGameVersion.Height);
-            ModifyRect(ref rcHardcoreStatus, 5, 57, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
-            ModifyRect(ref rcHardcoreDevice, 5, 79, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
+            ModifyRect(ref rcGameVersion, 5, 31, GEX.GDIMulti(Width, 0.7F), gameVersionHeight);
+            ModifyRect(ref rcVersion, rcGameVersion.X + rcGameVersion.Width, rcGameVersion.Y, Width - 2 * rcGameVersion.X - rcGameVersion.Width, 26);
+            ModifyRect(ref rcHardcoreStatus, 5, 57 + GameVersionExtraHeight, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
+            ModifyRect(ref rcHardcoreDevice, 5, 79 + GameVersionExtraHeight, Width - 10, hardcoreDisplay.Visible ? 22 : 0);
             ModifyRect(ref rcBL, 5, Height - 26, GEX.GDIMulti(Width, 0.4F), 26);
             ModifyRect(ref rcBR, rcBL.X + rcBL.Width, rcBL.Y, Width - 2 * rcBL.X - rcBL.Width, rcBL.Height);
 
@@ -1244,7 +1247,7 @@ namespace Pal98Timer
                 ModifyRect(ref rcWillClear, 10, Height - 200, Width - 20, 26);
             }
 
-            ModifyRect(ref rcDots, 0, 60 + HardcoreHeight, Width, 30);
+            ModifyRect(ref rcDots, 0, 60 + GameVersionExtraHeight + HardcoreHeight, Width, 30);
 
             /*ModifyRect(ref rcItems, 5, 95, Width - 10, Height - 200 - 95);
             ModifyRect(ref rcIName, rcItems.X, 0, rcItems.Width - 170, GItem.Height);
@@ -1256,16 +1259,15 @@ namespace Pal98Timer
 
         private void BuildRects_Item(bool showScroll)
         {
-            int itemHeight = Height - 200 - 95 - HardcoreHeight;
-            if (hardcoreDisplay.Visible) itemHeight = Math.Max(0, itemHeight);
+            int itemHeight = Math.Max(0, Height - 200 - 95 - GameVersionExtraHeight - HardcoreHeight);
             if (showScroll)
             {
-                ModifyRect(ref rcItems, 0, 95 + HardcoreHeight, Width - 10, itemHeight);
+                ModifyRect(ref rcItems, 0, 95 + GameVersionExtraHeight + HardcoreHeight, Width - 10, itemHeight);
                 ModifyRect(ref rcItemScroll, Width - 6, rcItems.Y, 3, rcItems.Height);
             }
             else
             {
-                ModifyRect(ref rcItems, 0, 95 + HardcoreHeight, Width, itemHeight);
+                ModifyRect(ref rcItems, 0, 95 + GameVersionExtraHeight + HardcoreHeight, Width, itemHeight);
                 ModifyRect(ref rcItemScroll, 0, 0, 0, 0);
             }
             ModifyRect(ref rcIName, rcItems.X, 0, rcItems.Width - 170, bb.ItemHeight);
@@ -2243,6 +2245,46 @@ namespace Pal98Timer
             OnDBClicked(e.Location);
         }
         public delegate void delUpdateRect(Rectangle? rect);
+        private void PrepareGameVersionLayout()
+        {
+            if (CG == null || bb == null) return;
+            var lines = new List<string>();
+            string line = "";
+            float padding = Math.Max(2F, bb.GVersionBorder.Width);
+            float available = Math.Max(1F, GEX.GDIMulti(Width, 0.7F) - padding * 2);
+            // AddString uses pixel em sizes, regardless of the configured Font unit.
+            using (var font = new Font(bb.GVersionFont.FontFamily, bb.GVersionFont.Size,
+                bb.GVersionFont.Style, GraphicsUnit.Pixel))
+            using (var format = new StringFormat(StringFormat.GenericTypographic))
+            using (var measure = new GraphicsPath())
+            {
+                format.FormatFlags = StringFormatFlags.NoWrap;
+                var elements = System.Globalization.StringInfo.GetTextElementEnumerator(GameVersion ?? "");
+                while (elements.MoveNext())
+                {
+                    string element = elements.GetTextElement();
+                    if (element == "\r") continue;
+                    if (element == "\n") { lines.Add(line); line = ""; continue; }
+                    measure.Reset();
+                    measure.AddString(line + element, font.FontFamily, (int)font.Style, font.Size, PointF.Empty, format);
+                    while (line.Length != 0 && measure.GetBounds().Width > available)
+                    {
+                        int split = Math.Max(line.LastIndexOf('&'), line.LastIndexOf('－')) + 1;
+                        if (split <= 0 || split == line.Length) { lines.Add(line); line = ""; }
+                        else { lines.Add(line.Substring(0, split)); line = line.Substring(split); }
+                        measure.Reset();
+                        measure.AddString(line + element, font.FontFamily, (int)font.Style, font.Size, PointF.Empty, format);
+                    }
+                    line += element;
+                }
+                lines.Add(line);
+                int maximumHeight = Height <= 250 ? 26 : Math.Max(26, Math.Min(120, Height - 330));
+                int nextHeight = Math.Min(maximumHeight, Math.Max(26,
+                    (int)Math.Ceiling(lines.Count * font.GetHeight(CG) + padding * 2)));
+                gameVersionDisplay = string.Join("\n", lines);
+                if (gameVersionHeight != nextHeight) { gameVersionHeight = nextHeight; isSizeChanged = true; }
+            }
+        }
         public bool Draw(delUpdateRect ur = null)
         {
             if (BaseCtl == null) return false;
@@ -2262,7 +2304,9 @@ namespace Pal98Timer
                 Height = BaseCtl.Height;
                 isSizeChanged = true;
             }
-            
+            if (isSizeChanged || isGameVersionChanged || isBBChanged || isBGChanged)
+                PrepareGameVersionLayout();
+
             if (isSizeChanged)
             {
                 Image tmpi = CI;
@@ -2462,7 +2506,24 @@ namespace Pal98Timer
                 {
                     GEX.ClearRect(g, rcGameVersion, bg, Width, Height, bgOpacity);
                 }
-                GEX.DrawText(g, GameVersion, bb.GVersionFont, bb.GVersionFill, bb.GVersionBorder, rcGameVersion, GLayout.sfNC);
+                // Gameplay captions may wrap, but must stay inside their header
+                // cell instead of painting over the timer version or hardcore rows.
+                using (var format = new StringFormat(StringFormat.GenericTypographic))
+                {
+                    format.Alignment = StringAlignment.Near;
+                    format.LineAlignment = StringAlignment.Center;
+                    // Explicit wrapping above uses the same GDI+ glyph widths.
+                    // Do not let AddString wrap those lines a second time.
+                    format.FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.LineLimit;
+                    format.Trimming = StringTrimming.EllipsisCharacter;
+                    var state = g.Save();
+                    try
+                    {
+                        g.SetClip(rcGameVersion, CombineMode.Intersect);
+                        GEX.DrawText(g, gameVersionDisplay, bb.GVersionFont, bb.GVersionFill, bb.GVersionBorder, rcGameVersion, format);
+                    }
+                    finally { g.Restore(state); }
+                }
                 if (!isSizeChanged && !isBGChanged && !isBBChanged)
                 {
                     ur?.Invoke(rcGameVersion);

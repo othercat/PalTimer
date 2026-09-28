@@ -87,12 +87,12 @@ namespace Pal98Timer
         }
         internal void SavePending(CompetitionPending pending)
         {
-            if (pending.Path == null) pending.Path = System.IO.Path.Combine(Root, "outbox", CompetitionProtocol.Hash(pending.Settings.Server + "|" + pending.Settings.Event).Substring(0, 24), pending.Run.run_id + ".json");
+            if (pending.Path == null) pending.Path = System.IO.Path.Combine(Root, "outbox", CompetitionProtocol.Hash(pending.Settings.Server + "|" + CompetitionProtocol.Scope).Substring(0, 24), pending.Run.run_id + ".json");
             WriteAtomic(pending.Path, CompetitionProtocol.Json().Serialize(pending));
         }
         internal IEnumerable<CompetitionPending> LoadPending(CompetitionSettings settings)
         {
-            string directory = System.IO.Path.Combine(Root, "outbox", CompetitionProtocol.Hash(settings.Server + "|" + settings.Event).Substring(0, 24));
+            string directory = System.IO.Path.Combine(Root, "outbox", CompetitionProtocol.Hash(settings.Server + "|" + CompetitionProtocol.Scope).Substring(0, 24));
             if (!Directory.Exists(directory)) yield break;
             foreach (string path in Directory.EnumerateFiles(directory, "*.json").Take(512))
             {
@@ -101,7 +101,7 @@ namespace Pal98Timer
                 {
                     pending = CompetitionProtocol.Json().Deserialize<CompetitionPending>(ReadBounded(path, 262144));
                     if (pending == null || pending.Settings == null || pending.Settings.Validate().Length != 0 ||
-                        pending.Settings.Server != settings.Server || pending.Settings.Event != settings.Event || pending.Run == null ||
+                        pending.Settings.Server != settings.Server || pending.Run == null || pending.Run.protocol != CompetitionProtocol.Online ||
                         pending.Run.run_id + ".json" != System.IO.Path.GetFileName(path) ||
                         CompetitionProtocol.SerializeRun(CompetitionProtocol.Json().Deserialize<CompetitionRun>(pending.Payload)) != CompetitionProtocol.SerializeRun(pending.Run)) pending = null;
                     if (pending != null) pending.Path = path;
@@ -113,7 +113,7 @@ namespace Pal98Timer
         internal void Receipt(CompetitionPending pending, CompetitionReply reply)
         {
             // Retain local immutable result and receipt; no game/tool configuration is replaced.
-            string directory = System.IO.Path.Combine(Root, "receipts", CompetitionProtocol.Hash(pending.Settings.Server + "|" + pending.Settings.Event).Substring(0, 24));
+            string directory = System.IO.Path.Combine(Root, "receipts", CompetitionProtocol.Hash(pending.Settings.Server + "|" + CompetitionProtocol.Scope).Substring(0, 24));
             WriteAtomic(System.IO.Path.Combine(directory, pending.Run.run_id + ".json"), CompetitionProtocol.Json().Serialize(new { result = pending, receipt = reply }));
             if (File.Exists(pending.Path)) File.Delete(pending.Path);
         }

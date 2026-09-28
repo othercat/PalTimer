@@ -1,6 +1,8 @@
 # 比赛上传的独立构建激活
 
-显示版本 3.37.7；本次内部版本 3.37.7.4。忽爷的云 ID、PalCloudLib.dll
+> 历史认证说明：下文对应 3.37.7.5 及之前的 `PAL98.TimerUploadAuth.v1`。3.37.7.6 使用 `PAL98.TimerUploadAuth.v2`，当前边界见 [联机与排名](TIMER_ONLINE_3.37.7.6.md)。旧签封保留原字节，不转换或补签到新榜。
+
+显示版本 3.37.7；本次内部版本 3.37.7.5。忽爷的云 ID、PalCloudLib.dll
 和云存读档协议完全独立，不读取云 ID 来授予 PalServer 上传权限。
 
 ## 玩家行为

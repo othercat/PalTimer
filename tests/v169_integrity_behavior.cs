@@ -93,8 +93,8 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.7.4","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.4","file version");
+        Check(Product.GetName().Version.ToString()=="3.37.7.6","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.6","file version");
         Check(GForm.CurrentVersion=="3.37.7","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
@@ -105,7 +105,7 @@ internal static class V169IntegrityBehavior
         Check(Decode(Snapshot(),Host.Id+1)==null,"PID identity"); Check(Decode(Snapshot(),null,Birth+1)==null,"creation identity");
         var r11=Snapshot();Put(r11,24,BitConverter.GetBytes(0x0106080Bu));Check(Decode(r11)!=null,"r11 keeps same diagnostic layout");
         var r12=Snapshot();Put(r12,24,BitConverter.GetBytes(0x0106080Cu));Check(Decode(r12)!=null,"r12 keeps same diagnostic layout");
-        foreach(var producer in new[]{0x0106080Du,0x0106080Eu}) {var r=Snapshot();Put(r,24,BitConverter.GetBytes(producer));Check(Decode(r)!=null,"experimental producer keeps bounded diagnostic layout");}
+        foreach(var producer in new[]{0x0106080Du,0x0106080Eu,0x0106080Fu}) {var r=Snapshot();Put(r,24,BitConverter.GetBytes(producer));Check(Decode(r)!=null,"experimental producer keeps bounded diagnostic layout");}
         foreach(int offset in new[]{0,4,6,84}) { var b=Snapshot(); b[offset]^=1; Check(Decode(b)==null,"bad field offset "+offset); }
         var odd=Snapshot();Put(odd,12,BitConverter.GetBytes(3u));Check(Decode(odd)==null,"odd seqlock");
         var stale=Snapshot();Put(stale,32,BitConverter.GetBytes(Stopwatch.GetTimestamp()-4*Stopwatch.Frequency));Check(Decode(stale)==null,"stale heartbeat");
@@ -852,6 +852,10 @@ internal static class V169IntegrityBehavior
         var candidateDll=((IEnumerable)Property(candidate,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(candidateDll,"size"),(string)Property(candidateDll,"sha256"))==null,"r14 remains experimental despite an exact code baseline");
         Check((string)Property(candidate,"source_state")=="dirty" && ((string)Property(candidate,"source_commit")).Length==40,"r14 records the explicit source revision and uncommitted state");
+        var online=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.15");
+        var onlineDll=((IEnumerable)Property(online,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(onlineDll,"size"),(string)Property(onlineDll,"sha256"))==null,"r15 remains experimental with its own matched baseline");
+        Check(((string)Property(online,"source_state")).Contains("source_inventory_sha256="),"r15 records the dirty source inventory identity");
         foreach(var manifest in embedded.Cast<object>()) if((string)Property(manifest,"build")=="1.6.8.11" || (string)Property(manifest,"build")=="1.6.8.12") {
             var dll=((IEnumerable)Property(manifest,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
             string approved = (string)Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(dll,"size"),(string)Property(dll,"sha256"));

@@ -35,6 +35,7 @@ namespace Pal98Timer
         private int PID = -1;
         private Process PalProcess;
         private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
+        private readonly GameplayModeReader onlineGameplayReader = new GameplayModeReader();
         private PalLiveProcessIdentity attachedProcessIdentity;
         private PalLiveProcessIdentity rejectedProfileIdentity;
         // Keep the successfully attached installation across P/exit/restart.
@@ -504,7 +505,16 @@ namespace Pal98Timer
         internal bool GameplayRunStarted => _IsFirstStarted || MT.CurrentTSOnly.Ticks > 0;
         internal CompetitionHardcore CaptureHardcoreEvidence() => hardcoreRun.CaptureCompetition();
         internal override void CaptureCompetitionGameplay(CompetitionObservation observation)
-        { observation.Hardcore = CaptureHardcoreEvidence(); }
+        {
+            observation.Hardcore = CaptureHardcoreEvidence();
+            onlineGameplayReader.Observe(PalProcess);
+            var snapshot = onlineGameplayReader.Current;
+            observation.Gameplay = snapshot?.Identity; observation.Ranking = snapshot?.ranking;
+            // Identity hashing stays on the reader/background upload worker.
+            observation.TimelineId = snapshot?.rules_sha256 + "|" + observation.Hardcore.requested;
+            if (snapshot == null || !snapshot.covered || snapshot.ranking?.covered != true)
+                observation.ValidationError = "本局联机玩法未完整识别，仅保留本地成绩";
+        }
 
         internal override Process CompetitionGameProcess { get { return PalProcess; } }
 
@@ -528,17 +538,22 @@ namespace Pal98Timer
                 if (modeError.Length != 0) return modeError;
                 if (!string.IsNullOrEmpty(TournamentDisplayName))
                 {
-                    return FormatPaletteFadeVersion(TournamentDisplayName);
+                    return FormatGameTitle(TournamentDisplayName);
                 }
-                return FormatPaletteFadeVersion(Dx9TimingCategory.ClassicCaption(DX9Version));
+                return FormatGameTitle(Dx9TimingCategory.ClassicCaption(DX9Version));
             }
             else
             {
                 if (lastConfirmedTimingMode != null)
-                    return FormatPaletteFadeVersion(string.IsNullOrEmpty(lastConfirmedTournamentDisplayName)
+                    return FormatGameTitle(string.IsNullOrEmpty(lastConfirmedTournamentDisplayName)
                         ? Dx9TimingCategory.ClassicCaption(DX9Version) : lastConfirmedTournamentDisplayName);
                 return "等待游戏运行";
             }
+        }
+
+        protected virtual string FormatGameTitle(string version)
+        {
+            return FormatPaletteFadeVersion(version);
         }
 
         protected string FormatPaletteFadeVersion(string version)

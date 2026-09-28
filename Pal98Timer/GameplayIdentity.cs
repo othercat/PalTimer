@@ -43,6 +43,7 @@ namespace Pal98Timer
         public string family { get; set; }
         public int fade_ms { get; set; }
         public int map_speed_ticks { get; set; }
+        public RankingConfiguration ranking { get; set; }
         public uint initial_random_skill_seed { get; set; }
         public Dictionary<string, string> rules { get; set; }
         internal uint Generation;
@@ -56,9 +57,9 @@ namespace Pal98Timer
             foreach (var pair in new[] { new[] { "random_items", "随机物品" }, new[] { "wuqiang", "吴强" },
                 new[] { "random_skills.enabled", "随机技能" }, new[] { "love.enabled", "爱无限" }, new[] { "village", "村村通" } })
                 if (rules != null && rules.TryGetValue(pair[0], out string value) && value == "1") parts.Add(pair[1]);
-            parts.Add(hardcore ? "硬核" : "普通");
+            parts.Add(hardcore ? "硬核模式" : "普通模式");
             if (!covered) parts.Add("未归类");
-            return string.Join("＋", parts);
+            return string.Join("&", parts);
         }
     }
     internal static class TimelineIdentity
@@ -128,7 +129,7 @@ namespace Pal98Timer
                 BitConverter.ToInt32(bytes, 24) != before || BitConverter.ToUInt32(bytes, 0) != 0x314D5047 ||
                 BitConverter.ToUInt16(bytes, 4) != 1 || BitConverter.ToUInt16(bytes, 6) != 40 ||
                 BitConverter.ToInt32(bytes, 8) != pid || BitConverter.ToInt64(bytes, 16) != creation ||
-                (BitConverter.ToUInt32(bytes, 12) != 0x0106080D && BitConverter.ToUInt32(bytes, 12) != 0x0106080E) || BitConverter.ToUInt32(bytes, 36) != 0) return null;
+                (BitConverter.ToUInt32(bytes, 12) != 0x0106080D && BitConverter.ToUInt32(bytes, 12) != 0x0106080E && BitConverter.ToUInt32(bytes, 12) != 0x0106080F) || BitConverter.ToUInt32(bytes, 36) != 0) return null;
             uint count = BitConverter.ToUInt32(bytes, 32);
             if (count == 0 || count >= 32768) return null;
             try
@@ -138,6 +139,7 @@ namespace Pal98Timer
                 var canonical = new StringBuilder("PAL98.GameplayRules.v1\n");
                 foreach (var rule in result.rules.OrderBy(p => p.Key, StringComparer.Ordinal)) canonical.Append(Quote(rule.Key)).Append(':').Append(Quote(rule.Value)).Append('\n');
                 if (CompetitionProtocol.Hash(canonical.ToString()) != result.rules_sha256) return null;
+                if (result.ranking != null && !result.ranking.Valid(result.Identity)) result.ranking.covered = false;
                 result.Generation = BitConverter.ToUInt32(bytes, 28); return result.Generation == 0 ? null : result;
             }
             catch (Exception e) when (e is ArgumentException || e is InvalidOperationException) { return null; }
