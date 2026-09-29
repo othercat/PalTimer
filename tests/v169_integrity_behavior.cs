@@ -93,8 +93,8 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.7.6","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.6","file version");
+        Check(Product.GetName().Version.ToString()=="3.37.7.9","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.9","file version");
         Check(GForm.CurrentVersion=="3.37.7","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
@@ -804,6 +804,12 @@ internal static class V169IntegrityBehavior
         verify(currentSize,currentHash,"1.6.8.10",false);
         verify(2064384,"064A85DEF9EBE62652CC89B228413A9F1055335961016F1F927F2748CD9A440E","1.6.8.12",false);
         verify(2064385,"064A85DEF9EBE62652CC89B228413A9F1055335961016F1F927F2748CD9A440E",null,false);
+        verify(2105856,"DAFCD51E09866016E565F9CFE6C10497E3F8C9680D489D692E1C0C0C35DD8304","1.6.8.16",false);
+        verify(2105857,"DAFCD51E09866016E565F9CFE6C10497E3F8C9680D489D692E1C0C0C35DD8304",null,false);
+        verify(2105856,"DAFCD51E09866016E565F9CFE6C10497E3F8C9680D489D692E1C0C0C35DD8305",null,false);
+        verify(2144256,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D1","1.6.8.17",false);
+        verify(2144257,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D1",null,false);
+        verify(2144256,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D0",null,false);
         verify(526336,"B3BC8A7B53CB92A8E7910C3B6E3176CDFEB888CA50CBA79C8E26C4F8E9B634E6","1.14",false);
         verify(477184,"CB47B9E66119DE098C3D4D9BC6A1FE2D9C0672D1AFC2A13D8110F3A98A8AC8B0","1.02",false);
         verify(1986560,"252e2938d30775f0d9d1ed6f82ada672f2d7e1abab4ed37e6d0760a2d8098c51",null,false);
@@ -856,6 +862,13 @@ internal static class V169IntegrityBehavior
         var onlineDll=((IEnumerable)Property(online,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(onlineDll,"size"),(string)Property(onlineDll,"sha256"))==null,"r15 remains experimental with its own matched baseline");
         Check(((string)Property(online,"source_state")).Contains("source_inventory_sha256="),"r15 records the dirty source inventory identity");
+        var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
+        var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
+        var integratedDll=((IEnumerable)Property(integrated,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(integratedDll,"size"),(string)Property(integratedDll,"sha256")) as string == "1.6.8.17","integrated dev DLL selects its own exact code baseline");
+        var restartDll=((IEnumerable)Property(restart,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(restartDll,"size"),(string)Property(restartDll,"sha256")) as string == "1.6.8.16","owner-approved restart build has its own exact verification baseline");
+        Check(((string)Property(restart,"source_state")).Contains("recording_wip_excluded=true"),"r16 records frozen dev inputs without concurrent recorder work");
         foreach(var manifest in embedded.Cast<object>()) if((string)Property(manifest,"build")=="1.6.8.11" || (string)Property(manifest,"build")=="1.6.8.12") {
             var dll=((IEnumerable)Property(manifest,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
             string approved = (string)Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(dll,"size"),(string)Property(dll,"sha256"));

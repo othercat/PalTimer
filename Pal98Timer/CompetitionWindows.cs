@@ -15,7 +15,7 @@ namespace Pal98Timer
         private readonly Label status, hwid, activation, source, fontName;
         private readonly NumericUpDown fontSize;
         private readonly ComboBox alignment, board, rankingScope;
-        private readonly Button color;
+        private readonly Button color, copyDeviceId;
         private readonly Timer refresh;
         private string selectedFont;
         private Color selectedColor;
@@ -56,12 +56,13 @@ namespace Pal98Timer
             };
             color.Click += delegate { using (var dialog = new ColorDialog { Color = selectedColor, FullOpen = true }) if (dialog.ShowDialog(this) == DialogResult.OK) { selectedColor = dialog.Color; color.BackColor = selectedColor; color.ForeColor = selectedColor.GetBrightness() > 0.5 ? Color.Black : Color.White; } };
             hwid = AddNote(layout, 9, "", 645);
+            hwid.Name = "lblOnlineDeviceId";
             secret = new TextBox { Dock = DockStyle.Fill, MaxLength = 64, UseSystemPasswordChar = true };
             layout.Controls.Add(new Label { Text = "更换设备凭据", AutoSize = true }, 0, 10); layout.Controls.Add(secret, 1, 10);
             AddNote(layout, 11, "通常留空；仅主办方重置凭据后填写。凭据保存在本机，不随游戏包分发。", 645);
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var save = new Button { Text = "保存显示设置", AutoSize = true }; var retry = new Button { Text = "后台重试", AutoSize = true };
-            var copy = new Button { Text = "复制设备标识", AutoSize = true }; var folder = new Button { Text = "打开本机记录", AutoSize = true };
+            var copy = copyDeviceId = new Button { Name = "btnCopyOnlineDeviceId", Text = "复制设备标识", AutoSize = true, Enabled = false }; var folder = new Button { Text = "打开本机记录", AutoSize = true };
             var reset = new Button { Text = "重置遮罩位置", AutoSize = true };
             buttons.Controls.AddRange(new Control[] { save, retry, copy, folder, reset }); layout.Controls.Add(buttons, 0, 12); layout.SetColumnSpan(buttons, 2);
             status = AddNote(layout, 13, "", 645); activation = AddNote(layout, 14, "", 645);
@@ -105,7 +106,9 @@ namespace Pal98Timer
             var cfg = client.Settings; var value = client.View;
             source.Text = "联机设置由游戏配置工具的“服务器上传配置”页面管理。\n" + (cfg.Enabled
                 ? cfg.Server + "  " + (cfg.CustomCompetitionId == null ? "日常排名" : "自定义比赛：" + cfg.CustomCompetitionId) : "当前游戏未开启联机，或尚未连接游戏。");
-            hwid.Text = value.Hwid.Length == 0 ? "设备标识：联机开启后在本机生成" : "设备标识：" + value.Hwid;
+            hwid.Text = value.Hwid.Length != 0 ? "设备标识：" + value.Hwid : client.DeviceIdentityReady
+                ? "设备标识：本机身份暂不可读取，请重开计时器后重试。" : "设备标识：正在本机读取…";
+            copyDeviceId.Enabled = value.Hwid.Length != 0;
             activation.Text = client.ActivationText;
             if (value.Status.StartsWith("比赛设置未能保存", StringComparison.Ordinal) || value.Status.StartsWith("本机比赛设置或凭据不可读取", StringComparison.Ordinal) || value.Status.StartsWith("比赛记录未能落盘", StringComparison.Ordinal)) status.Text = value.Status;
             // Network failure/retry state is deliberately absent from this UI.

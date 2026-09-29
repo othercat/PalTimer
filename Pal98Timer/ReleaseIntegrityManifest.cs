@@ -208,6 +208,10 @@ namespace Pal98Timer
             if (size == 2016256 && string.Equals(hash, "b16a613b73d1d7ddd6cad12ddef5262c123908f50ba2fa3dcbaed51dd0708700", StringComparison.OrdinalIgnoreCase)) return "1.6.8.10";
             // Explicitly approved together with 20260925 for the 3.37.7 test package.
             if (size == 2064384 && string.Equals(hash, "064a85def9ebe62652cc89b228413a9f1055335961016f1f927f2748cd9a440e", StringComparison.OrdinalIgnoreCase)) return "1.6.8.12";
+            // Owner approved this exact restart-fix build after VM restart testing.
+            if (size == 2105856 && string.Equals(hash, "dafcd51e09866016e565f9cfe6c10497e3f8c9680d489d692e1c0c0c35dd8304", StringComparison.OrdinalIgnoreCase)) return "1.6.8.16";
+            // Integrated dev build: recording is absent unless debug.ini explicitly opts in.
+            if (size == 2144256 && string.Equals(hash, "06e10f2be0d610f7dcadac8bd0eb146a155409d9bb53d6ef290d8460b58152d1", StringComparison.OrdinalIgnoreCase)) return "1.6.8.17";
             if (size == 526336 && string.Equals(hash, "b3bc8a7b53cb92a8e7910c3b6e3176cdfeb888ca50cba79c8e26c4f8e9b634e6", StringComparison.OrdinalIgnoreCase)) return "1.14";
             if (size == 477184 && string.Equals(hash, "cb47b9e66119de098c3d4d9bc6a1fe2d9c0672d1afc2a13d8110f3a98a8ac8b0", StringComparison.OrdinalIgnoreCase)) return "1.02";
             return null;

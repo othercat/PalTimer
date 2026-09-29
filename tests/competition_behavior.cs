@@ -418,6 +418,78 @@ internal static class CompetitionBehavior
         ui.SetApartmentState(ApartmentState.STA); ui.Start(); Check(ui.Join(10000), "overlay STA rendering completed"); if (uiError != null) throw uiError;
         await client.CloseAsync();
     }
+    static void CheckDeviceIdentityUi(CompetitionClient client, string expected, bool copyEnabled)
+    {
+        Exception error = null;
+        var ui = new Thread(() => {
+            try {
+                using (var form = new CompetitionSettingsForm(client)) {
+                    var label = (System.Windows.Forms.Label)form.Controls.Find("lblOnlineDeviceId", true).Single();
+                    var copy = (System.Windows.Forms.Button)form.Controls.Find("btnCopyOnlineDeviceId", true).Single();
+                    Check(label.Text.Contains(expected), "settings display local device identity without showing a game");
+                    Check(copy.Enabled == copyEnabled, "device copy availability matches readable identity");
+                }
+            } catch (Exception ex) { error = ex; }
+        }) { IsBackground = true };
+        ui.SetApartmentState(ApartmentState.STA); ui.Start();
+        Check(ui.Join(10000), "device identity settings UI completes");
+        if (error != null) throw error;
+    }
+    static async Task DeviceIdentityCases()
+    {
+        const string expected = "fixture-local-device-without-game";
+        int reads = 0, settingsReads = 0;
+        var ready = new ManualResetEventSlim(false);
+        var store = new CompetitionStorage(Path.Combine(root, "device-without-game"), () => {
+            Interlocked.Increment(ref reads); ready.Wait(); return expected;
+        });
+        var network = new Fake(); var auth = new FakeAuth { Available = false };
+        var cfg = Config();
+        var watch = Stopwatch.StartNew();
+        var client = new CompetitionClient(store, network, auth, gameManaged: true, readGameSettings: process => {
+            Interlocked.Increment(ref settingsReads); return cfg.Copy();
+        });
+        Check(watch.ElapsedMilliseconds < 500, "client construction does not wait on local device identity IO");
+        ready.Set();
+        await Until(() => client.DeviceIdentityReady && client.View.Hwid == expected, "device ID appears without game, online settings or activation");
+        Check(settingsReads == 0 && network.Urls.IsEmpty && auth.Seals == 0 && !client.Enabled,
+            "device display never reads game settings, sends HTTP, signs or enables online");
+        Check(!Directory.Exists(store.Root), "display alone creates no credential or settings files");
+        CheckDeviceIdentityUi(client, expected, true);
+        using (var process = Process.GetCurrentProcess()) {
+            client.ObserveGame(process);
+            await Until(() => network.Registers > 0, "later enabled game may register normally");
+            Check(store.Credential(cfg.Server).Hwid == expected && reads == 1,
+                "credential uses the same cached ID already shown before game startup");
+            client.ObserveGame(null);
+            Check(client.View.Hwid == expected, "game close keeps device ID visible");
+        }
+        var disabled = cfg.Copy(); disabled.Enabled = false;
+        client.Configure(disabled);
+        await Until(() => !client.Settings.Enabled, "online disabled for device display regression");
+        Check(client.View.Hwid == expected && reads == 1, "disabling online preserves ID without another machine read");
+        CheckDeviceIdentityUi(client, expected, true);
+        await client.CloseAsync(); ready.Dispose();
+
+        int failures = 0;
+        var failureNetwork = new Fake();
+        var failed = new CompetitionClient(new CompetitionStorage(Path.Combine(root, "device-unreadable"), () => {
+            Interlocked.Increment(ref failures); throw new InvalidDataException("fixture failure");
+        }), failureNetwork, new FakeAuth(), gameManaged: true);
+        await Until(() => failed.DeviceIdentityReady, "unreadable identity completes without game startup");
+        Check(failed.View.Hwid == "", "unreadable identity never invents a device ID");
+        CheckDeviceIdentityUi(failed, "本机身份暂不可读取", false);
+        await Task.Delay(600);
+        Check(failures == 1 && failureNetwork.Urls.IsEmpty, "failed local identity does not busy-retry or contact server");
+        await failed.CloseAsync();
+
+        string brokenRoot = Path.Combine(root, "device-broken-settings");
+        Directory.CreateDirectory(brokenRoot); File.WriteAllText(Path.Combine(brokenRoot, "settings.json"), "not-json");
+        var broken = new CompetitionClient(new CompetitionStorage(brokenRoot, () => expected), new Fake(), new FakeAuth(), gameManaged: true);
+        await Until(() => broken.View.Status.StartsWith("本机比赛设置或凭据不可读取"), "broken online settings remain diagnosed");
+        Check(broken.View.Hwid == expected, "broken online settings do not hide readable local identity");
+        await broken.CloseAsync();
+    }
     static async Task Integration(string server)
     {
         var store = Store("http"); var cfg = Config(); cfg.Server = server;
@@ -435,7 +507,7 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
-        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); }
+        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

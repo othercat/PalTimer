@@ -19,6 +19,8 @@ namespace Pal98Timer
         private sealed class Approval { internal bool? Approved; internal DateTime NextCheck; }
         private readonly Dictionary<string, Approval> approvals = new Dictionary<string, Approval>(StringComparer.Ordinal);
         private volatile string activationText = "仅本地保存";
+        private string localDeviceId = "";
+        private volatile bool deviceIdentityReady;
         private readonly CancellationTokenSource stop = new CancellationTokenSource();
         private readonly ConcurrentQueue<CompetitionObservation> completions = new ConcurrentQueue<CompetitionObservation>();
         private readonly ConcurrentQueue<Action> commands = new ConcurrentQueue<Action>();
@@ -61,6 +63,7 @@ namespace Pal98Timer
         internal string DataDirectory { get { return storage.Root; } }
         internal bool Enabled { get { return enabled && (!gameManaged || observedGame != null); } }
         internal string ActivationText { get { return enabled ? activationText : "仅本地保存"; } }
+        internal bool DeviceIdentityReady { get { return deviceIdentityReady; } }
         internal void ObserveGame(Process process)
         {
             if (!gameManaged || observedGameOnce && ReferenceEquals(observedGame, process)) return;
@@ -186,7 +189,7 @@ namespace Pal98Timer
                     if (networkChanged)
                     {
                         lease = null; publishedStep = int.MinValue; Interlocked.Exchange(ref latest, null); Interlocked.Increment(ref querySerial);
-                        view = new CompetitionView { Hwid = credential == null ? "" : credential.Hwid };
+                        view = new CompetitionView { Hwid = credential == null ? localDeviceId : credential.Hwid };
                     }
                 }
                 if (!networkChanged) return;
@@ -210,7 +213,7 @@ namespace Pal98Timer
             lock (publication)
             {
                 var previous = view;
-                view = new CompetitionView { Status = status, Hwid = credential == null ? previous.Hwid : credential.Hwid,
+                view = new CompetitionView { Status = status, Hwid = credential == null ? localDeviceId : credential.Hwid,
                     Pending = pending.Count, Stale = stale, Reply = reply ?? previous.Reply,
                     NodeName = node ?? previous.NodeName, ReceivedAt = reply == null ? previous.ReceivedAt : DateTimeOffset.Now };
             }
@@ -227,6 +230,9 @@ namespace Pal98Timer
         {
             try
             {
+                try { localDeviceId = storage.ReadDeviceIdentity(); }
+                catch { storage.LogNetwork("device-identity-unavailable", 0); }
+                finally { SetStatus("联机未开启"); deviceIdentityReady = true; }
                 try
                 {
                     settings = storage.LoadSettings();

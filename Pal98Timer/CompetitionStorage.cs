@@ -32,11 +32,19 @@ namespace Pal98Timer
     internal sealed class CompetitionStorage
     {
         internal readonly string Root;
-        private readonly Func<string> hardwareId;
+        private readonly Lazy<string> hardwareId;
         internal CompetitionStorage(string root = null, Func<string> hardwareId = null)
         {
             Root = root ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PalTimer", "Competition-v1");
-            this.hardwareId = hardwareId ?? ReadWindowsIdentity;
+            this.hardwareId = new Lazy<string>(hardwareId ?? ReadWindowsIdentity);
+        }
+        // Local display and credential creation share one identity. Reading it
+        // neither creates credentials nor requires a server or a running game.
+        internal string ReadDeviceIdentity()
+        {
+            string result = hardwareId.Value;
+            if (string.IsNullOrWhiteSpace(result)) throw new InvalidDataException("本机设备身份暂不可读取");
+            return result;
         }
         internal static string ReadWindowsIdentity()
         {
@@ -76,7 +84,7 @@ namespace Pal98Timer
                 else
                 {
                     byte[] bytes = new byte[32]; using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
-                    result = new CompetitionCredential { Hwid = hardwareId(), Secret = CompetitionProtocol.Hex(bytes) };
+                    result = new CompetitionCredential { Hwid = ReadDeviceIdentity(), Secret = CompetitionProtocol.Hex(bytes) };
                 }
                 if (replacement != null && result != null) result.Secret = replacement;
                 if (result == null || !CompetitionProtocol.Digest(result.Secret) || string.IsNullOrEmpty(result.Hwid)) throw new InvalidDataException("本机比赛凭据损坏");
