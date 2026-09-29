@@ -34,10 +34,15 @@ internal static class CompetitionBehavior
     }
     static CompetitionStorage Store(string name) { return new CompetitionStorage(Path.Combine(root, name), () => "fixture-device-" + name + "-" + Guid.NewGuid().ToString("N")); }
     static CompetitionSettings Config() { return new CompetitionSettings { Enabled = true, Server = "https://fixture.invalid" }; }
-    sealed class FakeAuth : ICompetitionAuth
+    sealed class FakeAuth : ICompetitionAuth, ICompetitionBuildRegistration
     {
         internal bool Available = true;
         internal int Seals;
+        internal int RegistrationReads;
+        public CompetitionBuildRegistration Registration() {
+            RegistrationReads++;
+            return RegistrationFor(Identity());
+        }
         public CompetitionAuthIdentity Identity() { return !Available ? null : new CompetitionAuthIdentity { protocol = CompetitionAuthProtocol.Name,
             key_id = new string('a', 32), timer_exe_sha256 = new string('b', 64), timer_version = "3.37.7.1", component_sha256 = new string('c', 64) }; }
         public string Seal(string origin, string eventId, string payload)
@@ -58,6 +63,9 @@ internal static class CompetitionBehavior
         internal bool Approved = true, RejectChallenge;
         internal string DeniedBuild;
         internal int AuthChecks;
+        internal bool SupportCandidates, HoldCandidate, BadCandidateReply, ReceiptApproved;
+        internal int Candidates, CandidateStatus = 202;
+        internal TaskCompletionSource<bool> CandidateGate;
         internal TaskCompletionSource<bool> GetGate;
         internal int UploadStatus = 201;
         internal readonly ConcurrentQueue<string> Payloads = new ConcurrentQueue<string>();
@@ -74,7 +82,18 @@ internal static class CompetitionBehavior
                     AuthChecks++; var authQuery = HttpUtility.ParseQueryString(new Uri(url).Query);
                     return new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name,
                         scope = CompetitionProtocol.Scope, server_origin = new Uri(url).GetLeftPart(UriPartial.Authority), key_id = authQuery["key_id"],
-                        timer_exe_sha256 = authQuery["timer_exe_sha256"], approved = Approved && authQuery["timer_exe_sha256"] != DeniedBuild }) };
+                        timer_exe_sha256 = authQuery["timer_exe_sha256"], approved = Approved && authQuery["timer_exe_sha256"] != DeniedBuild,
+                        candidate_registration_protocol = SupportCandidates ? CompetitionBuildRegistration.Protocol : null }) };
+                }
+                if (url.EndsWith("/auth/candidates")) {
+                    Candidates++;
+                    if (HoldCandidate) await CandidateGate.Task;
+                    var release = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(body);
+                    Check((string)release["hwid"] == hwid, "candidate carries the authenticated local device");
+                    return new CompetitionHttpResult { Status = CandidateStatus, RetryAfterSeconds = 600,
+                        Body = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionBuildRegistration.Protocol,
+                            server_origin = new Uri(url).GetLeftPart(UriPartial.Authority), key_id = new string('a',32),
+                            timer_exe_sha256 = new string(BadCandidateReply ? 'f' : 'b',64), status = ReceiptApproved ? "approved" : "pending" }) };
                 }
                 if (url.EndsWith("/auth/challenges")) return new CompetitionHttpResult { Status = RejectChallenge ? 403 : 200,
                     Body = RejectChallenge ? "{\"code\":\"build_not_approved\"}" : "{}" };
@@ -490,6 +509,74 @@ internal static class CompetitionBehavior
         Check(broken.View.Hwid == expected, "broken online settings do not hide readable local identity");
         await broken.CloseAsync();
     }
+    static CompetitionBuildRegistration RegistrationFor(CompetitionAuthIdentity identity)
+    {
+        return identity == null ? null : new CompetitionBuildRegistration {
+            protocol = CompetitionBuildRegistration.Protocol, publisher_id = new string('d',64),
+            signature_base64 = Convert.ToBase64String(new byte[256]),
+            build = new CompetitionBuildDescriptor { protocol = identity.protocol, key_id = identity.key_id,
+                exe_sha256 = identity.timer_exe_sha256, timer_version = identity.timer_version,
+                component_sha256 = identity.component_sha256, public_key_pem = "-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n" }
+        };
+    }
+    static async Task BuildRegistrationCases()
+    {
+        var directory = Path.Combine(root, "公開資料 中文 with spaces"); Directory.CreateDirectory(directory);
+        var auth = new FakeAuth(); var identity = auth.Identity();
+        var path = Path.Combine(directory, CompetitionBuildRegistration.FileName);
+        Check(CompetitionBuildRegistration.Load(directory, identity) == null, "missing public certificate preserves local-only fallback");
+        File.WriteAllText(path, CompetitionProtocol.Json().Serialize(RegistrationFor(identity)), new System.Text.UTF8Encoding(true));
+        Check(CompetitionBuildRegistration.Load(directory, identity).Matches(identity), "bounded UTF8 public registration loaded in Chinese path");
+        var wrong = RegistrationFor(identity); wrong.build.exe_sha256 = new string('f',64);
+        File.WriteAllText(path, CompetitionProtocol.Json().Serialize(wrong));
+        Check(CompetitionBuildRegistration.Load(directory, identity) == null, "certificate for another host rejected before network");
+        wrong = RegistrationFor(identity); wrong.build.component_sha256 = new string('f',64);
+        Check(!wrong.Matches(identity), "certificate for another component rejected");
+        File.WriteAllText(path, new string('x',16385));
+        Check(CompetitionBuildRegistration.Load(directory, identity) == null, "oversized public file rejected");
+        File.WriteAllText(path, "{");
+        Check(CompetitionBuildRegistration.Load(directory, identity) == null, "broken public file never activates a build");
+
+        var store = Store("candidate"); var fake = new Fake { Approved = false, SupportCandidates = true, ReceiptApproved = true };
+        var client = new CompetitionClient(store, fake, auth); client.Configure(Config());
+        await Until(() => fake.Candidates == 1, "unknown build automatically reported");
+        client.Publish(Observation("candidate", 0)); client.Publish(Observation("candidate", 2));
+        await Until(() => client.View.Pending == 1, "pending approval keeps sealed local result");
+        await Task.Delay(850);
+        Check(fake.Candidates == 1 && auth.RegistrationReads == 1 && fake.Posts == 0, "one candidate, no busy retry, receipt cannot grant upload");
+        Check(client.ActivationText == "未激活，仅本地保存", "approval still comes from auth status");
+        fake.Approved = true; client.Retry();
+        await Until(() => fake.Posts > 0, "administrator approval enables existing pending record");
+        await client.CloseAsync();
+
+        store = Store("candidate-offline"); auth = new FakeAuth();
+        fake = new Fake { Approved = false, SupportCandidates = true, CandidateStatus = 503 };
+        client = new CompetitionClient(store, fake, auth); client.Configure(Config());
+        await Until(() => fake.Candidates == 1, "candidate network failure exercised"); await Task.Delay(900);
+        Check(fake.Candidates == 1 && client.ActivationText == "未激活，仅本地保存", "failed candidate backs off with no connection warning");
+        Check(!client.View.Status.Contains("候选") && !client.View.Status.Contains("重试"), "candidate failure stays out of ranking overlay");
+        await client.CloseAsync();
+
+        store = Store("candidate-old-server"); auth = new FakeAuth(); fake = new Fake { Approved = false };
+        client = new CompetitionClient(store, fake, auth); client.Configure(Config());
+        await Until(() => fake.AuthChecks == 1, "old server approval response"); await Task.Delay(600);
+        Check(fake.Candidates == 0 && auth.RegistrationReads == 0, "old server receives no unsupported candidate requests");
+        await client.CloseAsync();
+
+        store = Store("candidate-slow"); fake = new Fake { Approved = false, SupportCandidates = true, HoldCandidate = true, CandidateGate = new TaskCompletionSource<bool>() };
+        client = new CompetitionClient(store, fake, new FakeAuth()); client.Configure(Config());
+        await Until(() => fake.Candidates == 1, "candidate HTTP held in background");
+        var observation = Observation("candidate-slow", 1); var watch = Stopwatch.StartNew();
+        for (int i=0;i<10000;i++) client.Publish(observation);
+        watch.Stop(); Console.WriteLine("PERF candidate held / 10000 Publish = " + watch.ElapsedMilliseconds + "ms");
+        Check(watch.ElapsedMilliseconds < 1000 && fake.MaxActive == 1, "slow candidate never blocks timing publication or overlaps scans");
+        fake.CandidateGate.TrySetResult(true); await client.CloseAsync();
+
+        store = Store("candidate-disabled"); fake = new Fake { SupportCandidates = true }; auth = new FakeAuth();
+        client = new CompetitionClient(store, fake, auth); await Task.Delay(650);
+        Check(fake.Candidates == 0 && auth.RegistrationReads == 0 && fake.Registers == 0, "online disabled does not load or send candidate");
+        await client.CloseAsync();
+    }
     static async Task Integration(string server)
     {
         var store = Store("http"); var cfg = Config(); cfg.Server = server;
@@ -507,7 +594,7 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
-        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); }
+        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

@@ -16,8 +16,10 @@ namespace Pal98Timer
         private readonly CompetitionStorage storage;
         private readonly ICompetitionTransport transport;
         private readonly ICompetitionAuth authentication;
-        private sealed class Approval { internal bool? Approved; internal DateTime NextCheck; }
+        private sealed class Approval { internal bool? Approved; internal DateTime NextCheck; internal string CandidateProtocol; }
         private readonly Dictionary<string, Approval> approvals = new Dictionary<string, Approval>(StringComparer.Ordinal);
+        private sealed class CandidateAttempt { internal DateTime NextCheck; internal bool Accepted; internal int Failures; }
+        private readonly Dictionary<string, CandidateAttempt> candidates = new Dictionary<string, CandidateAttempt>(StringComparer.Ordinal);
         private volatile string activationText = "仅本地保存";
         private string localDeviceId = "";
         private volatile bool deviceIdentityReady;
@@ -195,7 +197,7 @@ namespace Pal98Timer
                 if (!networkChanged) return;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
-                approvals.Clear(); activationText = "仅本地保存";
+                approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
                 contextToken = ""; current = null; contextSettings = null; route = null; contextRunId = null; nextQuery = DateTime.MinValue;
                 SetStatus(copy.Enabled ? "已启用；从下一轮完整计时开始自动上传" : "联机未开启");
         }
@@ -204,6 +206,7 @@ namespace Pal98Timer
             commands.Enqueue(() => {
                 registrationRejected = false; nextRegister = DateTime.MinValue; registeredKey = ""; nextQuery = DateTime.MinValue;
                 approvals.Clear();
+                candidates.Clear();
                 foreach (var record in pending.Where(p => !p.LocalRejected)) { record.Rejected = false; record.NextAttemptUtc = DateTime.MinValue; storage.SavePending(record); }
                 storage.LogNetwork("manual-retry", 0);
             });
@@ -258,7 +261,8 @@ namespace Pal98Timer
                             if (await EnsureRegistered().ConfigureAwait(false))
                             {
                                 var identity = authentication.Identity();
-                                if (identity != null) await Approved(settings, identity.key_id, identity.timer_exe_sha256, true).ConfigureAwait(false);
+                                if (identity != null && !await Approved(settings, identity.key_id, identity.timer_exe_sha256, true).ConfigureAwait(false))
+                                    await RegisterBuildCandidate(settings, identity).ConfigureAwait(false);
                                 await UploadOne().ConfigureAwait(false);
                                 await QueryLatest().ConfigureAwait(false);
                             }
@@ -379,7 +383,8 @@ namespace Pal98Timer
                         var status = CompetitionProtocol.Json().Deserialize<CompetitionAuthStatus>(response.Body);
                         if (status != null && status.protocol == CompetitionAuthProtocol.Name && status.scope == CompetitionProtocol.Scope && status.server_origin == cfg.Server &&
                             status.key_id == key && status.timer_exe_sha256 == exe && status.approved.HasValue)
-                        { approval.Approved = status.approved; approval.NextCheck = DateTime.UtcNow.AddMinutes(5); accepted = true; }
+                        { approval.Approved = status.approved; approval.CandidateProtocol = status.candidate_registration_protocol;
+                            approval.NextCheck = DateTime.UtcNow.AddMinutes(5); accepted = true; }
                     } catch { }
                 }
                 if (!accepted) storage.LogNetwork("activation-check-failed", response.Status);
@@ -387,6 +392,49 @@ namespace Pal98Timer
             if (currentBuild && approval.Approved.HasValue)
                 activationText = approval.Approved.Value ? "联机上传：已激活" : "未激活，仅本地保存";
             return approval.Approved == true;
+        }
+        private async Task RegisterBuildCandidate(CompetitionSettings cfg, CompetitionAuthIdentity identity)
+        {
+            string key = cfg.Server + "|" + CompetitionProtocol.Scope + "|" + identity.key_id + "|" + identity.timer_exe_sha256;
+            Approval approval;
+            if (!approvals.TryGetValue(key, out approval) || approval.CandidateProtocol != CompetitionBuildRegistration.Protocol) return;
+            var provider = authentication as ICompetitionBuildRegistration;
+            if (provider == null) return;
+            CandidateAttempt attempt;
+            if (!candidates.TryGetValue(key, out attempt)) candidates[key] = attempt = new CandidateAttempt();
+            if (attempt.Accepted || DateTime.UtcNow < attempt.NextCheck) return;
+            // Set the deadline before file/native/transport calls: a thrown error
+            // cannot create a 250 ms retry loop. No view/title/OBS notifications.
+            attempt.NextCheck = DateTime.UtcNow.AddSeconds(Math.Min(3600, 300 * (1 << Math.Min(4, attempt.Failures))));
+            attempt.Failures++;
+            var registration = provider.Registration();
+            if (registration == null || !registration.Matches(identity)) {
+                storage.LogNetwork("build-candidate-local-unavailable", 0); return;
+            }
+            long epoch = Interlocked.Read(ref generation);
+            var response = await transport.Send("POST", cfg.Endpoint + "/auth/candidates", credential.Hwid, credential.Secret,
+                CompetitionProtocol.Json().Serialize(new { hwid = credential.Hwid, release = registration }), 3000, stop.Token).ConfigureAwait(false);
+            if (epoch != Interlocked.Read(ref generation)) return;
+            attempt.NextCheck = DateTime.UtcNow.AddSeconds(Math.Max(300, Math.Max(response.RetryAfterSeconds,
+                Math.Min(3600, 300 * (1 << Math.Min(4, attempt.Failures - 1))))));
+            if (response.Success)
+            {
+                try {
+                    var receipt = CompetitionProtocol.Json().Deserialize<CompetitionBuildReceipt>(response.Body);
+                    if (receipt != null && receipt.protocol == CompetitionBuildRegistration.Protocol &&
+                        receipt.server_origin == cfg.Server && receipt.key_id == identity.key_id &&
+                        receipt.timer_exe_sha256 == identity.timer_exe_sha256 &&
+                        (receipt.status == "pending" || receipt.status == "approved"))
+                    {
+                        attempt.Accepted = true;
+                        // Approval is still learned through auth/status; a candidate
+                        // receipt itself never enables uploads.
+                        storage.LogNetwork("build-candidate-registered", response.Status);
+                        return;
+                    }
+                } catch { }
+            }
+            storage.LogNetwork("build-candidate-retry", response.Status);
         }
         private static bool AwaitingApproval(CompetitionHttpResult response)
         {

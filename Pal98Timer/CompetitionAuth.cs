@@ -36,6 +36,7 @@ namespace Pal98Timer
         public string timer_exe_sha256 { get; set; }
         public string key_id { get; set; }
         public bool? approved { get; set; }
+        public string candidate_registration_protocol { get; set; }
     }
     internal interface ICompetitionAuth
     {
@@ -67,7 +68,7 @@ namespace Pal98Timer
     // Native component owns the private release material and checks the actual
     // host process. This public adapter contains no key or activation fallback.
     // Every method is called exclusively on the competition background worker.
-    internal sealed class NativeCompetitionAuth : ICompetitionAuth
+    internal sealed class NativeCompetitionAuth : ICompetitionAuth, ICompetitionBuildRegistration
     {
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr LoadLibraryEx(string name, IntPtr file, uint flags);
@@ -82,6 +83,8 @@ namespace Pal98Timer
         private SealFn seal;
         private ProveFn prove;
         private CompetitionAuthIdentity identity;
+        private bool registrationAttempted;
+        private CompetitionBuildRegistration registration;
         private static byte[] Utf8(string text) { return new UTF8Encoding(false, true).GetBytes(text); }
         private static string Result(uint code, byte[] buffer)
         {
@@ -113,6 +116,14 @@ namespace Pal98Timer
             }
             catch { identity = null; }
             return identity;
+        }
+        public CompetitionBuildRegistration Registration()
+        {
+            if (registrationAttempted) return registration;
+            registrationAttempted = true;
+            var host = Identity();
+            if (host != null) registration = CompetitionBuildRegistration.Load(AppDomain.CurrentDomain.BaseDirectory, host);
+            return registration;
         }
         public string Seal(string origin, string eventId, string payload)
         {

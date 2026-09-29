@@ -173,6 +173,7 @@
     <Compile Include="GameplayIdentity.cs" />
     <Compile Include="Pal98Dx9Automatic.cs" />
     <Compile Include="CompetitionAuth.cs" />
+    <Compile Include="CompetitionBuildRegistration.cs" />
     <Compile Include="CompetitionTransport.cs" />
     <Compile Include="CompetitionStorage.cs" />
     <Compile Include="CompetitionClient.cs" />

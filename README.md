@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.7（文件版本 3.37.7.9）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.7（文件版本 3.37.7.10）；需要 .NET Framework 4.7.2 框架**
+
+3.37.7.10 支持联机后台自动登记“待批准构建”。管理员首次核对并登记发布者公钥后，计时器自动提交同目录 PalCompetitionRegistration.public.json 中带签名的公开资料，后续版本无需人工搬运 registration.public.json；仍需后台显式批准每个新 EXE 哈希。未批准、断网、旧服务器和缺少资料均不影响本地计时。更新时 EXE、配套认证 DLL 和公开资料一起覆盖；忽爷云 ID 激活仍独立办理。详见 [自动构建登记](docs/AUTOMATIC_BUILD_REGISTRATION.md)。
 
 20260928 测试包默认使用 **“仙剑98 DX9 自动玩法（实验）”**。默认值编译在 EXE 中，不需要随包提供 `LastCore`：没有有效历史核心选择时直接进入自动玩法。玩家手动选择过的其它核心仍会记忆；已有安装若继续显示旧核心，可在右上角菜单切换。旧最佳线、成绩和接力文件不会被默认核心变更覆盖。
 
@@ -15,9 +17,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 本包配套 PALDLL／Helper／配置工具 1.6.8.17、抽卡工具 2.0.0-preview.12。最新经典 v5 1.0.22 可在“自选改版 → 小野模式”使用既有四张卡。发布者确认重启测试后，本次 PAL.dll 的确切 SHA-256 已加入正式名单，不再显示“测试版”；未获指定的其它构建仍为测试版。
 
-当前联机使用独立的 `/api/v1/timer/` 接口，成绩合同为 `PAL98.TimerOnline.v1`，上传认证为 `PAL98.TimerUploadAuth.v2`。服务器未部署配套协议、未批准当前构建或暂时断网时，仍可本地计时及保存；排名无有效结果时为“未知”，网络失败和重试只写本地日志，不弹窗、不占标题、不影响节点计时。服务端只登记公钥和构建哈希，客户端保留与当前 EXE 配对的 `PalCompetitionAuth.dll`；私有认证源码和私钥不随包分发。3.37.7.9 的 EXE 与认证 DLL 必须成对更新，分别办理原云 ID 激活和独立联机上传批准。
+当前联机使用独立的 `/api/v1/timer/` 接口，成绩合同为 `PAL98.TimerOnline.v1`，上传认证为 `PAL98.TimerUploadAuth.v2`。服务器未部署配套协议、未批准当前构建或暂时断网时，仍可本地计时及保存；排名无有效结果时为“未知”，网络失败和重试只写本地日志，不弹窗、不占标题、不影响节点计时。服务端只登记公钥和构建哈希，客户端保留与当前 EXE 配对的 `PalCompetitionAuth.dll`；私有认证源码和私钥不随包分发。3.37.7.10 的 EXE、认证 DLL 和公开登记资料必须配套更新，分别办理原云 ID 激活和独立联机上传批准。
 
-本次内部修订为 3.37.7.9；不包含尚未实施的逐节点上传，通关成绩仍按现有协议后台提交。
+本次内部修订为 3.37.7.10；不包含尚未实施的逐节点上传，通关成绩仍按现有协议后台提交。
 
 2026-09-29 修复：“联机与排名”设置窗口的设备标识由计时器在本机后台读取，不需要先启动游戏、开启联机或完成激活；读取成功即可复制。显示设备标识本身不注册设备、不联网、不创建上传凭据；关闭游戏或联机后仍可查看。读取失败时明确提示且禁止复制，不生成替代编号。
 
