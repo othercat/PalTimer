@@ -251,8 +251,8 @@ def main() -> int:
         ),
         "version is 3.37.7 everywhere": (
             'public const string CurrentVersion = "3.37.7";' in gform
-            and '[assembly: AssemblyVersion("3.37.7.1")]' in assembly
-            and '[assembly: AssemblyFileVersion("3.37.7.1")]' in assembly
+            and '[assembly: AssemblyVersion("3.37.7.12")]' in assembly
+            and '[assembly: AssemblyFileVersion("3.37.7.12")]' in assembly
         ),
     }
 

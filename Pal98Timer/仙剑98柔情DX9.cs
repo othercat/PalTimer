@@ -1711,6 +1711,7 @@ namespace Pal98Timer
             string state = antiCheatPaused ? "反作弊暂停" : (paused ? "已暂停" : "");
             if (timingError.Length != 0) state = timingError;
             HardcoreDisplaySnapshot hardcore = GetHardcoreDisplay();
+            int cloudId = form == null ? -1 : form.CloudID();
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),
@@ -1728,7 +1729,8 @@ namespace Pal98Timer
                 Dx9TimingCategory.ModeLabel(RecordedTimingMode),
                 hardcore.Status,
                 hardcore.Device,
-                runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(form != null && form.CloudID() >= 0));
+                runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(cloudId >= 0),
+                cloudId);
         }
 
         private string GetDx9OverlayFontFamily()

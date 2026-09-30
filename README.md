@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.7（文件版本 3.37.7.11）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.7（文件版本 3.37.7.12）；需要 .NET Framework 4.7.2 框架**
+
+3.37.7.12 在 DX9 OBS 独立遮罩的底部玩法前显示原云 ID，例如 `云ID:123 0.8秒&快走速`，只留一个空格并整行靠右。它读取已有云状态，不新增联网或改变计时；未取得云 ID 时仍只显示玩法。EXE、认证 DLL 和公开登记文件须配套更新，新 EXE 分别办理原云激活及联机后台批准。
 
 3.37.7.11 增加实时联机短 ID、心跳和裁判页面：标题末尾显示 `[已连接:1042]` 或 `[连接失败]`，首次连接显示 `[连接中]`；原云 ID 保持独立。过节点后台发送本轮进度并取得排名，平时每五秒轻量心跳，二十秒未确认标记断线。本地计时不等待网络，未完成进度不进入通关榜。详见 [实时联机与裁判视图](docs/LIVE_TIMERS.md)。
 
@@ -70,6 +72,8 @@ PALDLL v1.65 配套计时器提供三个独立的原版 DX9 配置。右上角�
 成绩 JSON 保存所选 `TimerCore`、`TimingModeMs`、`TimingMapSpeedTicks`，实际 `PaletteFadeModeMs`、`MapSpeedTicks`，以及 `ContentId`、`ContentVersion`、`ContentHash`、`ContentDisplayName`、`OfficialSpeedrun`、`LeaderboardCategory`、`TimingRulesVersion`、`TimingRulesVerified`、`TimingValidationError`。`GameVersion` 和 `TournamentDisplayName` 保留完整显示身份，游戏结束后导出也保留已确认的比赛名称。跨分类、内容或实际模式的导入和接力在修改状态或 RPG/附属文件前拒绝。缺走速信息的历史成绩保持原归属，不能移入第三类或标记成新规则已验证成绩。离线编辑最佳线仍可用，标注为参考时间线。保存最佳线不要求正式速通配置，内容和实际时序信息照实保留。云请求使用各自身份；服务端是否接受新身份仍需配套验证，本次未登录验证云服务。
 
 模式来自 `PAL98.TimingMode.v2` 的 592 字节实际运行时快照，校验 PID、创建时间、接口版本、内容身份与有效组合，不根据磁盘 INI 猜测。正式速通内容严格对应三个核心；非速通内容可在现有 DX9 核心下使用四种黑屏/走速组合。在模式未知或不匹配时暂停，并拒绝有效成绩保存、导出和上传；开局后确认切换内容或实际模式必须重置。版本文本、结束后导出及 OBS 状态使用同一快照。OBS 最下方新增一行靠右显示 `1.2秒`、`0.8秒`、`0.8秒&快走速` 或非速通内容的 `1.2秒&快走速`，不加前导横杠，避免与暂停、战斗和重启/关闭游戏耗时挤在同一行；版本与导出后缀继续保留横杠。旧快照和黑屏接口不能证明当前内容与走速，新计时器会提示更新配套程序，不将旧接口用于新规则的核验。该本机快照不构成防篡改认证。
+
+OBS 独立遮罩的玩法底栏同时显示原云服务的 ID，整行靠右，云 ID 与实际黑屏／走速文字之间仅留一个空格，例如 `云ID:123 0.8秒&快走速`。未取得有效云 ID 时只显示玩法，后续随遮罩刷新更新；它与标题中的联机短 ID 分开，只读取已有云状态，不新增网络请求或改变计时。
 
 魂牵、梦幻22显血和不欢乐保留现有核心及各自分类边界。UTF-8 成绩和配置支持有 BOM 或无 BOM，便于简繁系统交换；旧 ANSI 文件按本机代码页读取，不能自动推断任意跨区 GBK/Big5 文件。
 

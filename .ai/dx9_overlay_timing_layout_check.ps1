@@ -1,8 +1,16 @@
+param(
+    [string]$ExePath = '',
+    [string]$OutputDirectory = ''
+)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$run = Join-Path $root ('artifacts\overlay-timing-layout-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-$runtime = Join-Path $root 'Pal98Timer\bin\x64\Release'
-New-Item -ItemType Directory -Path $run | Out-Null
+if ([string]::IsNullOrWhiteSpace($ExePath)) { $ExePath = Join-Path $root 'Pal98Timer\bin\x64\Release\Pal98Timer.exe' }
+$runtime = Split-Path -Parent ([IO.Path]::GetFullPath($ExePath))
+$run = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    Join-Path $root ('artifacts\overlay-timing-layout-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+} else { [IO.Path]::GetFullPath($OutputDirectory) }
+New-Item -ItemType Directory -Path $run -Force | Out-Null
 Get-ChildItem -LiteralPath $runtime -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'Pal98Timer.exe' } | Copy-Item -Destination $run
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1

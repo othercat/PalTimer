@@ -51,6 +51,7 @@ namespace Pal98Timer
         public readonly Dx9OverlayTimelineEntry TimelineThird;
         public readonly string State;
         public readonly string TimingModeLabel;
+        public readonly string FooterText;
         public readonly string HardcoreStatus;
         public readonly string HardcoreDevice;
         public readonly string IntegrityStatus;
@@ -83,6 +84,16 @@ namespace Pal98Timer
             string hardcoreStatus = "",
             string hardcoreDevice = "",
             string integrityStatus = "")
+            : this(gameWindowHandle, fontFamily, mainTimer, battleTimer, idleTimer, resources, manualPauseCount,
+                timelineFirst, timelineSecond, timelineThird, state, isAntiCheatPaused, isPaused,
+                timingModeLabel, hardcoreStatus, hardcoreDevice, integrityStatus, -1) { }
+
+        public Dx9OverlaySnapshot(
+            IntPtr gameWindowHandle, string fontFamily, string mainTimer, string battleTimer,
+            string idleTimer, string resources, int manualPauseCount, Dx9OverlayTimelineEntry timelineFirst,
+            Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
+            bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus,
+            string hardcoreDevice, string integrityStatus, int cloudId)
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -96,6 +107,8 @@ namespace Pal98Timer
             TimelineThird = timelineThird;
             State = state ?? "";
             TimingModeLabel = timingModeLabel ?? "";
+            FooterText = cloudId >= 0 ? "云ID:" + cloudId.ToString(CultureInfo.InvariantCulture) +
+                (TimingModeLabel.Length == 0 ? "" : " " + TimingModeLabel) : TimingModeLabel;
             HardcoreStatus = hardcoreStatus ?? "";
             HardcoreDevice = hardcoreDevice ?? "";
             IntegrityStatus = integrityStatus ?? "";
@@ -712,7 +725,7 @@ namespace Pal98Timer
 
                 y += infoHeight + rowGap;
                 row = new RectangleF(margin, y, contentWidth, infoHeight);
-                DrawOutlinedText(e.Graphics, snapshot.TimingModeLabel, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
+                DrawOutlinedText(e.Graphics, snapshot.FooterText, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
 
                 if (snapshot.HardcoreStatus.Length != 0)
                 {
