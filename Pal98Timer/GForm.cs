@@ -825,9 +825,10 @@ namespace Pal98Timer
                         return;
                     }
                 }
-                rr.SetGameVersion(core.GetGameVersion());
+                string onlineSuffix = competition == null ? "" : competition.LiveCaption;
+                rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
-                string windowTitle = "自动计时器" + (integrityTitle.Length == 0 ? "" : " " + integrityTitle);
+                string windowTitle = "自动计时器" + (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;
                 if (Text != windowTitle) Text = windowTitle;
                 var dx9Core = core as 仙剑98柔情DX9;
                 rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());

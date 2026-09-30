@@ -245,6 +245,13 @@ internal static class GameplayBehavior
                 }
                 Check(bounded, "long header does not paint over other rows at " + size);
                 SavePreview(panel, "caption-long-" + size.Width + "x" + size.Height + ".png");
+                foreach (string connection in new[] { " [已连接:1042]", " [连接失败]" }) {
+                    render.SetGameVersion(example + connection); render.Draw();
+                    var liveHeader = (Rectangle)Get(render, "rcGameVersion");
+                    Check(((Rectangle)Get(render, "rcDots")).Top >= liveHeader.Bottom,
+                        "online suffix preserves wrapped caption spacing");
+                    SavePreview(panel, (connection.Contains(":") ? "live-connected-" : "live-failed-") + size.Width + "x" + size.Height + ".png");
+                }
                 render.SetGameVersion(""); render.Draw();
                 bool restored = true;
                 using (var current = new Bitmap(panel.BackgroundImage))

@@ -181,7 +181,7 @@ namespace Pal98Timer
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
     {
-        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId;
+        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId, GameTitle;
         internal GameplayIdentity Gameplay;
         internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;

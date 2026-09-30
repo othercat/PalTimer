@@ -47,6 +47,8 @@ namespace Pal98Timer
         }
         internal void PublishCompetition(TimerCore source, CompetitionObservation observation)
         { if (ReferenceEquals(core, source)) competition?.Publish(observation); }
+        internal void PublishCompetitionClock(TimerCore source, string token, long elapsed, bool running, long observedTick)
+        { if (ReferenceEquals(core, source)) competition?.PublishClock(token, elapsed, running, observedTick); }
         internal bool CompetitionEnabled(TimerCore source) { return ReferenceEquals(core, source) && competition != null && competition.Enabled; }
         internal void InvalidateCompetition(TimerCore source, string token)
         { if (ReferenceEquals(core, source)) competition?.Invalidate(token); }

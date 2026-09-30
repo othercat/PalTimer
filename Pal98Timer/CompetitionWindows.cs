@@ -110,8 +110,9 @@ namespace Pal98Timer
                 ? "设备标识：本机身份暂不可读取，请重开计时器后重试。" : "设备标识：正在本机读取…";
             copyDeviceId.Enabled = value.Hwid.Length != 0;
             activation.Text = client.ActivationText;
+            status.Text = client.LiveDetail;
             if (value.Status.StartsWith("比赛设置未能保存", StringComparison.Ordinal) || value.Status.StartsWith("本机比赛设置或凭据不可读取", StringComparison.Ordinal) || value.Status.StartsWith("比赛记录未能落盘", StringComparison.Ordinal)) status.Text = value.Status;
-            // Network failure/retry state is deliberately absent from this UI.
+            // Concise connection feedback only; no modal dialog or timing gate.
         }
     }
 

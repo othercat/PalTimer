@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     // A single background loop owns disk/network state. Timing publishes values
     // through a short scalar-only lock, never waiting on disk, HTTP or the UI.
-    internal sealed class CompetitionClient : IDisposable
+    internal sealed partial class CompetitionClient : IDisposable
     {
         private readonly CompetitionStorage storage;
         private readonly ICompetitionTransport transport;
@@ -103,6 +103,7 @@ namespace Pal98Timer
         {
             lock (publication)
             {
+                InvalidateLive();
                 Volatile.Write(ref activeToken, token ?? ""); lease = null;
                 publishedStep = int.MinValue;
                 Interlocked.Increment(ref querySerial);
@@ -198,6 +199,7 @@ namespace Pal98Timer
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
+                ResetLiveConnection();
                 contextToken = ""; current = null; contextSettings = null; route = null; contextRunId = null; nextQuery = DateTime.MinValue;
                 SetStatus(copy.Enabled ? "已启用；从下一轮完整计时开始自动上传" : "联机未开启");
         }
@@ -207,6 +209,7 @@ namespace Pal98Timer
                 registrationRejected = false; nextRegister = DateTime.MinValue; registeredKey = ""; nextQuery = DateTime.MinValue;
                 approvals.Clear();
                 candidates.Clear();
+                RetryLiveConnection();
                 foreach (var record in pending.Where(p => !p.LocalRejected)) { record.Rejected = false; record.NextAttemptUtc = DateTime.MinValue; storage.SavePending(record); }
                 storage.LogNetwork("manual-retry", 0);
             });
@@ -261,11 +264,14 @@ namespace Pal98Timer
                             if (await EnsureRegistered().ConfigureAwait(false))
                             {
                                 var identity = authentication.Identity();
-                                if (identity != null && !await Approved(settings, identity.key_id, identity.timer_exe_sha256, true).ConfigureAwait(false))
+                                bool approved = identity != null && await Approved(settings, identity.key_id, identity.timer_exe_sha256, true).ConfigureAwait(false);
+                                if (identity != null && !approved)
                                     await RegisterBuildCandidate(settings, identity).ConfigureAwait(false);
+                                await PumpLive(identity, approved).ConfigureAwait(false);
                                 await UploadOne().ConfigureAwait(false);
                                 await QueryLatest().ConfigureAwait(false);
                             }
+                            else LiveFailure("无法连接联机服务器，正在后台重试", 0);
                         }
                     }
                     catch (OperationCanceledException) { }
@@ -297,6 +303,7 @@ namespace Pal98Timer
             contextSettings.FadeMilliseconds = bound.Fade; contextSettings.MapSpeedTicks = bound.Speed;
             started = bound.StartedAt; beganHere = bound.BeganHere;
             current = observation;
+            nextLiveDue = DateTime.MinValue;
             nextQuery = DateTime.MinValue;
             if (!observation.Finished || completed.Contains(observation.Token)) return;
             bool missingIdentity = !CompetitionProtocol.Digest(observation.DllHash) || string.IsNullOrEmpty(observation.GameVersion);
@@ -384,6 +391,7 @@ namespace Pal98Timer
                         if (status != null && status.protocol == CompetitionAuthProtocol.Name && status.scope == CompetitionProtocol.Scope && status.server_origin == cfg.Server &&
                             status.key_id == key && status.timer_exe_sha256 == exe && status.approved.HasValue)
                         { approval.Approved = status.approved; approval.CandidateProtocol = status.candidate_registration_protocol;
+                            if (currentBuild) serverLiveProtocol = status.live_protocol;
                             approval.NextCheck = DateTime.UtcNow.AddMinutes(5); accepted = true; }
                     } catch { }
                 }

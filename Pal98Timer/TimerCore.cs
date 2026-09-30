@@ -935,6 +935,10 @@ namespace Pal98Timer
             long sequence = ScoreRunSequence, now = Stopwatch.GetTimestamp(); int step = CurrentStep;
             if (sequence == competitionSequence && step == competitionStep && now < competitionPoll) return;
             competitionPoll = now + Stopwatch.Frequency;
+            // Scalar-only publication, at most once per second or at a node.
+            // The live worker owns serialization, signing, HTTP and persistence.
+            form.PublishCompetitionClock(this, coreIdentity + ":" + sequence,
+                MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond, MT.IsRunning, now);
             string hash, version, error; int fade, speed;
             CaptureCompetitionIdentity(out hash, out version, out fade, out speed, out error);
             if (sequence != competitionSequence) competitionBeganHere = CanBeginCompetitionHere(step);
@@ -954,7 +958,7 @@ namespace Pal98Timer
             if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
             form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
-                Step = step, TotalMilliseconds = totalMilliseconds,
+                Step = step, TotalMilliseconds = totalMilliseconds, GameTitle = GetGameVersion(),
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
                 DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });
         }

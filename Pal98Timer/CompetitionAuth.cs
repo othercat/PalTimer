@@ -37,6 +37,7 @@ namespace Pal98Timer
         public string key_id { get; set; }
         public bool? approved { get; set; }
         public string candidate_registration_protocol { get; set; }
+        public string live_protocol { get; set; }
     }
     internal interface ICompetitionAuth
     {
@@ -68,7 +69,7 @@ namespace Pal98Timer
     // Native component owns the private release material and checks the actual
     // host process. This public adapter contains no key or activation fallback.
     // Every method is called exclusively on the competition background worker.
-    internal sealed class NativeCompetitionAuth : ICompetitionAuth, ICompetitionBuildRegistration
+    internal sealed class NativeCompetitionAuth : ICompetitionAuth, ICompetitionBuildRegistration, ICompetitionLiveAuth
     {
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr LoadLibraryEx(string name, IntPtr file, uint flags);
@@ -77,11 +78,13 @@ namespace Pal98Timer
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate uint IdentityFn([Out] byte[] output, uint capacity);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate uint SealFn(byte[] origin, byte[] eventId, byte[] payload, uint count, [Out] byte[] output, uint capacity);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate uint ProveFn(byte[] sealedRun, uint sealCount, byte[] challenge, uint challengeCount, [Out] byte[] output, uint capacity);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate uint LiveFn(byte[] challenge, uint count, [Out] byte[] output, uint capacity);
         private IntPtr module;
         private bool attempted;
         private IdentityFn getIdentity;
         private SealFn seal;
         private ProveFn prove;
+        private LiveFn proveLive;
         private CompetitionAuthIdentity identity;
         private bool registrationAttempted;
         private CompetitionBuildRegistration registration;
@@ -109,6 +112,8 @@ namespace Pal98Timer
                 getIdentity = (IdentityFn)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "PCA_GetIdentity"), typeof(IdentityFn));
                 seal = (SealFn)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "PCA_SealRun"), typeof(SealFn));
                 prove = (ProveFn)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "PCA_ProveUpload"), typeof(ProveFn));
+                var liveEntry = GetProcAddress(module, "PCA_ProveLiveSession");
+                if (liveEntry != IntPtr.Zero) proveLive = (LiveFn)Marshal.GetDelegateForFunctionPointer(liveEntry, typeof(LiveFn));
                 var output = new byte[4096]; string value = Result(getIdentity(output, (uint)output.Length), output);
                 if (value == null) return null;
                 var candidate = CompetitionProtocol.Json().Deserialize<CompetitionAuthIdentity>(value);
@@ -139,6 +144,14 @@ namespace Pal98Timer
             try {
                 var bytes = Utf8(sealedJson); var challenge = Utf8(challengeJson); var output = new byte[8192];
                 return Result(prove(bytes, (uint)bytes.Length, challenge, (uint)challenge.Length, output, (uint)output.Length), output);
+            } catch { return null; }
+        }
+        public string ProveLive(string challengeJson)
+        {
+            if (Identity() == null || proveLive == null) return null;
+            try {
+                var challenge = Utf8(challengeJson); var output = new byte[8192];
+                return Result(proveLive(challenge, (uint)challenge.Length, output, (uint)output.Length), output);
             } catch { return null; }
         }
     }

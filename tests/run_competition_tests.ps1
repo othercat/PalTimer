@@ -8,6 +8,7 @@ $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**
 if (!$csc) { throw 'VS 2026 Roslyn not found' }
 $sources = @('RankingConfiguration.cs','GameplayIdentity.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionWindows.cs','TournamentLockInfoReader.cs') | ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_) }
 $sources += Join-Path $PSScriptRoot 'competition_behavior.cs'
+$sources += Join-Path $repo 'Pal98Timer\CompetitionLive.cs'
 $exe = Join-Path $out 'CompetitionBehavior.exe'
 & $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.dll /reference:System.Security.dll /reference:System.Net.Http.dll "/reference:$repo\Pal98Timer\lib\System.Web.Script.Serialization.dll" $sources *> (Join-Path $out 'build.log')
 if ($LASTEXITCODE -ne 0) { Get-Content (Join-Path $out 'build.log'); throw 'Competition test build failed' }

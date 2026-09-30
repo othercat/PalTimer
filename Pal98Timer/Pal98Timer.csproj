@@ -177,6 +177,7 @@
     <Compile Include="CompetitionTransport.cs" />
     <Compile Include="CompetitionStorage.cs" />
     <Compile Include="CompetitionClient.cs" />
+    <Compile Include="CompetitionLive.cs" />
     <Compile Include="CompetitionIntegration.cs" />
     <Compile Include="CompetitionGameSettings.cs" />
     <Compile Include="CompetitionWindows.cs" />
