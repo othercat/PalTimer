@@ -93,8 +93,8 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.7.12","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.12","file version");
+        Check(Product.GetName().Version.ToString()=="3.37.7.17","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.17","file version");
         Check(GForm.CurrentVersion=="3.37.7","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
@@ -810,6 +810,9 @@ internal static class V169IntegrityBehavior
         verify(2144256,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D1","1.6.8.17",false);
         verify(2144257,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D1",null,false);
         verify(2144256,"06E10F2BE0D610F7DCADAC8BD0EB146A155409D9BB53D6EF290D8460B58152D0",null,false);
+        verify(2144256,"159FE8A10CBCBF7F544E8DAEB2CA544ADABE03F52F46028D3BA5B1EFA86BB703","1.7.0.0",false);
+        verify(2144257,"159FE8A10CBCBF7F544E8DAEB2CA544ADABE03F52F46028D3BA5B1EFA86BB703",null,false);
+        verify(2144256,"159FE8A10CBCBF7F544E8DAEB2CA544ADABE03F52F46028D3BA5B1EFA86BB700",null,false);
         verify(526336,"B3BC8A7B53CB92A8E7910C3B6E3176CDFEB888CA50CBA79C8E26C4F8E9B634E6","1.14",false);
         verify(477184,"CB47B9E66119DE098C3D4D9BC6A1FE2D9C0672D1AFC2A13D8110F3A98A8AC8B0","1.02",false);
         verify(1986560,"252e2938d30775f0d9d1ed6f82ada672f2d7e1abab4ed37e6d0760a2d8098c51",null,false);
@@ -864,6 +867,21 @@ internal static class V169IntegrityBehavior
         Check(((string)Property(online,"source_state")).Contains("source_inventory_sha256="),"r15 records the dirty source inventory identity");
         var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
         var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
+        var v170=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.0.0");
+        var v170Files=((IEnumerable)Property(v170,"files")).Cast<object>().ToArray();
+        const string daliManifest="copymen_scripts/20251216-rule_dali.module.json";
+        var dali=v170Files.Single(f=>(string)Property(f,"path")==daliManifest);
+        Check((string)Property(dali,"normalization")=="copymen-enabled-v1","restored Dali module keeps the legitimate enabled switch normalization");
+        var daliPayload=v170Files.Single(f=>(string)Property(f,"path")=="palmod/copymen/20251216-rule_dali.palmod.json");
+        Check((string)Property(daliPayload,"sha256")=="0b4b309e58cc940d83ebe0b25519013f336332ac73b20af02bf1bd1d2f8bb223","restored Dali payload has its original identity");
+        Check(((string[])Property(daliPayload,"enabled_by")).SequenceEqual(new[]{daliManifest}),"Dali payload is verified when its module is enabled");
+        var v170Directory=((IEnumerable)Property(v170,"exact_directories")).Cast<object>().Single();
+        Check(((string[])Property(v170Directory,"entries")).Contains("20251216-rule_dali.module.json"),"restored Dali module is registered in the release directory");
+        var v170Dll=((IEnumerable)Property(v170,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v170Dll,"size"),(string)Property(v170Dll,"sha256")) as string == "1.7.0.0","v1.70 uses its own approved hash and verification baseline");
+        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.0.0","PAL98.Settings.v1","1.7.0.0","3.37.7.16"),"v1.70 signed preset reader accepts the matching companion contract");
+        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.17","PAL98.Settings.v1","1.6.8.17","3.37.7.6"),"existing v1.68 lock remains readable without resigning");
+        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.0.0","PAL98.Settings.v1","1.6.8.17","3.37.7.16"),"mixed release contract is rejected");
         var integratedDll=((IEnumerable)Property(integrated,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(integratedDll,"size"),(string)Property(integratedDll,"sha256")) as string == "1.6.8.17","integrated dev DLL selects its own exact code baseline");
         var restartDll=((IEnumerable)Property(restart,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");

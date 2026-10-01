@@ -598,6 +598,15 @@ namespace Pal98Timer
         /// 区间间隔名
         /// </summary>
         protected string PointSpanName = "";
+        // Restart/idle has its own monotonic PTimer. A window or process handle
+        // is not gameplay readiness. This never adds idle time to the main watch.
+        protected void UpdatePalRestartIdle(PTimer idle, bool everStarted, bool gameplayReady)
+        {
+            bool finished = CheckPoints != null && CurrentStep >= CheckPoints.Count;
+            if (everStarted && !gameplayReady && !finished) idle.Start();
+            else idle.Stop();
+        }
+
         /// <summary>
         /// Resume timing and check the current route, without restarting a completed run.
         /// Keep the main watch independent of the final split (manual/imported values may differ).
@@ -1512,9 +1521,34 @@ namespace Pal98Timer
         {
             if (HasPlugin(pos))
             {
-                return Plugins[pos].GetResult();
+                TimerPlugin plugin = Plugins[pos];
+                return FormatPluginDisplayResult(plugin.GetType().FullName, plugin.GetResult());
             }
             return null;
+        }
+
+        internal static string FormatPluginDisplayResult(string pluginTypeName, string result)
+        {
+            // Keep signed packages and their cached data unchanged. Both the main
+            // window and OBS consume this display-only projection.
+            if (!string.Equals(pluginTypeName, "PAL98.FujiaCaishen.Main", StringComparison.Ordinal) ||
+                string.IsNullOrEmpty(result)) return result;
+
+            string text = result.TrimStart();
+            int labelLength = text.StartsWith("四大神器", StringComparison.Ordinal) ? 4 :
+                text.StartsWith("神器", StringComparison.Ordinal) ? 2 : 0;
+            if (labelLength == 0 || text.Length <= labelLength ||
+                (text[labelLength] != ':' && text[labelLength] != '：')) return result;
+
+            string values = text.Substring(labelLength + 1).TrimStart();
+            if (!values.StartsWith("已收集", StringComparison.Ordinal) &&
+                !values.StartsWith("未收集", StringComparison.Ordinal)) return result;
+
+            values = values.Substring(3).TrimStart();
+            // Only remove the known status prefix; don't reinterpret another
+            // plugin's text or an unrecognised output format as money/items.
+            if (values.Length == 0 || (values[0] != '钱' && values[0] != '錢')) return result;
+            return values;
         }
 
         public int GetX86ModuleBaseAddr(int pid, string moduleName = "")

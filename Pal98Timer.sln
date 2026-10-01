@@ -22,6 +22,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyChanger", "KeyChanger\Ke
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModuleAddrX64Delegate", "ModuleAddrX64Delegate\ModuleAddrX64Delegate.csproj", "{F318D998-224B-4A63-8517-DFABADBBBF50}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PalTimerOnline", "PalTimerOnline\PalTimerOnline.csproj", "{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,6 +32,14 @@ Global
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Debug|Any CPU.Build.0 = Debug|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Debug|x64.ActiveCfg = Debug|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Debug|x64.Build.0 = Debug|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Release|Any CPU.ActiveCfg = Release|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Release|Any CPU.Build.0 = Release|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Release|x64.ActiveCfg = Release|x64
+		{D670F004-7260-48D7-A1B3-DC4FBA4EE02A}.Release|x64.Build.0 = Release|x64
 		{B8491493-B2EB-43BB-ACE1-4D0D5FCBFA35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B8491493-B2EB-43BB-ACE1-4D0D5FCBFA35}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B8491493-B2EB-43BB-ACE1-4D0D5FCBFA35}.Debug|x64.ActiveCfg = Debug|x64

@@ -15,14 +15,16 @@ namespace Pal98Timer
         internal const string Name = "PAL98.TimerCompetition.v1";
         internal const string NameV2 = "PAL98.TimerCompetition.v2";
         internal const string Online = "PAL98.TimerOnline.v1";
+        internal const string OnlineV2 = "PAL98.TimerOnline.v2";
         internal const string Scope = "timer-online";
         internal static string SerializeRun(CompetitionRun run) {
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
-            if (run.protocol == Online) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
+            if (run.protocol != OnlineV2) fields.Remove("observations");
+            if (run.protocol == Online || run.protocol == OnlineV2) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
             else { fields.Remove("ranking"); fields.Remove("custom_competition_id"); }
-            return run.protocol == Online ? CanonicalJson(fields) : serializer.Serialize(fields);
+            return run.protocol == Online || run.protocol == OnlineV2 ? CanonicalJson(fields) : serializer.Serialize(fields);
         }
         // Preserve a deterministic body across the legacy serializer's different
         // dictionary/property traversal orders. The sealed original bytes are
@@ -58,6 +60,7 @@ namespace Pal98Timer
         { return track == "wuqiang" ? "1.2秒＋普通走速" : track == "wuqiang-800" ? "0.8秒＋普通走速" : track == "wuqiang-800-speed" ? "0.8秒＋快走速" : "等待游戏速度"; }
         internal static string Validate(CompetitionRun run)
         {
+            if (run?.protocol == OnlineV2) return ValidateV2(run);
             Guid id; Version version;
             if (run == null || (run.protocol != Name && run.protocol != NameV2 && run.protocol != Online) || !Guid.TryParse(run.run_id, out id) ||
                 run.hwid == null || !Regex.IsMatch(run.hwid, "^[A-Za-z0-9._:-]{8,128}$") ||
@@ -91,6 +94,31 @@ namespace Pal98Timer
             }
             if (run.splits[run.splits.Length - 1].status != "completed") return "尚未通关，未上传。";
             return Encoding.UTF8.GetByteCount(SerializeRun(run)) > 65536 ? "成绩超过服务器容量，已保留本地记录。" : "";
+        }
+        private static string ValidateV2(CompetitionRun run)
+        {
+            // Eligibility belongs to the server. Preserve missing/changed facts
+            // and the actual route order, including non-monotonic timestamps.
+            Guid id; Version version; DateTimeOffset at;
+            if (!Guid.TryParse(run.run_id, out id) || !Regex.IsMatch(run.hwid ?? "", "\\A[A-Za-z0-9._:-]{8,128}\\z") ||
+                !Version.TryParse(run.timer_version, out version) || version.Revision < 0 ||
+                run.game_version != null && (!Version.TryParse(run.game_version, out version) || version.Revision < 0) ||
+                run.pal_dll_sha256 != null && !Digest(run.pal_dll_sha256) || run.timeline_id != null && !Digest(run.timeline_id) ||
+                run.total_ms < 0 || run.total_ms > MaxMilliseconds ||
+                !DateTimeOffset.TryParse(run.started_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
+                !DateTimeOffset.TryParse(run.finished_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
+                run.custom_competition_id != null && !Regex.IsMatch(run.custom_competition_id, "\\A[a-z0-9-]{1,60}\\z")) return "成绩格式无效，仅本地保存。";
+            if (run.splits == null || run.splits.Length < 1 || run.splits.Length > 256 ||
+                run.splits.Any(s => s == null || !Identifier(s.checkpoint_id)) ||
+                run.splits.Select(s => s.checkpoint_id).Distinct(StringComparer.Ordinal).Count() != run.splits.Length ||
+                run.route_sha256 != RouteHash(run.splits.Select(s => s.checkpoint_id))) return "路线格式无效，仅本地保存。";
+            foreach (var s in run.splits) {
+                if (s.status == "completed") { if (!s.elapsed_ms.HasValue || s.elapsed_ms < 0 || s.elapsed_ms > MaxMilliseconds) return "节点格式无效，仅本地保存。"; }
+                else if ((s.status != "auto_skipped" && s.status != "manual_skipped" && s.status != "in_progress") || s.elapsed_ms.HasValue) return "节点格式无效，仅本地保存。";
+            }
+            if (run.observations == null || run.observations.issues == null || run.observations.issues.Length > 32 ||
+                run.observations.issues.Any(s => s == null || s.Length > 300)) return "观察记录格式无效，仅本地保存。";
+            return Encoding.UTF8.GetByteCount(SerializeRun(run)) > 65536 ? "成绩超过服务器容量，仅本地保存。" : "";
         }
     }
 
@@ -143,7 +171,7 @@ namespace Pal98Timer
             if (!Uri.TryCreate(Server, UriKind.Absolute, out uri) || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/" ||
                 (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback))) return "服务器须为 HTTPS 域名；仅本机测试允许 HTTP。";
             if (CustomCompetitionId != null && !Regex.IsMatch(CustomCompetitionId, "\\A[a-z0-9-]{1,60}\\z")) return "自定义比赛ID无效。";
-            if (FadeMilliseconds != 800 && FadeMilliseconds != 1200 || MapSpeedTicks != 9 && MapSpeedTicks != 10) return "比赛速度设置无效。";
+            if (FadeMilliseconds < 0 || FadeMilliseconds > 86400000 || MapSpeedTicks < 0 || MapSpeedTicks > 1000000) return "速度数据超出格式范围。";
             Server = uri.GetLeftPart(UriPartial.Authority);
             return "";
         }
@@ -177,6 +205,16 @@ namespace Pal98Timer
         public CompetitionHardcore hardcore { get; set; }
         public RankingConfiguration ranking { get; set; }
         public string custom_competition_id { get; set; }
+        public CompetitionRunObservations observations { get; set; }
+    }
+    internal sealed class CompetitionRunObservations
+    {
+        public bool began_here { get; set; }
+        public bool finished { get; set; }
+        public string[] issues { get; set; }
+        public GameplayIdentity initial_gameplay { get; set; }
+        public RankingConfiguration initial_ranking { get; set; }
+        public CompetitionHardcore initial_hardcore { get; set; }
     }
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
@@ -200,6 +238,10 @@ namespace Pal98Timer
         internal bool BeganHere, Started;
         internal int Fade, Speed;
         internal string TimelineId, ConfigurationId;
+        internal GameplayIdentity InitialGameplay;
+        internal RankingConfiguration InitialRanking;
+        internal CompetitionHardcore InitialHardcore;
+        internal string[] Issues = new string[0];
         internal CompetitionRunContext Copy() { return (CompetitionRunContext)MemberwiseClone(); }
     }
     internal sealed class CompetitionPlayer { public string id { get; set; } public string display_name { get; set; } public bool bound { get; set; } }

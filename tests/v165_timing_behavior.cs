@@ -1,4 +1,4 @@
-using HFrame.ENT;
+﻿using HFrame.ENT;
 using Pal98Timer;
 using System;
 using System.Collections.Generic;
@@ -505,6 +505,35 @@ internal static class V165TimingBehavior
         string[] relay={"SRPG.bin","SRPG.PAL98DX9_800.bin","SRPG.PAL98DX9_800_SPEED.bin"};
         for(int i=0;i<3;++i)Check((string)Dx9.GetProperty("RelayFileName",Instance).GetValue(cores[i])==relay[i],"Relay identity preserved");
     }
+    static void RestartIdleTiming()
+    {
+        foreach (TimerCore core in new TimerCore[] {new 仙剑98柔情(null), new 仙剑98柔情DX9(null), new 仙剑98柔情不欢乐模式(null), new Pal98Dx9Automatic(null)})
+        {
+            var idle = new PTimer(); var main = (PTimer)Field(core,"MT"); main.SetTS(TimeSpan.FromSeconds(12)); main.Stop();
+            core.CheckPoints=Enumerable.Range(0,2).Select(i=>new CheckPoint(i,new CheckPointNewer{Name="restart-fixture-"+i,BestTS=TimeSpan.FromSeconds(i+1)})).ToList();
+            Set(core,"_CurrentStep",0);
+            Action<bool,bool> observe=(started,ready)=>typeof(TimerCore).GetMethod("UpdatePalRestartIdle",Instance).Invoke(core,new object[]{idle,started,ready});
+            observe(false,false);Thread.Sleep(10);Check(idle.CurrentTS==TimeSpan.Zero,"first launch is not restart idle");
+            observe(true,true);Check(!idle.IsRunning,"active gameplay stops idle");
+            observe(true,false);var elapsed=Stopwatch.StartNew();Thread.Sleep(30); // short missing-process interval
+            observe(true,false);Thread.Sleep(350); // attached, runtime not ready
+            observe(true,false);Thread.Sleep(350); // title / load menu
+            observe(true,false);Thread.Sleep(350); // loading wait
+            observe(true,true);elapsed.Stop();
+            Check(idle.CurrentTS.TotalMilliseconds>=elapsed.Elapsed.TotalMilliseconds-25 && idle.CurrentTS.TotalMilliseconds<elapsed.Elapsed.TotalMilliseconds+50,
+                "idle includes short process gap and all initialization/load wait: "+core.CoreName);
+            var frozen=idle.CurrentTS;Thread.Sleep(10);observe(true,true);Check(idle.CurrentTS==frozen,"F9/focus pauses in a valid game do not add restart idle");
+            Check(main.CurrentTS==TimeSpan.FromSeconds(12),"idle never mutates or combines into main");
+            Set(core,"_CurrentStep",core.CheckPoints.Count);observe(true,false);Check(!idle.IsRunning,"post-completion exit cannot start idle");
+            Set(core,"_CurrentStep",0);observe(true,false);Check(idle.IsRunning,"jump back to active route resumes restart handling");
+            idle.Reset();observe(false,false);Check(idle.CurrentTS==TimeSpan.Zero&&!idle.IsRunning,"reset begins with no idle history");
+            // Generation cleanup is real kernel code, not a duplicated policy.
+            var declaring=core is Pal98Dx9Automatic ? typeof(仙剑98柔情DX9) : core.GetType();
+            declaring.GetField("_HasGameStart",Instance).SetValue(core,true);
+            declaring.GetMethod("ClearGameState",Instance).Invoke(core,null);
+            Check(!(bool)declaring.GetField("_HasGameStart",Instance).GetValue(core),"new process cannot reuse prior game-start state");
+        }
+    }
     static void PresentationAndCompletion()
     {
         foreach(string culture in new[]{"zh-CN","zh-TW"})
@@ -614,6 +643,7 @@ internal static class V165TimingBehavior
             Scenario("legacy_records",LegacyRecords);Scenario("storage_isolation",StorageIsolation);
             Scenario("storage_transactions",StorageTransactions);
             Scenario("completed_main_watch",CompletedMainWatch);
+            Scenario("restart_idle_timing",RestartIdleTiming);
             Scenario("presentation_completion",PresentationAndCompletion);Scenario("overlay_layout",OverlayLayout);
         }
         HObj result=new HObj();result["scenariosPassed"]=Passed;result["scenariosFailed"]=Failed;result["assertions"]=Assertions;

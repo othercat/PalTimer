@@ -513,7 +513,7 @@ namespace Pal98Timer
             // Identity hashing stays on the reader/background upload worker.
             observation.TimelineId = snapshot?.rules_sha256 + "|" + observation.Hardcore.requested;
             if (snapshot == null || !snapshot.covered || snapshot.ranking?.covered != true)
-                observation.ValidationError = "本局联机玩法未完整识别，仅保留本地成绩";
+                observation.ValidationError = "本局联机玩法未完整识别，成绩需服务端审核";
         }
 
         internal override Process CompetitionGameProcess { get { return PalProcess; } }
@@ -1712,6 +1712,9 @@ namespace Pal98Timer
             if (timingError.Length != 0) state = timingError;
             HardcoreDisplaySnapshot hardcore = GetHardcoreDisplay();
             int cloudId = form == null ? -1 : form.CloudID();
+            string pluginText = "";
+            try { pluginText = GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR); }
+            catch { /* A display plug-in must not hide the independent timer overlay. */ }
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),
@@ -1730,7 +1733,8 @@ namespace Pal98Timer
                 hardcore.Status,
                 hardcore.Device,
                 runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(cloudId >= 0),
-                cloudId);
+                cloudId,
+                pluginText);
         }
 
         private string GetDx9OverlayFontFamily()
@@ -1807,13 +1811,14 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
+                UpdatePalRestartIdle(ST, _IsFirstStarted, _HasGameStart);
                 ObserveHardcoreRuntime(PalProcess);
                 RuntimeTimingMode actualMode = paletteFadeMode.Read(PalProcess);
                 runtimeIntegrity.Observe(PalProcess);
                 if (GetScoreValidationError().Length != 0)
                 {
                     MT.Stop();
-                    ST.Stop();
+                    UpdatePalRestartIdle(ST, _IsFirstStarted, _HasGameStart);
                     PreData();
                     return;
                 }
@@ -1821,9 +1826,11 @@ namespace Pal98Timer
                 CopyRPGIfHas();
 
                 JudgePause();
+                bool gameDataReady = false;
                 try
                 {
                     FlushGameObject();
+                    gameDataReady = true;
                     WaterSpiritPearlSplit.Observe(
                         GameObj.Area,
                         GameObj.rX,
@@ -1870,7 +1877,7 @@ namespace Pal98Timer
                     CheckCheatEnd();
                 }
 
-                if (HasStartGame())
+                if (gameDataReady && HasStartGame())
                 {
                     ObserveHardcoreRuntime(PalProcess, true);
                     ST.Stop();
@@ -1903,6 +1910,7 @@ namespace Pal98Timer
                 else
                 {
                     MT.Stop();
+                    UpdatePalRestartIdle(ST, _IsFirstStarted, _HasGameStart);
                 }
             }
             else
@@ -1911,10 +1919,7 @@ namespace Pal98Timer
                 _HasGameStart = false;
                 MT.Stop();
 
-                if (_IsFirstStarted)
-                {
-                    ST.Start();
-                }
+                UpdatePalRestartIdle(ST, _IsFirstStarted, false);
             }
 
             PreData();
@@ -2532,6 +2537,7 @@ namespace Pal98Timer
         /// </summary>
         private void ClearGameState()
         {
+            _HasGameStart = false; // Never reuse a previous process generation's game-start flag.
             WaterSpiritPearlSplit.Detach();
             PalLiveProcessIdentity.Close(PalHandle);
             PalHandle = IntPtr.Zero;

@@ -205,6 +205,8 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            // Owner-approved v1.70 release; the embedded baseline is bound to this exact DLL/MAP build.
+            if (size == 2144256 && string.Equals(hash, "159fe8a10cbcbf7f544e8daeb2ca544adabe03f52f46028d3ba5b1efa86bb703", StringComparison.OrdinalIgnoreCase)) return "1.7.0.0";
             if (size == 2016256 && string.Equals(hash, "b16a613b73d1d7ddd6cad12ddef5262c123908f50ba2fa3dcbaed51dd0708700", StringComparison.OrdinalIgnoreCase)) return "1.6.8.10";
             // Explicitly approved together with 20260925 for the 3.37.7 test package.
             if (size == 2064384 && string.Equals(hash, "064a85def9ebe62652cc89b228413a9f1055335961016f1f927f2748cd9a440e", StringComparison.OrdinalIgnoreCase)) return "1.6.8.12";

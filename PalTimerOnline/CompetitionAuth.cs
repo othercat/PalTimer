@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -37,6 +37,7 @@ namespace Pal98Timer
         public string key_id { get; set; }
         public bool? approved { get; set; }
         public string candidate_registration_protocol { get; set; }
+        public string[] supported_candidate_protocols { get; set; }
         public string live_protocol { get; set; }
     }
     internal interface ICompetitionAuth
@@ -117,7 +118,7 @@ namespace Pal98Timer
                 var output = new byte[4096]; string value = Result(getIdentity(output, (uint)output.Length), output);
                 if (value == null) return null;
                 var candidate = CompetitionProtocol.Json().Deserialize<CompetitionAuthIdentity>(value);
-                if (candidate != null && candidate.Valid && candidate.timer_version == typeof(CompetitionClient).Assembly.GetName().Version.ToString(4)) identity = candidate;
+                if (candidate != null && candidate.Valid && candidate.timer_version == System.Reflection.Assembly.GetEntryAssembly().GetName().Version.ToString(4)) identity = candidate;
             }
             catch { identity = null; }
             return identity;

@@ -363,7 +363,7 @@ namespace Pal98Timer
             }
             catch { }
             this.core = core;
-            competition?.Invalidate(core.CompetitionToken);
+            InvalidateCompetition(core, core.CompetitionToken);
             this.core.LoadCore = LoadCore;
             this.core.InitUI();
             this.core.OnCurrentStepChanged = delegate (int curidx)
@@ -725,7 +725,7 @@ namespace Pal98Timer
         private void GForm_FormClosed(object sender, FormClosedEventArgs e)
         {
             competitionUiTimer?.Dispose();
-            competition?.Dispose();
+            try { onlineLease?.Dispose(); } catch { /* Optional online component cannot prevent local shutdown. */ }
             cloudRunner?.Dispose();
             _keyboardHook.UninstallHook();
             KeyChangerDel.Close();
@@ -825,7 +825,7 @@ namespace Pal98Timer
                         return;
                     }
                 }
-                string onlineSuffix = competition == null ? "" : competition.LiveCaption;
+                string onlineSuffix = competition == null ? "" : onlineCaption;
                 rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
                 string windowTitle = "自动计时器" + (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;

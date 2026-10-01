@@ -109,7 +109,8 @@ namespace Pal98Timer
                 {
                     pending = CompetitionProtocol.Json().Deserialize<CompetitionPending>(ReadBounded(path, 262144));
                     if (pending == null || pending.Settings == null || pending.Settings.Validate().Length != 0 ||
-                        pending.Settings.Server != settings.Server || pending.Run == null || pending.Run.protocol != CompetitionProtocol.Online ||
+                        pending.Settings.Server != settings.Server || pending.Run == null ||
+                        (pending.Run.protocol != CompetitionProtocol.Online && pending.Run.protocol != CompetitionProtocol.OnlineV2) ||
                         pending.Run.run_id + ".json" != System.IO.Path.GetFileName(path) ||
                         CompetitionProtocol.SerializeRun(CompetitionProtocol.Json().Deserialize<CompetitionRun>(pending.Payload)) != CompetitionProtocol.SerializeRun(pending.Run)) pending = null;
                     if (pending != null) pending.Path = path;

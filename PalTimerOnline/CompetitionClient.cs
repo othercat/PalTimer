@@ -16,7 +16,7 @@ namespace Pal98Timer
         private readonly CompetitionStorage storage;
         private readonly ICompetitionTransport transport;
         private readonly ICompetitionAuth authentication;
-        private sealed class Approval { internal bool? Approved; internal DateTime NextCheck; internal string CandidateProtocol; }
+        private sealed class Approval { internal bool? Approved; internal DateTime NextCheck; internal string CandidateProtocol; internal string[] CandidateProtocols; }
         private readonly Dictionary<string, Approval> approvals = new Dictionary<string, Approval>(StringComparer.Ordinal);
         private sealed class CandidateAttempt { internal DateTime NextCheck; internal bool Accepted; internal int Failures; }
         private readonly Dictionary<string, CandidateAttempt> candidates = new Dictionary<string, CandidateAttempt>(StringComparer.Ordinal);
@@ -51,13 +51,17 @@ namespace Pal98Timer
         private volatile Process observedGame;
         private long gameGeneration;
         private bool observedGameOnce;
-        internal CompetitionClient(CompetitionStorage storage = null, ICompetitionTransport transport = null, ICompetitionAuth authentication = null, bool gameManaged = false, Func<Process, CompetitionSettings> readGameSettings = null)
+        private readonly string timerVersion;
+        private long requestedTarget;
+        private Process ownedTarget;
+        internal CompetitionClient(CompetitionStorage storage = null, ICompetitionTransport transport = null, ICompetitionAuth authentication = null, bool gameManaged = false, Func<Process, CompetitionSettings> readGameSettings = null, string timerVersion = null)
         {
             this.storage = storage ?? new CompetitionStorage();
             this.transport = transport ?? new CompetitionHttpTransport();
             this.authentication = authentication ?? new NativeCompetitionAuth();
             this.gameManaged = gameManaged;
             this.readGameSettings = readGameSettings ?? CompetitionGameSettings.Load;
+            this.timerVersion = timerVersion ?? System.Reflection.Assembly.GetEntryAssembly().GetName().Version.ToString(4);
             worker = Task.Run((Func<Task>)Loop);
         }
         internal CompetitionSettings Settings { get { return settings.Copy(); } }
@@ -66,6 +70,17 @@ namespace Pal98Timer
         internal bool Enabled { get { return enabled && (!gameManaged || observedGame != null); } }
         internal string ActivationText { get { return enabled ? activationText : "仅本地保存"; } }
         internal bool DeviceIdentityReady { get { return deviceIdentityReady; } }
+        internal void ObserveTarget(int pid, long generation)
+        {
+            long request = Interlocked.Increment(ref requestedTarget);
+            commands.Enqueue(() => {
+                if (request != Interlocked.Read(ref requestedTarget)) return;
+                Process next = null;
+                try { if (pid > 0) next = Process.GetProcessById(pid); } catch { }
+                var previous = ownedTarget; ownedTarget = next;
+                ObserveGame(next); previous?.Dispose();
+            });
+        }
         internal void ObserveGame(Process process)
         {
             if (!gameManaged || observedGameOnce && ReferenceEquals(observedGame, process)) return;
@@ -123,11 +138,13 @@ namespace Pal98Timer
                 if (lease == null)
                     lease = new CompetitionRunContext { Token = observation.Token, RunId = Guid.NewGuid().ToString("D"), Settings = settings.Copy(),
                         StartedAt = observation.ObservedAt, BeganHere = observation.BeganHere && observation.Step <= 0 && !observation.Finished,
-                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks, TimelineId = observation.TimelineId, ConfigurationId = observation.Ranking?.configuration_id };
+                        Fade = observation.FadeMilliseconds, Speed = observation.MapSpeedTicks, TimelineId = observation.TimelineId, ConfigurationId = observation.Ranking?.configuration_id,
+                        InitialGameplay = observation.Gameplay?.Copy(), InitialRanking = observation.Ranking?.Copy(), InitialHardcore = observation.Hardcore };
                 if (observation.Step <= 0 && !lease.Started)
                 {
                     lease = lease.Copy(); lease.TimelineId = observation.TimelineId; lease.ConfigurationId = observation.Ranking?.configuration_id;
                     lease.Fade = observation.FadeMilliseconds; lease.Speed = observation.MapSpeedTicks;
+                    lease.InitialGameplay = observation.Gameplay?.Copy(); lease.InitialRanking = observation.Ranking?.Copy(); lease.InitialHardcore = observation.Hardcore;
                 }
                 if (observation.Step == 0 && !lease.Started)
                 { lease = lease.Copy(); lease.Started = true; lease.StartedAt = observation.ObservedAt; }
@@ -135,6 +152,13 @@ namespace Pal98Timer
                 { lease = lease.Copy(); lease.Fade = observation.FadeMilliseconds; lease.Speed = observation.MapSpeedTicks; }
                 if (observation.Finished && lease.FinishedAt == default(DateTimeOffset))
                 { lease = lease.Copy(); lease.FinishedAt = observation.ObservedAt; }
+                // Latch observed changes even if the settings later return to
+                // their initial values. Only bounded scalar comparisons here.
+                if (lease.Started) {
+                    if (observation.FadeMilliseconds != lease.Fade || observation.MapSpeedTicks != lease.Speed) LatchIssue("speed-changed");
+                    if (lease.ConfigurationId != observation.Ranking?.configuration_id || lease.TimelineId != observation.TimelineId) LatchIssue("rules-changed");
+                    if (!string.IsNullOrEmpty(observation.ValidationError)) LatchIssue("timing-validation: " + observation.ValidationError.Substring(0, Math.Min(270, observation.ValidationError.Length)));
+                }
                 observation.Context = lease;
                 if (publishedStep != observation.Step || publishedFade != observation.FadeMilliseconds || publishedSpeed != observation.MapSpeedTicks)
                 {
@@ -148,6 +172,11 @@ namespace Pal98Timer
                 Interlocked.Exchange(ref latest, observation);
                 if (observation.Finished || observation.Step == 0 && Interlocked.Exchange(ref publishedStart, observation.Token) != observation.Token) completions.Enqueue(observation);
             }
+        }
+        private void LatchIssue(string issue)
+        {
+            if (lease.Issues.Length >= 32 || lease.Issues.Contains(issue)) return;
+            lease = lease.Copy(); lease.Issues = lease.Issues.Concat(new[] { issue }).ToArray();
         }
         internal void Configure(CompetitionSettings requested, string replacementSecret = null)
         {
@@ -284,6 +313,7 @@ namespace Pal98Timer
             {
                 // Cancellation aborts HTTP first; only local queued evidence is drained.
                 DrainCompletions();
+                ownedTarget?.Dispose(); ownedTarget = null;
                 transport.Dispose();
             }
         }
@@ -306,22 +336,31 @@ namespace Pal98Timer
             nextLiveDue = DateTime.MinValue;
             nextQuery = DateTime.MinValue;
             if (!observation.Finished || completed.Contains(observation.Token)) return;
-            bool missingIdentity = !CompetitionProtocol.Digest(observation.DllHash) || string.IsNullOrEmpty(observation.GameVersion);
             var boundCredential = storage.Credential(contextSettings.Server);
+            var issues = new List<string>(bound.Issues);
+            if (!beganHere) issues.Add("start-evidence-missing");
+            if (observation.FadeMilliseconds != bound.Fade || observation.MapSpeedTicks != bound.Speed) issues.Add("speed-changed");
+            if (bound.ConfigurationId != observation.Ranking?.configuration_id || bound.TimelineId != observation.TimelineId) issues.Add("rules-changed");
+            if (!string.IsNullOrEmpty(observation.ValidationError)) issues.Add("timing-validation: " + observation.ValidationError.Substring(0, Math.Min(270, observation.ValidationError.Length)));
             var run = new CompetitionRun {
-                protocol = CompetitionProtocol.Online,
+                protocol = CompetitionProtocol.OnlineV2,
                 ranking = observation.Ranking?.Copy(), custom_competition_id = contextSettings.CustomCompetitionId,
-                gameplay = observation.Gameplay?.Copy(), hardcore = observation.Gameplay == null ? null : observation.Hardcore,
-                timeline_id = observation.Gameplay == null ? null : TimelineIdentity.Create(observation.Gameplay.rules_sha256, route, observation.Hardcore?.requested == true),
+                gameplay = observation.Gameplay?.Copy(), hardcore = observation.Hardcore,
+                // Legacy speed cores publish an opaque change token, not a
+                // timeline hash. Derive the same identity off the timing thread
+                // only when the actual rule facts are known.
+                timeline_id = CompetitionProtocol.Digest(observation.Gameplay?.rules_sha256) && observation.Hardcore != null ?
+                    TimelineIdentity.Create(observation.Gameplay.rules_sha256, route, observation.Hardcore.requested) : null,
                 run_id = contextRunId, hwid = boundCredential.Hwid, track_id = contextSettings.Track, ruleset_id = contextSettings.Ruleset,
                 route_sha256 = route, started_at = started.ToString("o"), finished_at = bound.FinishedAt.ToString("o"),
-                total_ms = observation.TotalMilliseconds, timer_version = typeof(CompetitionClient).Assembly.GetName().Version.ToString(4),
-                game_version = observation.GameVersion, pal_dll_sha256 = observation.DllHash,
+                total_ms = observation.TotalMilliseconds, timer_version = timerVersion,
+                game_version = string.IsNullOrEmpty(observation.GameVersion) ? null : observation.GameVersion,
+                pal_dll_sha256 = CompetitionProtocol.Digest(observation.DllHash) ? observation.DllHash : null,
+                observations = new CompetitionRunObservations { began_here = beganHere, finished = observation.Finished, issues = issues.Distinct(StringComparer.Ordinal).Take(32).ToArray(),
+                    initial_gameplay = bound.InitialGameplay, initial_ranking = bound.InitialRanking, initial_hardcore = bound.InitialHardcore },
                 splits = observation.Splits.Select(s => new CompetitionSplit { checkpoint_id = CompetitionProtocol.CheckpointId(s.checkpoint_id), elapsed_ms = s.elapsed_ms, status = s.status }).ToArray()
             };
-            string error = missingIdentity ? "通关记录已保存，等待本轮 DLL 身份核验后上传" : !beganHere ? "本轮在联机开启前已开始或为导入成绩，仅保留本地记录" :
-                observation.FadeMilliseconds != bound.Fade || observation.MapSpeedTicks != bound.Speed ? "本轮游戏速度发生变化，仅保留本地记录" :
-                (bound.ConfigurationId != observation.Ranking?.configuration_id || bound.TimelineId != observation.TimelineId || !string.IsNullOrEmpty(observation.ValidationError)) ? "本轮不符合既有计时规则，仅保留本地记录" : CompetitionProtocol.Validate(run);
+            string error = CompetitionProtocol.Validate(run);
             var item = new CompetitionPending { Settings = contextSettings.Copy(), Run = run,
                 Payload = CompetitionProtocol.SerializeRun(run), Rejected = error.Length != 0, LocalRejected = error.Length != 0, LastStatus = error, Token = observation.Token };
             if (error.Length == 0)
@@ -340,7 +379,7 @@ namespace Pal98Timer
             }
             storage.SavePending(item); // Commit the original bytes/run_id before first POST.
             pending.RemoveAll(p => p.Run.run_id == item.Run.run_id); pending.Add(item);
-            if (!missingIdentity) completed.Add(observation.Token);
+            completed.Add(observation.Token);
             SetStatus(error.Length == 0 ? "联机实时参考" : error);
         }
         private CompetitionReply Parse(CompetitionHttpResult response, CompetitionSettings expected)
@@ -365,7 +404,7 @@ namespace Pal98Timer
             if (epoch != Interlocked.Read(ref generation)) return false;
             var reply = Parse(response, cfg);
             if (reply != null)
-            { registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.Online) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply); return true; }
+            { registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply); return true; }
             registrationRejected = !response.Retryable && !response.Success;
             nextRegister = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             storage.LogNetwork("device-register-retry", response.Status);
@@ -390,7 +429,7 @@ namespace Pal98Timer
                         var status = CompetitionProtocol.Json().Deserialize<CompetitionAuthStatus>(response.Body);
                         if (status != null && status.protocol == CompetitionAuthProtocol.Name && status.scope == CompetitionProtocol.Scope && status.server_origin == cfg.Server &&
                             status.key_id == key && status.timer_exe_sha256 == exe && status.approved.HasValue)
-                        { approval.Approved = status.approved; approval.CandidateProtocol = status.candidate_registration_protocol;
+                        { approval.Approved = status.approved; approval.CandidateProtocol = status.candidate_registration_protocol; approval.CandidateProtocols = status.supported_candidate_protocols;
                             if (currentBuild) serverLiveProtocol = status.live_protocol;
                             approval.NextCheck = DateTime.UtcNow.AddMinutes(5); accepted = true; }
                     } catch { }
@@ -405,7 +444,9 @@ namespace Pal98Timer
         {
             string key = cfg.Server + "|" + CompetitionProtocol.Scope + "|" + identity.key_id + "|" + identity.timer_exe_sha256;
             Approval approval;
-            if (!approvals.TryGetValue(key, out approval) || approval.CandidateProtocol != CompetitionBuildRegistration.Protocol) return;
+            if (!approvals.TryGetValue(key, out approval) ||
+                approval.CandidateProtocol != CompetitionBuildRegistration.Protocol && approval.CandidateProtocol != CompetitionBuildRegistration.LegacyProtocol &&
+                approval.CandidateProtocols?.Any(p => p == CompetitionBuildRegistration.Protocol || p == CompetitionBuildRegistration.LegacyProtocol) != true) return;
             var provider = authentication as ICompetitionBuildRegistration;
             if (provider == null) return;
             CandidateAttempt attempt;
@@ -416,7 +457,8 @@ namespace Pal98Timer
             attempt.NextCheck = DateTime.UtcNow.AddSeconds(Math.Min(3600, 300 * (1 << Math.Min(4, attempt.Failures))));
             attempt.Failures++;
             var registration = provider.Registration();
-            if (registration == null || !registration.Matches(identity)) {
+            if (registration == null || !registration.Matches(identity) ||
+                registration.protocol != approval.CandidateProtocol && approval.CandidateProtocols?.Contains(registration.protocol) != true) {
                 storage.LogNetwork("build-candidate-local-unavailable", 0); return;
             }
             long epoch = Interlocked.Read(ref generation);
@@ -429,7 +471,7 @@ namespace Pal98Timer
             {
                 try {
                     var receipt = CompetitionProtocol.Json().Deserialize<CompetitionBuildReceipt>(response.Body);
-                    if (receipt != null && receipt.protocol == CompetitionBuildRegistration.Protocol &&
+                    if (receipt != null && receipt.protocol == registration.protocol &&
                         receipt.server_origin == cfg.Server && receipt.key_id == identity.key_id &&
                         receipt.timer_exe_sha256 == identity.timer_exe_sha256 &&
                         (receipt.status == "pending" || receipt.status == "approved"))
@@ -459,9 +501,9 @@ namespace Pal98Timer
         private async Task UploadOne()
         {
             var cfg = settings;
-            var item = pending.FirstOrDefault(p => !p.Rejected && p.Settings.Server == cfg.Server && p.Run.protocol == CompetitionProtocol.Online && p.NextAttemptUtc <= DateTime.UtcNow);
+            var item = pending.FirstOrDefault(p => !p.Rejected && p.Settings.Server == cfg.Server && (p.Run.protocol == CompetitionProtocol.Online || p.Run.protocol == CompetitionProtocol.OnlineV2) && p.NextAttemptUtc <= DateTime.UtcNow);
             if (item == null) return;
-            if (!serverSupportsV2) {
+            if (item.Run.protocol == CompetitionProtocol.OnlineV2 && !serverSupportsV2) {
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5); storage.SavePending(item);
                 storage.LogNetwork("awaiting-v2-server", 0); return;
             }

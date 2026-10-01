@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ExePath = "",
     [string]$PreviewPath = ""
 )
@@ -116,10 +116,10 @@ try {
     [Windows.Forms.Application]::DoEvents()
     [Dx9OverlayNativeTest]::SetForegroundWindow($hostForm.Handle) | Out-Null
 
-    $snapshotConstructor = $snapshotType.GetConstructors($binding) | Where-Object { $_.GetParameters().Count -eq 14 } | Select-Object -First 1
+    $snapshotConstructor = $snapshotType.GetConstructors($binding) | Where-Object { $_.GetParameters().Count -eq 19 } | Select-Object -First 1
     $snapshot = $snapshotConstructor.Invoke(@(
         $hostForm.Handle, "SimSun", "00:00:18.31", "0.00s", "00:00:14.89", "Bee0 Honey0 Fire0 Blood0",
-        3, $entry1, $entry2, $entry3, "", $false, $false, "0.8秒&快走速"
+        3, $entry1, $entry2, $entry3, "", $false, $false, "0.8秒&快走速", "", "", "", 123, "钱12345 道具68"
     ))
 
     $openProviderType = [AppDomain]::CurrentDomain.GetAssemblies() |
@@ -209,6 +209,10 @@ finally {
     }
     [Environment]::CurrentDirectory = $originalDirectory
     if ([IO.Directory]::Exists($tempDirectory)) {
-        [IO.Directory]::Delete($tempDirectory, $true)
+        $resolvedTestPath = [IO.Path]::GetFullPath($tempDirectory)
+        if (!$resolvedTestPath.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Unsafe test cleanup path'
+        }
+        [IO.Directory]::Delete($resolvedTestPath, $true)
     }
 }

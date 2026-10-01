@@ -1,3 +1,5 @@
+﻿> 2026-10-01 更新：3.37.7.13 已拆出联机 DLL，采用 Online.v2 成绩与 Candidate.v2 组合登记；原文保留对应旧版本合同。当前更新和审核行为见 [联机模块与审核](TIMER_ONLINE_MODULE_V1.md)。
+
 # 比赛上传的独立构建激活
 
 > 历史认证说明：下文对应 3.37.7.5 及之前的 `PAL98.TimerUploadAuth.v1`。3.37.7.6 使用 `PAL98.TimerUploadAuth.v2`，当前边界见 [联机与排名](TIMER_ONLINE_3.37.7.6.md)。旧签封保留原字节，不转换或补签到新榜。

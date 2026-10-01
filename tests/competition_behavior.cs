@@ -83,7 +83,8 @@ internal static class CompetitionBehavior
                     return new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name,
                         scope = CompetitionProtocol.Scope, server_origin = new Uri(url).GetLeftPart(UriPartial.Authority), key_id = authQuery["key_id"],
                         timer_exe_sha256 = authQuery["timer_exe_sha256"], approved = Approved && authQuery["timer_exe_sha256"] != DeniedBuild,
-                        candidate_registration_protocol = SupportCandidates ? CompetitionBuildRegistration.Protocol : null }) };
+                        candidate_registration_protocol = SupportCandidates ? CompetitionBuildRegistration.LegacyProtocol : null,
+                        supported_candidate_protocols = SupportCandidates ? new[] { CompetitionBuildRegistration.LegacyProtocol, CompetitionBuildRegistration.Protocol } : null }) };
                 }
                 if (url.EndsWith("/auth/candidates")) {
                     Candidates++;
@@ -117,7 +118,7 @@ internal static class CompetitionBehavior
             }
             finally { Interlocked.Decrement(ref Active); }
         }
-        CompetitionReply Envelope() { return new CompetitionReply { supported_run_protocols = V2 ? new[] { CompetitionProtocol.Online } : null, protocol = CompetitionProtocol.Online, scope=CompetitionProtocol.Scope,published=Published,title="测试日常榜", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
+        CompetitionReply Envelope() { return new CompetitionReply { supported_run_protocols = V2 ? new[] { CompetitionProtocol.Online, CompetitionProtocol.OnlineV2 } : new[] { CompetitionProtocol.Online }, protocol = CompetitionProtocol.Online, scope=CompetitionProtocol.Scope,published=Published,title="测试日常榜", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
         CompetitionHttpResult Response(string route, string node, string configuration = null, string elapsed = null, string board = null, string custom = null)
         {
             var reply = Envelope(); reply.board = board; reply.configuration_id = configuration; reply.custom_competition_id=custom; reply.route_sha256 = route;
@@ -146,7 +147,7 @@ internal static class CompetitionBehavior
             Check(fake.Posts == posts + 1, "repeated completion not duplicated");
         }
         var uploads = fake.Payloads.Select(s => CompetitionProtocol.Json().Deserialize<CompetitionRun>(s)).ToArray();
-        Check(uploads.All(u=>u.protocol==CompetitionProtocol.Online && u.track_id==null) && uploads.Select(u=>u.ranking.configuration_id).Distinct().Count()==4, "four daily configurations do not use event tracks");
+        Check(uploads.All(u=>u.protocol==CompetitionProtocol.OnlineV2 && u.track_id==null) && uploads.Select(u=>u.ranking.configuration_id).Distinct().Count()==4, "four daily configurations do not use event tracks");
         Check(uploads.All(u => u.total_ms == 1100 && u.splits.Last().elapsed_ms == 1200), "main and final split preserved independently");
         Check(fake.MaxActive == 1, "one network request at a time");
         await client.CloseAsync();
@@ -186,16 +187,20 @@ internal static class CompetitionBehavior
         await Until(() => fake.Registers > 0, "midrun fixture ready");
         var middle = Observation("middle", 1); middle.BeganHere = false; client.Publish(middle); await Task.Delay(350);
         var end = Observation("middle", 2); end.BeganHere = false; client.Publish(end);
-        await Until(() => store.LoadPending(Config()).Any(p => p.LocalRejected), "midrun enabling never uploads partial run");
-        client.Retry(); await Task.Delay(350); Check(fake.Posts == 0, "retry cannot clear local ineligibility"); await client.CloseAsync();
+        await Until(() => fake.Posts == 1, "midrun completion is uploaded for server review");
+        var late = CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
+        Check(!late.observations.began_here && late.observations.issues.Contains("start-evidence-missing"), "late start is explicit, not silently certified");
+        client.Retry(); await Task.Delay(350); Check(fake.Posts == 1, "retry does not duplicate accepted review record"); await client.CloseAsync();
 
         store = Store("lateidentity"); fake = new Fake(); client = new CompetitionClient(store, fake, new FakeAuth()); client.Configure(Config());
         await Until(() => fake.Registers > 0, "late identity fixture ready"); client.Publish(Observation("lateidentity", 0));
         var missing = Observation("lateidentity", 2); missing.DllHash = ""; missing.GameVersion = ""; client.Publish(missing);
-        await Until(() => store.LoadPending(Config()).Any(p => p.LocalRejected), "missing DLL identity completion retained locally");
-        string waitingId = store.LoadPending(Config()).Single().Run.run_id;
-        client.Publish(Observation("lateidentity", 2)); await Until(() => fake.Posts == 1, "identity completion automatically releases pending result");
-        Check(CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single()).run_id == waitingId, "identity retry retains original run id"); await client.CloseAsync();
+        await Until(() => fake.Posts == 1, "unknown DLL identity uploaded as unknown for review");
+        string waitingPayload = fake.Payloads.Single();
+        var unknown = CompetitionProtocol.Json().Deserialize<CompetitionRun>(waitingPayload);
+        Check(unknown.pal_dll_sha256 == null && unknown.game_version == null, "unknown identity never fabricated");
+        client.Publish(Observation("lateidentity", 2)); await Task.Delay(550);
+        Check(fake.Posts == 1 && fake.Payloads.Single() == waitingPayload, "late facts never rewrite original signed completion"); await client.CloseAsync();
 
         store = Store("stale"); fake = new Fake(); client = new CompetitionClient(store, fake, new FakeAuth()); client.Configure(Config());
         await Until(() => fake.Registers > 0, "stale fixture ready"); client.Publish(Observation("before", 0)); await Task.Delay(350);
@@ -257,9 +262,29 @@ internal static class CompetitionBehavior
         await Until(()=>client.View.Reply?.board=="hardcore"&&client.View.Reply.node!=null,"hardcore response bound to selected board");
         client.Publish(AutoObservation("v2",2,true));await Until(()=>fake.Posts==1,"v2 completion uploaded without pre-start identity race");
         var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
-        Check(run.protocol==CompetitionProtocol.Online&&run.hardcore.run_verified&&run.hardcore.rules_version==4,"v2 signed body carries continuous hardcore evidence");
+        Check(run.protocol==CompetitionProtocol.OnlineV2&&run.hardcore.run_verified&&run.hardcore.rules_version==4,"v2 signed body carries continuous hardcore evidence");
         Check(run.timeline_id==AutoObservation("v2",2,true).TimelineId&&CompetitionProtocol.Validate(run)=="","v2 identity formula matches signed route");
-        run.hardcore.requested=false;Check(CompetitionProtocol.Validate(run).Length>0,"changed hardcore classification invalidates body");
+        run.hardcore.requested=false;Check(CompetitionProtocol.Validate(run)=="","hardcore eligibility is server-side while changed body still needs a new valid seal");
+        await client.CloseAsync();
+
+        store=Store("legacy-token");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
+        await Until(()=>fake.Registers>0,"legacy speed core ready");
+        var legacyStart=AutoObservation("legacy-token",0);legacyStart.TimelineId=legacyStart.Gameplay.rules_sha256+"|False";
+        var legacyFinish=AutoObservation("legacy-token",2);legacyFinish.TimelineId=legacyStart.TimelineId;
+        client.Publish(legacyStart);client.Publish(legacyFinish);
+        await Until(()=>fake.Posts==1,"legacy speed core uses background timeline derivation");
+        var legacyRun=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
+        Check(legacyRun.timeline_id==AutoObservation("legacy-token",2).TimelineId && !legacyRun.observations.issues.Any(),"legacy internal change token never becomes a missing timeline");
+        await client.CloseAsync();
+
+        store=Store("transient-rule-change");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
+        await Until(()=>fake.Registers>0,"transient change fixture ready");
+        client.Publish(AutoObservation("transient",0));
+        var transient=AutoObservation("transient",1);transient.FadeMilliseconds=800;transient.TimelineId=new string('b',64);client.Publish(transient);
+        client.Publish(AutoObservation("transient",2));
+        await Until(()=>fake.Posts==1,"rules restored before finish still upload for review");
+        var transientRun=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
+        Check(transientRun.observations.issues.Contains("rules-changed") && transientRun.observations.issues.Contains("speed-changed"),"intermediate changes remain latched after settings return");
         await client.CloseAsync();
 
         store=Store("old-v2-server");fake=new Fake{V2=false};auth=new FakeAuth();client=new CompetitionClient(store,fake,auth);client.Configure(Config());
@@ -273,8 +298,10 @@ internal static class CompetitionBehavior
         store=Store("v2-rule-change");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
         await Until(()=>fake.Registers>0,"rule change fixture ready");client.Publish(AutoObservation("rules",0));
         var changed=AutoObservation("rules",2,true);client.Publish(changed);
-        await Until(()=>store.LoadPending(Config()).Any(),"changed identity retains local record");
-        Check(store.LoadPending(Config()).Single().LocalRejected&&fake.Posts==0,"mid-run normal to hardcore cannot claim either board");await client.CloseAsync();
+        await Until(()=>fake.Posts==1,"changed identity is uploaded for review");
+        var changedRun=CompetitionProtocol.Json().Deserialize<CompetitionRun>(fake.Payloads.Single());
+        Check(changedRun.observations.issues.Contains("rules-changed") && !changedRun.observations.initial_hardcore.requested && changedRun.hardcore.requested,
+            "mid-run mode change retains initial and final evidence for the server");await client.CloseAsync();
 
         store=Store("board-stale");fake=new Fake{V2=true};client=new CompetitionClient(store,fake,new FakeAuth());client.Configure(Config());
         await Until(()=>fake.Registers>0,"board fixture ready");client.Publish(AutoObservation("board",0));await Task.Delay(350);
@@ -516,6 +543,7 @@ internal static class CompetitionBehavior
             signature_base64 = Convert.ToBase64String(new byte[256]),
             build = new CompetitionBuildDescriptor { protocol = identity.protocol, key_id = identity.key_id,
                 exe_sha256 = identity.timer_exe_sha256, timer_version = identity.timer_version,
+                online_component_sha256 = new string('e',64), online_component_version = "1.0.0.0", online_api_version = 1,
                 component_sha256 = identity.component_sha256, public_key_pem = "-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n" }
         };
     }

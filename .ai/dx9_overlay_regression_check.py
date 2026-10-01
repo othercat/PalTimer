@@ -249,10 +249,10 @@ def main() -> int:
             "Dx9Overlay" not in path.read_text(encoding="utf-8-sig")
             for path in OTHER_PAL98_CORES
         ),
-        "version is 3.37.7 everywhere": (
+        "display version is 3.37.7 and assembly identity is 3.37.7.17": (
             'public const string CurrentVersion = "3.37.7";' in gform
-            and '[assembly: AssemblyVersion("3.37.7.12")]' in assembly
-            and '[assembly: AssemblyFileVersion("3.37.7.12")]' in assembly
+            and '[assembly: AssemblyVersion("3.37.7.17")]' in assembly
+            and '[assembly: AssemblyFileVersion("3.37.7.17")]' in assembly
         ),
     }
 

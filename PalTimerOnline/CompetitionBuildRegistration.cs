@@ -20,11 +20,15 @@ namespace Pal98Timer
         public string timer_version { get; set; }
         public string component_sha256 { get; set; }
         public string public_key_pem { get; set; }
+        public string online_component_sha256 { get; set; }
+        public string online_component_version { get; set; }
+        public int? online_api_version { get; set; }
     }
 
     internal sealed class CompetitionBuildRegistration
     {
-        internal const string Protocol = "PAL98.TimerBuildCandidate.v1";
+        internal const string Protocol = "PAL98.TimerBuildCandidate.v2";
+        internal const string LegacyProtocol = "PAL98.TimerBuildCandidate.v1";
         internal const string FileName = "PalCompetitionRegistration.public.json";
         public string protocol { get; set; }
         public string publisher_id { get; set; }
@@ -33,13 +37,16 @@ namespace Pal98Timer
 
         internal bool Matches(CompetitionAuthIdentity identity)
         {
-            if (identity == null || !identity.Valid || protocol != Protocol || !CompetitionProtocol.Digest(publisher_id) ||
+            if (identity == null || !identity.Valid || (protocol != Protocol && protocol != LegacyProtocol) || !CompetitionProtocol.Digest(publisher_id) ||
                 build == null || build.protocol != CompetitionAuthProtocol.Name ||
                 build.key_id != identity.key_id || build.exe_sha256 != identity.timer_exe_sha256 ||
                 build.timer_version != identity.timer_version || build.component_sha256 != identity.component_sha256 ||
                 build.public_key_pem == null || build.public_key_pem.Length > 4096 ||
                 !build.public_key_pem.StartsWith("-----BEGIN PUBLIC KEY-----", StringComparison.Ordinal) ||
                 signature_base64 == null || !Regex.IsMatch(signature_base64, "^[A-Za-z0-9+/]{342}==$")) return false;
+            if (protocol == Protocol && (!CompetitionProtocol.Digest(build.online_component_sha256) ||
+                build.online_component_version == null || !Version.TryParse(build.online_component_version, out var version) ||
+                version.Revision < 0 || build.online_api_version != 1)) return false;
             try { return Convert.FromBase64String(signature_base64).Length == 256; }
             catch { return false; }
         }

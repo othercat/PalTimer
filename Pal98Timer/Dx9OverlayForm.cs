@@ -1,4 +1,4 @@
-using HFrame.OS;
+﻿using HFrame.OS;
 using System;
 using System.Drawing;
 using System.Drawing.Text;
@@ -94,6 +94,16 @@ namespace Pal98Timer
             Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
             bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus,
             string hardcoreDevice, string integrityStatus, int cloudId)
+            : this(gameWindowHandle, fontFamily, mainTimer, battleTimer, idleTimer, resources, manualPauseCount,
+                timelineFirst, timelineSecond, timelineThird, state, isAntiCheatPaused, isPaused,
+                timingModeLabel, hardcoreStatus, hardcoreDevice, integrityStatus, cloudId, "") { }
+
+        public Dx9OverlaySnapshot(
+            IntPtr gameWindowHandle, string fontFamily, string mainTimer, string battleTimer,
+            string idleTimer, string resources, int manualPauseCount, Dx9OverlayTimelineEntry timelineFirst,
+            Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
+            bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus,
+            string hardcoreDevice, string integrityStatus, int cloudId, string pluginText)
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -106,9 +116,21 @@ namespace Pal98Timer
             TimelineSecond = timelineSecond;
             TimelineThird = timelineThird;
             State = state ?? "";
-            TimingModeLabel = timingModeLabel ?? "";
-            FooterText = cloudId >= 0 ? "云ID:" + cloudId.ToString(CultureInfo.InvariantCulture) +
-                (TimingModeLabel.Length == 0 ? "" : " " + TimingModeLabel) : TimingModeLabel;
+            TimingModeLabel = (timingModeLabel ?? "").Trim();
+            // BR plug-ins may pad their main-window output with full-width spaces.
+            // Use their cached display value without introducing another Flush/read.
+            StringBuilder footer = new StringBuilder((pluginText ?? "").Trim());
+            if (cloudId >= 0)
+            {
+                if (footer.Length != 0) footer.Append(' ');
+                footer.Append("云ID:").Append(cloudId.ToString(CultureInfo.InvariantCulture));
+            }
+            if (TimingModeLabel.Length != 0)
+            {
+                if (footer.Length != 0) footer.Append(' ');
+                footer.Append(TimingModeLabel);
+            }
+            FooterText = footer.ToString();
             HardcoreStatus = hardcoreStatus ?? "";
             HardcoreDevice = hardcoreDevice ?? "";
             IntegrityStatus = integrityStatus ?? "";
@@ -519,6 +541,11 @@ namespace Pal98Timer
         private bool Resizing;
         private Point DragStartScreen;
         private Rectangle DragStartBounds;
+        private string MeasuredFooterText;
+        private string MeasuredFooterFontFamily;
+        private float MeasuredFooterFontSize;
+        private FontStyle MeasuredFooterFontStyle;
+        private float MeasuredFooterHeight;
 
         public event EventHandler EditModeChanged;
         public event Action<Exception> LayoutSaveFailed;
@@ -724,8 +751,11 @@ namespace Pal98Timer
                 DrawTimelineEntry(e.Graphics, snapshot.TimelineThird, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
 
                 y += infoHeight + rowGap;
-                row = new RectangleF(margin, y, contentWidth, infoHeight);
-                DrawOutlinedText(e.Graphics, snapshot.FooterText, smallFont, primaryBrush, shadowBrush, row, rightFormat, scale);
+                float footerHeight = GetFooterHeightLogicalPixels() * scale;
+                row = new RectangleF(margin, y, contentWidth, footerHeight);
+                using (StringFormat footerFormat = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Near })
+                    DrawOutlinedText(e.Graphics, snapshot.FooterText, smallFont, primaryBrush, shadowBrush, row, footerFormat, scale);
+                y += footerHeight - infoHeight;
 
                 if (snapshot.HardcoreStatus.Length != 0)
                 {
@@ -1115,9 +1145,37 @@ namespace Pal98Timer
             float timerHeight = GetTimerHeightLogicalPixels();
             float infoHeight = GetInfoHeightLogicalPixels();
             float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 5.0F * (infoHeight + 2.0F) + 9.0F;
+            contentHeight += GetFooterHeightLogicalPixels() - infoHeight;
             if (CurrentSnapshot != null && CurrentSnapshot.HardcoreStatus.Length != 0) contentHeight += 2.0F * (infoHeight + 2.0F);
             if (CurrentSnapshot != null && CurrentSnapshot.IntegrityStatus.Length != 0) contentHeight += GetIntegrityRows(CurrentSnapshot.IntegrityStatus) * (infoHeight + 2.0F);
             return contentHeight + (EditMode ? EditHeaderLogicalPixels : 0.0F);
+        }
+
+        private float GetFooterHeightLogicalPixels()
+        {
+            float minimumHeight = GetInfoHeightLogicalPixels();
+            if (CurrentSnapshot == null || CurrentSnapshot.FooterText.Length == 0) return minimumHeight;
+            string family = string.IsNullOrEmpty(LayoutSettings.FontFamily) ? CurrentSnapshot.FontFamily : LayoutSettings.FontFamily;
+            if (MeasuredFooterText != CurrentSnapshot.FooterText || MeasuredFooterFontFamily != family ||
+                MeasuredFooterFontSize != LayoutSettings.FontSize || MeasuredFooterFontStyle != LayoutSettings.FontStyle)
+            {
+                // Layout only changes with display text/font, not with every timer tick.
+                // Measure using the same font and wrapping as OnPaint, including GDI+ padding.
+                using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero))
+                using (Font font = new Font(family, LayoutSettings.FontSize, LayoutSettings.FontStyle, GraphicsUnit.Point))
+                using (StringFormat format = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Near })
+                {
+                    graphics.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+                    MeasuredFooterHeight = Math.Max(minimumHeight,
+                        (float)Math.Ceiling(graphics.MeasureString(CurrentSnapshot.FooterText, font,
+                            new SizeF(OverlayWidthLogicalPixels - 14.0F, float.MaxValue), format).Height) + 2.0F);
+                }
+                MeasuredFooterText = CurrentSnapshot.FooterText;
+                MeasuredFooterFontFamily = family;
+                MeasuredFooterFontSize = LayoutSettings.FontSize;
+                MeasuredFooterFontStyle = LayoutSettings.FontStyle;
+            }
+            return Math.Max(minimumHeight, MeasuredFooterHeight);
         }
 
         private int GetIntegrityRows(string text)

@@ -36,6 +36,8 @@ namespace Pal98Timer
         private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
+        private PalLiveProcessIdentity attachedProcessIdentity;
+        private string attachedExecutablePath;
 
         private PTimer ST = new PTimer();
         private PTimer LT = new PTimer();
@@ -691,13 +693,16 @@ namespace Pal98Timer
         {
             if (GetPalHandle())
             {
+                UpdatePalRestartIdle(ST, _IsFirstStarted, _HasGameStart);
                 runtimeIntegrity.Observe(PalProcess);
                 CopyRPGIfHas();
 
                 JudgePause();
+                bool gameDataReady = false;
                 try
                 {
                     FlushGameObject();
+                    gameDataReady = true;
                     WaterSpiritPearlSplit.Observe(
                         GameObj.Area,
                         GameObj.rX,
@@ -744,7 +749,7 @@ namespace Pal98Timer
                     CheckCheatEnd();
                 }
 
-                if (HasStartGame())
+                if (gameDataReady && HasStartGame())
                 {
                     ST.Stop();
                     if (!_IsFirstStarted)
@@ -776,6 +781,7 @@ namespace Pal98Timer
                 else
                 {
                     MT.Stop();
+                    UpdatePalRestartIdle(ST, _IsFirstStarted, _HasGameStart);
                 }
             }
             else
@@ -783,10 +789,7 @@ namespace Pal98Timer
                 _HasGameStart = false;
                 MT.Stop();
 
-                if (_IsFirstStarted)
-                {
-                    ST.Start();
-                }
+                UpdatePalRestartIdle(ST, _IsFirstStarted, false);
             }
 
             PreData();
@@ -818,10 +821,12 @@ namespace Pal98Timer
             Process[] res = Process.GetProcessesByName("Pal");
 
             // 过滤已退出的进程
-            var aliveProcesses = res.Where(p => {
-                try { return !p.HasExited; }
-                catch { return true; }
-            }).ToArray();
+            var identities = new Dictionary<int, PalLiveProcessIdentity>();
+            foreach (var process in res) {
+                var identity = PalLiveProcessIdentity.Read(process);
+                if (identity != null && (attachedExecutablePath == null || identity.SamePath(attachedExecutablePath))) identities[process.Id] = identity;
+            }
+            var aliveProcesses = res.Where(p => identities.ContainsKey(p.Id)).ToArray();
 
             // 游戏关闭后的静默等待期
             if (_GameWasRunning && aliveProcesses.Length == 0)
@@ -888,6 +893,9 @@ namespace Pal98Timer
                     }
 
                     PalProcess = res[0];
+                    attachedProcessIdentity = identities[res[0].Id];
+                    attachedExecutablePath = attachedProcessIdentity.ExecutablePath;
+                    _HasGameStart = false;
                     runtimeIntegrity?.SelectTarget(PalProcess);
                     GameWindowHandle = tempHandle;
                     PID = PalProcess.Id;
@@ -898,7 +906,9 @@ namespace Pal98Timer
                 }
                 else
                 {
-                    if (PID == res[0].Id)
+                    if (PID == res[0].Id && attachedProcessIdentity != null &&
+                        attachedProcessIdentity.SameInstance(identities[res[0].Id]) &&
+                        attachedProcessIdentity.SameInstance(PalLiveProcessIdentity.ReadHandle(PalHandle, PID)))
                     {
                         // 检查进程是否真的还在运行
                         try
@@ -997,6 +1007,9 @@ namespace Pal98Timer
         /// </summary>
         private void ClearGameState()
         {
+            _HasGameStart = false; // Never reuse a previous process generation's game-start flag.
+            attachedProcessIdentity = null;
+            PalLiveProcessIdentity.Close(PalHandle);
             WaterSpiritPearlSplit.Detach();
             PalHandle = IntPtr.Zero;
             GameWindowHandle = IntPtr.Zero;
