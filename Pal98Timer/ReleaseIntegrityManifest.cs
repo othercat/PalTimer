@@ -205,6 +205,12 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            // v1.71 native repair: Anu dying dialogue in the scripted automatic Stone Elder battle.
+            if (size == 2156032 && string.Equals(hash, "a15d3a922103ea8a4154106d93f1f73414ab8a869277943b0925968025899b48", StringComparison.OrdinalIgnoreCase)) return "1.7.1.2";
+            // v1.71 display revision: clean hardcore status and local device suffix.
+            if (size == 2153472 && string.Equals(hash, "5dd696bc4fe887cbbfac037a63b91d0e2d0767a81ede590e3b792b9947912f8f", StringComparison.OrdinalIgnoreCase)) return "1.7.1.1";
+            // Owner-approved v1.71 hardcore display / local speed and default numpad Enter fix.
+            if (size == 2149376 && string.Equals(hash, "468eb5f8a2686cdcc6fce519819536806937faa69718603ce99834d183d4d6fb", StringComparison.OrdinalIgnoreCase)) return "1.7.1.0";
             // Owner-approved v1.70 release; the embedded baseline is bound to this exact DLL/MAP build.
             if (size == 2144256 && string.Equals(hash, "159fe8a10cbcbf7f544e8daeb2ca544adabe03f52f46028d3ba5b1efa86bb703", StringComparison.OrdinalIgnoreCase)) return "1.7.0.0";
             if (size == 2016256 && string.Equals(hash, "b16a613b73d1d7ddd6cad12ddef5262c123908f50ba2fa3dcbaed51dd0708700", StringComparison.OrdinalIgnoreCase)) return "1.6.8.10";
