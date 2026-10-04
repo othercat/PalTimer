@@ -1,1 +1,0 @@
-../../../../../../agent-setting/projects/Pal98Works/goals/PAL98_EDITOR_WEB_LOCAL_BRIDGE_V1/repo-bindings/PalTimer.md
