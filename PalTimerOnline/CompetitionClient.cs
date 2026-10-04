@@ -49,6 +49,7 @@ namespace Pal98Timer
         private readonly bool gameManaged;
         private readonly Func<Process, CompetitionSettings> readGameSettings;
         private volatile Process observedGame;
+        private volatile string gameSettingsError = "";
         private long gameGeneration;
         private bool observedGameOnce;
         private readonly string timerVersion;
@@ -70,6 +71,9 @@ namespace Pal98Timer
         internal bool Enabled { get { return enabled && (!gameManaged || observedGame != null); } }
         internal string ActivationText { get { return enabled ? activationText : "仅本地保存"; } }
         internal bool DeviceIdentityReady { get { return deviceIdentityReady; } }
+        // Configuration errors belong to the settings window, never the timing
+        // gate, title, or OBS ranking output. Do not disguise them as disabled.
+        internal string GameSettingsError { get { return gameSettingsError; } }
         internal void ObserveTarget(int pid, long generation)
         {
             long request = Interlocked.Increment(ref requestedTarget);
@@ -84,7 +88,7 @@ namespace Pal98Timer
         internal void ObserveGame(Process process)
         {
             if (!gameManaged || observedGameOnce && ReferenceEquals(observedGame, process)) return;
-            observedGameOnce = true; observedGame = process;
+            observedGameOnce = true; observedGame = process; gameSettingsError = "";
             long epoch = Interlocked.Increment(ref gameGeneration);
             if (process == null) {
                 // Completed records retain their authorized destination and may
@@ -96,12 +100,18 @@ namespace Pal98Timer
             enabled = false; Interlocked.Increment(ref generation);
             commands.Enqueue(() => {
                 if (epoch != Interlocked.Read(ref gameGeneration)) return;
-                CompetitionSettings next;
+                CompetitionSettings next; string error = "";
                 try { next = readGameSettings(process); }
-                catch { next = new CompetitionSettings(); storage.LogNetwork("game-upload-settings-unavailable", 0); }
+                catch (Exception ex) {
+                    next = new CompetitionSettings();
+                    error = ex is System.IO.InvalidDataException ? ex.Message : "联机配置无法读取，请检查游戏目录的访问权限及配套组件。";
+                    error = "联机配置读取失败：" + error.Substring(0, Math.Min(512, error.Length));
+                    storage.LogNetwork("game-upload-settings-unavailable", 0);
+                }
                 if (epoch != Interlocked.Read(ref gameGeneration)) return;
                 next.CopyAppearance(settings);
                 ApplyConfiguration(next, null, epoch);
+                if (epoch == Interlocked.Read(ref gameGeneration)) gameSettingsError = error;
             });
         }
         internal void ConfigureAppearance(CompetitionSettings requested, string replacementSecret = null)

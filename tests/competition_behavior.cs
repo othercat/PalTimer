@@ -425,6 +425,29 @@ internal static class CompetitionBehavior
         Check(client.View.Reply == null && client.Settings.OverlayColor == "#FF8844", "target switch clears rankings but retains personal layout");
         await client.CloseAsync(); gameA.Dispose(); gameB.Dispose();
 
+        fake = new Fake(); int failedReads = 0; bool failRead = true;
+        client = new CompetitionClient(Store("managed-read-error"), fake, new FakeAuth(), true, process => {
+            Interlocked.Increment(ref failedReads);
+            if (failRead) throw new InvalidDataException("fixture lock version mismatch");
+            return parsed.Copy();
+        });
+        using (var failedGame = new Process()) using (var recoveredGame = new Process()) {
+            client.ObserveGame(failedGame);
+            await Until(() => client.GameSettingsError.Contains("fixture lock version mismatch"), "configuration read rejection is visible in settings");
+            Check(!client.Enabled && fake.Registers == 0 && client.LiveCaption == "", "invalid lock never grants network authority or adds title feedback");
+            for (int i = 0; i < 100; i++) client.ObserveGame(failedGame);
+            await Task.Delay(350);
+            Check(failedReads == 1, "invalid configuration is not rescanned each timing poll");
+            client.ConfigureAppearance(client.Settings);
+            await Task.Delay(350);
+            Check(client.GameSettingsError.Length > 0 && !client.Enabled, "appearance save cannot hide configuration failure or enable upload");
+            failRead = false; client.ObserveGame(recoveredGame);
+            await Until(() => client.Enabled && fake.Registers > 0 && client.GameSettingsError == "", "valid new target clears previous configuration error");
+            client.ObserveGame(null);
+            Check(client.GameSettingsError == "", "detach does not retain stale configuration error");
+        }
+        await client.CloseAsync();
+
         fake = new Fake(); store = Store("managed-exit");
         client = new CompetitionClient(store, fake, new FakeAuth(), true, process => parsed.Copy());
         using (var game = new Process()) {

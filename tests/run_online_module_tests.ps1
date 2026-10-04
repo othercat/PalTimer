@@ -1,20 +1,22 @@
-param([Parameter(Mandatory=$true)][string]$AuthDirectory)
+param([Parameter(Mandatory=$true)][string]$AuthDirectory,
+    [string]$TimerDirectory = '', [string]$OnlineDll = '')
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $out=Join-Path $repo ('artifacts/online-module-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-$runtime=Join-Path $repo 'Pal98Timer/bin/x64/Release'
+$runtime=if($TimerDirectory){[IO.Path]::GetFullPath($TimerDirectory)}else{Join-Path $repo 'Pal98Timer/bin/x64/Release'}
+if(!$OnlineDll){$OnlineDll=Join-Path $repo 'PalTimerOnline/bin/x64/Release/PalTimerOnline.dll'}
 $valid=Join-Path $out 'valid'
 [void][IO.Directory]::CreateDirectory($valid)
 Get-ChildItem -LiteralPath $runtime -File -Filter '*.dll' | Copy-Item -Destination $valid
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Destination $valid
-Copy-Item -LiteralPath (Join-Path $repo 'PalTimerOnline/bin/x64/Release/PalTimerOnline.dll') -Destination $valid
+Copy-Item -LiteralPath $OnlineDll -Destination $valid
 foreach($name in @('PalCompetitionAuth.dll','PalCompetitionRegistration.public.json')) {
     Copy-Item -LiteralPath (Join-Path $AuthDirectory $name) -Destination $valid
 }
 $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $csc=& $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild/**/Bin/Roslyn/csc.exe' | Select-Object -First 1
 $probe=Join-Path $valid 'OnlineModuleLoaderBehavior.exe'
-& $csc /nologo /target:exe /platform:x64 "/out:$probe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll "/reference:$valid/Pal98Timer.exe" (Join-Path $PSScriptRoot 'online_module_loader_behavior.cs') *> (Join-Path $out 'build.log')
+& $csc /nologo /noconfig /target:exe /platform:x64 "/out:$probe" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll "/reference:$valid/System.Web.Script.Serialization.dll" "/reference:$valid/Pal98Timer.exe" (Join-Path $PSScriptRoot 'online_module_loader_behavior.cs') *> (Join-Path $out 'build.log')
 if($LASTEXITCODE){throw "Probe build failed: $out"}
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($probe+'.config')
 foreach($case in @('valid','missing','online-changed','auth-changed','exe-changed','signature-changed','wrong-api')) {

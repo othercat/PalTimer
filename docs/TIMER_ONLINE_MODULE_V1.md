@@ -1,5 +1,13 @@
 # 联机模块与成绩审核（3.37.7.13）
 
+## 2026-10-04：1.0.0.1 锁配置兼容修复
+
+EXE 继续使用 3.37.7.17 原字节，SHA-256 `e69e0c8625812532b54faeb1f849fe822e64fff9afb8aa3aa44bc0fc1fb3f286`。更新 `PalTimerOnline.dll`（1.0.0.1）、匹配的 `PalCompetitionAuth.dll` 和 `PalCompetitionRegistration.public.json` 三件套。原云 ID 的 EXE 激活不变；独立联机后台仍须批准新的组件组合。已信任的发布者公钥无需重新登记。
+
+原因：联机工程链接了 `TournamentLockInfoReader.cs`，原包却保留了 1.0.0.0 旧二进制。EXE 已支持 v1.71 锁，联机组件仍拒绝同一份锁，随后被笼统显示为“联机未开启”。当前修复沿用签名、快照、资源身份和版本组合校验，不通过忽略锁或读取未签名文件来启用联机。失败原因仅在设置窗口显示；普通关闭联机、标题、OBS 和本地计时行为保持。
+
+发布验证必须覆盖实际配套二进制：`tests/run_online_module_tests.ps1 -TimerDirectory <冻结计时器目录> -OnlineDll <候选联机DLL> -AuthDirectory <配套认证目录>`。检查 v1.68／v1.70／v1.71 有效锁、损坏签名、资源不符、混合／未知版本、旧锁无服务器快照以及未锁配置只参与日常榜。不能只测试 EXE 内的锁读取器或用重新编译源码的单测代替交付 DLL 验证。
+
 显示版本仍为 3.37.7。EXE 文件版本为 3.37.7.13，首版 `PalTimerOnline.dll` 为 1.0.0.0，宿主接口为 API 1。本次不修改 PAL.dll、配置工具、PalCloudLib.dll 或旧最佳线。
 
 ## 模块边界

@@ -104,13 +104,14 @@ namespace Pal98Timer
         private void UpdateStatus()
         {
             var cfg = client.Settings; var value = client.View;
-            source.Text = "联机设置由游戏配置工具的“服务器上传配置”页面管理。\n" + (cfg.Enabled
+            source.Text = "联机设置由游戏配置工具的“服务器上传配置”页面管理。\n" + (client.GameSettingsError.Length != 0 ? client.GameSettingsError : cfg.Enabled
                 ? cfg.Server + "  " + (cfg.CustomCompetitionId == null ? "日常排名" : "自定义比赛：" + cfg.CustomCompetitionId) : "当前游戏未开启联机，或尚未连接游戏。");
             hwid.Text = value.Hwid.Length != 0 ? "设备标识：" + value.Hwid : client.DeviceIdentityReady
                 ? "设备标识：本机身份暂不可读取，请重开计时器后重试。" : "设备标识：正在本机读取…";
             copyDeviceId.Enabled = value.Hwid.Length != 0;
             activation.Text = client.ActivationText;
             status.Text = client.LiveDetail;
+            if (client.GameSettingsError.Length != 0) status.Text = client.GameSettingsError;
             if (value.Status.StartsWith("比赛设置未能保存", StringComparison.Ordinal) || value.Status.StartsWith("本机比赛设置或凭据不可读取", StringComparison.Ordinal) || value.Status.StartsWith("比赛记录未能落盘", StringComparison.Ordinal)) status.Text = value.Status;
             // Concise connection feedback only; no modal dialog or timing gate.
         }

@@ -60,7 +60,8 @@ namespace Pal98Timer
         internal static CompetitionSettings LoadDirectory(string root)
         {
             var locked = TournamentLockInfoReader.Load(root);
-            if (locked.State == TournamentLockReadState.Invalid) throw new InvalidDataException("游戏配置锁未能验证，比赛联机保持关闭。");
+            if (locked.State == TournamentLockReadState.Invalid)
+                throw new InvalidDataException("游戏配置锁未能验证，联机保持关闭：" + locked.Diagnostic);
             // A legacy lock lacking this signed setting cannot grant upload by
             // placing a different live file next to it. Do not rewrite old locks.
             if (locked.State == TournamentLockReadState.Locked) return Parse(locked.CommonToolsSnapshot, true);
