@@ -205,6 +205,7 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            if (size == 2183168 && string.Equals(hash, "58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39", StringComparison.OrdinalIgnoreCase)) return "1.7.2.0";
             // v1.71 native repair: Anu dying dialogue in the scripted automatic Stone Elder battle.
             if (size == 2156032 && string.Equals(hash, "a15d3a922103ea8a4154106d93f1f73414ab8a869277943b0925968025899b48", StringComparison.OrdinalIgnoreCase)) return "1.7.1.2";
             // v1.71 display revision: clean hardcore status and local device suffix.

@@ -1,11 +1,17 @@
 [CmdletBinding()]
 param(
-    [string]$CandidateName = 'paltimer-3.37.2-paldll163-gpl-candidate-20260913'
+    [string]$CandidateName = '',
+    [string]$AuthDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$timerPath = Join-Path $repoRoot 'Pal98Timer\bin\x64\Release\Pal98Timer.exe'
+$fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($timerPath).FileVersion
+$version = ([Version]$fileVersion).ToString(3)
+if (!$CandidateName) { $CandidateName = 'paltimer-' + $version + '-gpl-candidate-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
+if ([Version]$fileVersion -ge [Version]'3.37.7.13' -and !$AuthDirectory) { throw 'This release requires the matching private Auth build directory.' }
 $artifactsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts'))
 $candidateRoot = [IO.Path]::GetFullPath((Join-Path $artifactsRoot $CandidateName))
 
@@ -19,6 +25,7 @@ if (Test-Path -LiteralPath $candidateRoot) {
 $runtimeFiles = [ordered]@{
     'Pal98Timer.exe' = 'Pal98Timer\bin\x64\Release\Pal98Timer.exe'
     'Pal98Timer.exe.config' = 'Pal98Timer\bin\x64\Release\Pal98Timer.exe.config'
+    'PalTimerOnline.dll' = 'PalTimerOnline\bin\x64\Release\PalTimerOnline.dll'
     'PalCloudLib.dll' = 'Pal98Timer\bin\x64\Release\PalCloudLib.dll'
     'System.Web.Script.Serialization.dll' = 'Pal98Timer\bin\x64\Release\System.Web.Script.Serialization.dll'
     'TimerPluginBase.dll' = 'Pal98Timer\bin\x64\Release\TimerPluginBase.dll'
@@ -36,10 +43,21 @@ foreach ($relativeSource in $runtimeFiles.Values) {
         throw "Release x64 build output is incomplete: $source"
     }
 }
+if ($AuthDirectory) {
+    $registration = Get-Content -LiteralPath (Join-Path $AuthDirectory 'PalCompetitionRegistration.public.json') -Raw | ConvertFrom-Json
+    foreach ($pair in @(@('exe_sha256',$timerPath),@('online_component_sha256',(Join-Path $repoRoot $runtimeFiles['PalTimerOnline.dll'])),@('component_sha256',(Join-Path $AuthDirectory 'PalCompetitionAuth.dll')))) {
+        if ($registration.build.($pair[0]) -ne (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256).Hash.ToLowerInvariant()) { throw ('Companion registration mismatch: ' + $pair[0]) }
+    }
+}
 
 New-Item -ItemType Directory -Path $candidateRoot | Out-Null
 foreach ($entry in $runtimeFiles.GetEnumerator()) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $entry.Value) -Destination (Join-Path $candidateRoot $entry.Key)
+}
+if ($AuthDirectory) {
+    foreach ($name in @('PalCompetitionAuth.dll','PalCompetitionRegistration.public.json')) {
+        Copy-Item -LiteralPath (Join-Path $AuthDirectory $name) -Destination (Join-Path $candidateRoot $name)
+    }
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $candidateRoot 'LICENSE')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination (Join-Path $candidateRoot 'README.md')
@@ -53,13 +71,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "git source inventory failed: $LASTEXITCODE"
 }
 
-$excludedPrefixes = @('.agents/', '.claude/', '.codegraph/', 'artifacts/')
+$excludedPrefixes = @('.agents/', '.claude/', '.codegraph/', '.ai/', 'artifacts/')
 $excludedFiles = @('AGENTS.md', 'CLAUDE.md', '.ai/resume.md')
 foreach ($relative in $sourceFiles) {
     $normalized = $relative.Replace('\', '/')
     if ($excludedFiles -contains $normalized) { continue }
     if ($excludedPrefixes | Where-Object { $normalized.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }) { continue }
     if ($normalized -match '(^|/)(bin|obj)/' -or $normalized -match '\.(pfx|snk|suo|user)$') { continue }
+    if ($normalized -eq 'Pal98Timer/TournamentIntegrityKey.txt') { continue }
 
     $source = Join-Path $repoRoot $relative
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
@@ -82,7 +101,7 @@ $metadata = @(
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $sourceStage 'SOURCE_SNAPSHOT_METADATA.txt'), $metadata + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 
-$sourceZip = Join-Path $candidateRoot 'PalTimer-3.37.2-source.zip'
+$sourceZip = Join-Path $candidateRoot ('PalTimer-' + $version + '-source.zip')
 Compress-Archive -Path (Join-Path $sourceStage '*') -DestinationPath $sourceZip -CompressionLevel Optimal
 
 $resolvedStage = [IO.Path]::GetFullPath($sourceStage)
@@ -101,7 +120,8 @@ $payload = Get-ChildItem -LiteralPath $candidateRoot -File | Sort-Object Name | 
 $manifest = [ordered]@{
     schema = 'pal98.local-public-tool-release.v1'
     product = 'PalTimer'
-    version = '3.37.2'
+    version = $version
+    file_version = $fileVersion
     license = 'GPL-2.0-only'
     repository_owner = 'othercat'
     repository = 'https://github.com/othercat/PalTimer'

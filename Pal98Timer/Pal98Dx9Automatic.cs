@@ -18,24 +18,31 @@ namespace Pal98Timer
         private bool requested, frozenHardcore, startedWithoutIdentity;
         private bool archiveCompletedRun;
         private bool completed;
+        private GameplayStartObservation startObservation;
+        private System.Diagnostics.Process startProcess;
+        private bool startHardcore;
         private Task archiveTask;
         private string archiveError = "";
         private long epoch;
         private readonly string unknown = Guid.NewGuid().ToString("N");
         public Pal98Dx9Automatic(GForm form) : base(form) { CoreName = "PAL98DX9_AUTO"; }
+        internal override bool CompetitionMetadataPending => base.CompetitionMetadataPending || startObservation?.Pending == true;
+        private protected override GameplaySnapshot DisplayGameplaySnapshot => selected;
         protected override int TimingModeMs => selected?.fade_ms ?? RecordedTimingMode?.FadeMilliseconds ?? 1200;
         protected override int TimingMapSpeedTicks => selected?.map_speed_ticks ?? RecordedTimingMode?.MapSpeedTicks ?? 10;
         public override string ActiveBestPath => selected == null || identity == null ?
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Timelines", "Unclassified", unknown, "best.json") :
             TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, selected.covered && validation.Length == 0, "best.json");
         protected override string RelayFileName => Path.Combine(Path.GetDirectoryName(ActiveBestPath), "SRPG.bin");
-        protected override string GetScoreSavePath(DateTime now) => requested && !CaptureHardcoreEvidence().run_verified && identity != null ?
+        protected override string GetScoreSavePath(DateTime now) => identity != null &&
+            (GameplayRestartPending || GameplayContinuationError.Length != 0 || requested && !CaptureHardcoreEvidence().run_verified) ?
             TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, false, "best.json") : ActiveBestPath;
         protected override void InitCheckPoints()
         {
             base.InitCheckPoints();
             route = CompetitionProtocol.RouteHash(CheckPoints.Select(p => CompetitionProtocol.CheckpointId(p.Name)));
             gameplayReader.Route = route;
+            SetHardcoreGameplayRoute(route);
             foreach (var point in CheckPoints) point.SetBestReference(new CheckPointNewer { Name = point.Name, BestTS = TimeSpan.Zero, NickName = "" });
         }
         protected override void LoadBest()
@@ -80,8 +87,31 @@ namespace Pal98Timer
             });
         }
         private bool referenceReady;
+        protected override void OnGameplayStarting()
+        {
+            startProcess = CompetitionGameProcess;
+            startHardcore = CaptureHardcoreEvidence().requested;
+            startObservation = gameplayReader.CaptureStart(startProcess);
+        }
+        private void FreezeStartIdentity()
+        {
+            if (frozen != null || !GameplayRunStarted || startObservation?.Pending == true) return;
+            if (startObservation != null) {
+                var origin = startObservation.Snapshot;
+                if (origin == null) { startedWithoutIdentity = true; identity = null; }
+                else SelectIdentity(origin, startHardcore);
+            }
+            if (identity == null) { startedWithoutIdentity = true; validation = "开局时玩法尚未识别，本局保留为未归类记录。"; }
+            else { frozen = identity; frozenHardcore = requested; }
+        }
+        private GameplaySnapshot CurrentGameplay()
+        {
+            var start = ReferenceEquals(startProcess, CompetitionGameProcess) ? startObservation : null;
+            return gameplayReader.CurrentOrCapturedStart(start) ?? ResumedGameplay;
+        }
         protected override void OnTick()
         {
+            RefreshHardcoreRuntime();
             ObserveGameplay();
             bool ready; lock (timelineSync) { ready = referenceReady; referenceReady = false; }
             if (ready) {
@@ -89,10 +119,7 @@ namespace Pal98Timer
                 catch (Exception e) when (e is IOException || e is ArgumentException || e is InvalidOperationException) { lock (timelineSync) referenceJson = null; }
             }
             base.OnTick();
-            if (frozen == null && GameplayRunStarted) {
-                if (identity == null) { startedWithoutIdentity = true; validation = "开局时玩法尚未识别，本局保留为未归类记录。"; }
-                else { frozen = identity; frozenHardcore = requested; }
-            }
+            FreezeStartIdentity();
             ArchiveCompletedResult();
         }
         private void ArchiveCompletedResult()
@@ -116,8 +143,15 @@ namespace Pal98Timer
             // completed run; Reset is the only entry to a new classification.
             if (completed && CurrentStep >= CheckPoints.Count) return;
             if (completed) completed = false; // A manual Jump resumed this run.
+            // Keep the frozen timeline in ordinary and hardcore restart gaps.
+            // The shared observer rechecks the new process's own evidence;
+            // pending exports remain unverified, with no sticky gap failure.
+            if (GameplayRestartPending) return;
+            if (GameplayContinuationError.Length != 0) validation = GameplayContinuationError;
+            FreezeStartIdentity();
+            if (startObservation?.Pending == true) return;
             gameplayReader.Observe(CompetitionGameProcess);
-            var snapshot = gameplayReader.Current;
+            var snapshot = CurrentGameplay();
             if (frozen != null && snapshot == null) validation = "本局玩法证据中断，保留未归类记录。";
             if (route != null && snapshot != null) {
                 var evidence = CaptureHardcoreEvidence();
@@ -138,7 +172,7 @@ namespace Pal98Timer
         {
             var data = new HObj(json);
             ValidateBestReference(data);
-            if (selected == null || !selected.covered || validation.Length != 0 || !data.HasValue("GameplayVerified") ||
+            if (selected == null || !selected.covered || validation.Length != 0 || GameplayRestartPending || GameplayContinuationError.Length != 0 || !data.HasValue("GameplayVerified") ||
                 !data.GetValue<bool>("GameplayVerified") || data.HasValue("ReferenceTimeline") && data.GetValue<bool>("ReferenceTimeline"))
                 throw new InvalidDataException("此记录不具备当前玩法的完整证据，未导入游戏或计时状态。");
             base.ValidateTimerImport(json);
@@ -148,8 +182,9 @@ namespace Pal98Timer
             base.FillMoreTimerData(data);
             data["TimelineIdentity"] = frozen ?? identity ?? "";
             data["GameplayVerified"] = selected != null && selected.covered && validation.Length == 0 &&
-                !startedWithoutIdentity && (!requested || CaptureHardcoreEvidence().run_verified);
-            data["GameplayValidation"] = validation;
+                !startedWithoutIdentity && !GameplayRestartPending && GameplayContinuationError.Length == 0 && (!requested || CaptureHardcoreEvidence().run_verified);
+            data["GameplayValidation"] = GameplayRestartPending ? "正在核对重启后的玩法证据。" :
+                GameplayContinuationError.Length != 0 ? GameplayContinuationError : validation;
             data["GameplayRulesSha256"] = selected?.rules_sha256 ?? "";
             data["GameplayDetails"] = selected == null ? new HObj() : new HObj(CompetitionProtocol.Json().Serialize(selected));
             // An automatic mod line must not impersonate an old cloud leaderboard.
@@ -161,11 +196,13 @@ namespace Pal98Timer
             // Local best-line selection is frozen, but online eligibility must
             // keep observing current rules. Added ranking-only facts must not
             // be hidden by the unchanged legacy TimelineIdentity.
-            var current = gameplayReader.Current;
+            var current = CurrentGameplay();
+            RememberGameplayForContinuation(current);
             observation.Gameplay = current?.Identity;
             observation.Ranking = current?.ranking;
             observation.TimelineId = frozen ?? identity;
             if (current == null || !current.covered || current.ranking?.covered != true || validation.Length != 0) observation.ValidationError = "本局玩法未登记或证据无效";
+            if (GameplayContinuationError.Length != 0) observation.ValidationError = GameplayContinuationError;
         }
         protected override string GetExportPath(DateTime now) => Path.Combine(Path.GetDirectoryName(GetScoreSavePath(now)), now.ToString("yyyyMMddHHmmssfff") + ".json");
         protected override void FillReferenceIdentity(HObj data) { data["TimelineIdentity"] = identity ?? ""; data["GameplayVerified"] = false; }
@@ -188,6 +225,7 @@ namespace Pal98Timer
         {
             base.Reset(); frozen = null; validation = ""; frozenHardcore = false; startedWithoutIdentity = false; archiveCompletedRun = false; completed = false;
             identity = null; selected = null; ++epoch;
+            startObservation = null; startProcess = null; startHardcore = false;
             lock (timelineSync) { referenceJson = null; referenceReady = false; }
         }
         protected override string FormatGameTitle(string version)

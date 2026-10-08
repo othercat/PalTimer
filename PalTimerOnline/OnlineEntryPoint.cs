@@ -20,13 +20,16 @@ namespace Pal98Timer
         private readonly CompetitionClient client;
         private CompetitionSettingsForm settingsForm;
         private CompetitionOverlayForm overlay;
+        private CompetitionClockWarningForm clockWarningForm;
+        private long shownClockWarning;
         private int pid;
         private long generation;
         private bool closing;
         public int ApiVersion => 1;
         public bool Enabled => client.Enabled;
         public string LiveCaption => client.LiveCaption;
-        internal OnlineModule(string timerVersion) { client = new CompetitionClient(gameManaged: true, timerVersion: timerVersion); }
+        internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) { }
+        internal OnlineModule(CompetitionClient client) { this.client = client; }
         public void ObserveTarget(int processId, long epoch)
         {
             if (pid == processId && generation == epoch) return;
@@ -63,6 +66,17 @@ namespace Pal98Timer
         }
         public void UiTick()
         {
+            var warning = client.ClockWarning;
+            if (warning == null) {
+                clockWarningForm?.Close(); clockWarningForm = null;
+            } else if (!closing && shownClockWarning != warning.Id) {
+                clockWarningForm?.Close();
+                shownClockWarning = warning.Id;
+                clockWarningForm = new CompetitionClockWarningForm(warning.Message);
+                clockWarningForm.Show();
+            } else if (clockWarningForm != null && !clockWarningForm.IsDisposed) {
+                clockWarningForm.UpdateMessage(warning.Message);
+            }
             var cfg = client.Settings;
             if (cfg.Overlay && (overlay == null || overlay.IsDisposed)) {
                 overlay = new CompetitionOverlayForm(client);
@@ -72,6 +86,6 @@ namespace Pal98Timer
             if (!cfg.Overlay && overlay != null && !overlay.IsDisposed) overlay.Close();
         }
         public async Task<bool> CloseAsync() { closing = true; bool closed = await client.CloseAsync(); if (!closed) closing = false; return closed; }
-        public void Dispose() { closing = true; overlay?.Close(); settingsForm?.Close(); client.Dispose(); }
+        public void Dispose() { closing = true; clockWarningForm?.Close(); overlay?.Close(); settingsForm?.Close(); client.Dispose(); }
     }
 }

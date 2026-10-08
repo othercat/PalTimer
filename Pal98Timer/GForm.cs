@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.7";
+        public const string CurrentVersion = "3.37.8";
         public const string bgpath = @"bg.png";
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -311,6 +311,19 @@ namespace Pal98Timer
                     btnPause.Text = "暂停 ";
                 }
             }
+        }
+        internal void QueueHardcorePause(仙剑98柔情DX9 owner,uint count)
+        {
+            if(IsDisposed || !IsHandleCreated) return;
+            long runSequence=owner.ScoreRunSequence;
+            try {
+                BeginInvoke(new Action(() => ApplyHardcorePause(owner,count,runSequence)));
+            } catch(InvalidOperationException) { }
+        }
+        internal void ApplyHardcorePause(仙剑98柔情DX9 owner,uint count,long runSequence)
+        {
+            if(!ReferenceEquals(core,owner) || owner.ScoreRunSequence!=runSequence) return;
+            for(uint i=0;i<count;++i) { UIPause(); core.OnFunctionKey(9); }
         }
         public void SetUIPause(bool isp)
         {
@@ -634,6 +647,9 @@ namespace Pal98Timer
                     handle = core.NeedBlockFunctionKey(8);
                     break;
                 case Keys.F9:
+                    // The bound keyboard's raw press/release is the single owner
+                    // in new hardcore sessions. Do not swallow it or toggle here.
+                    if(core is 仙剑98柔情DX9 dx9 && dx9.UsesHardcorePause) break;
                     if (hookStruct.flags >= 128)
                     {
                         UIPause();
@@ -828,9 +844,10 @@ namespace Pal98Timer
                 string onlineSuffix = competition == null ? "" : onlineCaption;
                 rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
-                string windowTitle = "自动计时器" + (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;
-                if (Text != windowTitle) Text = windowTitle;
                 var dx9Core = core as 仙剑98柔情DX9;
+                string windowTitle = "自动计时器" + (dx9Core == null ? "" : dx9Core.GameplayWindowTitleSuffix) +
+                    (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;
+                if (Text != windowTitle) Text = windowTitle;
                 rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());
                 rr.SetWillClear(core.GetPointEnd());
                 rr.SetPointSpan(core.GetPointSpan());
@@ -860,10 +877,10 @@ namespace Pal98Timer
                 {
                     rr.SetBR(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR));
                 }
-                if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title))
-                {
-                    rr.SetTitle(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title));
-                }
+                string displayTitle = core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title)
+                    ? core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title) : MConfig.ins.Title;
+                // The compact header remains visible when the small window clips the longer version row.
+                rr.SetTitle(dx9Core == null ? displayTitle : dx9Core.AppendGameplayCodes(displayTitle));
             }
             else
             {
@@ -1073,7 +1090,7 @@ namespace Pal98Timer
             btnSoundConfig.Checked = SoundConfig.ins.GlobalEnabled;
         }
 
-        public bool IsNonSequentialCheck = false;
+        public bool IsNonSequentialCheck = true;
         private void btnNonSequentialCheck_Click(object sender, EventArgs e)
         {
             btnNonSequentialCheck.Checked = !btnNonSequentialCheck.Checked;

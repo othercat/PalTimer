@@ -67,7 +67,8 @@ namespace Pal98Timer
         internal static bool SupportedLockVersions(string producer, string contract, string runtime, string timer)
         {
             if (contract != "PAL98.Settings.v1") return false;
-            return (producer == "1.7.1.1" && runtime == producer && timer == "3.37.7.17") ||
+            return (producer == "1.7.2.0" && runtime == producer && timer == "3.37.8.0") ||
+                (producer == "1.7.1.1" && runtime == producer && timer == "3.37.7.17") ||
                 (producer == "1.7.1.0" && runtime == producer && timer == "3.37.7.17") ||
                 (producer == "1.7.0.0" && runtime == producer && timer == "3.37.7.16") ||
                 (producer == "1.6.8.17" && runtime == producer && timer == "3.37.7.6") ||

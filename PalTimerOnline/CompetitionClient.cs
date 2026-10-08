@@ -92,9 +92,13 @@ namespace Pal98Timer
             long epoch = Interlocked.Increment(ref gameGeneration);
             if (process == null) {
                 // Completed records retain their authorized destination and may
-                // finish/retry after PAL closes. No new run can publish meanwhile.
-                Invalidate(activeToken); Interlocked.Increment(ref generation);
-                commands.Enqueue(() => { if (epoch == Interlocked.Read(ref gameGeneration)) current = null; });
+                // finish/retry after PAL closes. A process gap is not a timer
+                // Reset: keep this run's immutable start and sticky evidence.
+                // Enabled and CaptureLiveObservation stop advertising gameplay
+                // until the new target's settings have been loaded. Reset/core
+                // changes still call Invalidate, and endpoint changes clear it.
+                lock (publication) InvalidateLive();
+                Interlocked.Increment(ref generation);
                 return;
             }
             enabled = false; Interlocked.Increment(ref generation);
@@ -343,7 +347,7 @@ namespace Pal98Timer
             contextSettings.FadeMilliseconds = bound.Fade; contextSettings.MapSpeedTicks = bound.Speed;
             started = bound.StartedAt; beganHere = bound.BeganHere;
             current = observation;
-            nextLiveDue = DateTime.MinValue;
+            nextLiveDueTick = 0;
             nextQuery = DateTime.MinValue;
             if (!observation.Finished || completed.Contains(observation.Token)) return;
             var boundCredential = storage.Credential(contextSettings.Server);

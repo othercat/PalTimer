@@ -50,9 +50,17 @@ namespace Pal98Timer
         internal string OrdinaryTimelineId, HardcoreTimelineId;
         internal GameplayIdentity Identity => new GameplayIdentity { rules_sha256 = rules_sha256, content_id = content_id,
             content_sha256 = content_sha256, family = family, fade_ms = fade_ms, map_speed_ticks = map_speed_ticks };
+        // Public display abbreviations never replace canonical rules or saved identities.
+        internal string DisplayCodes => rules != null &&
+            rules.TryGetValue("prd.EnableScopedStealPrd", out string enabled) && enabled == "1" &&
+            rules.TryGetValue("prd.scoped_steal_policy", out string policy) &&
+            policy == "battle-shared-continuous-70-exact-v4" ? "A" : "";
+        internal string CompactTimingLabel => (fade_ms == 800 ? "0.8" : "1.2") +
+            (map_speed_ticks == 9 ? "+快走速" : "+普通走速") + DisplayCodes;
         internal string Label(bool hardcore)
         {
-            var parts = new List<string> { fade_ms == 800 ? "0.8秒" : "1.2秒", map_speed_ticks == 9 ? "快走速" : "普通走速" };
+            var parts = DisplayCodes.Length != 0 ? new List<string> { CompactTimingLabel } :
+                new List<string> { fade_ms == 800 ? "0.8秒" : "1.2秒", map_speed_ticks == 9 ? "快走速" : "普通走速" };
             if (family == "drawcard") parts.Add("抽卡");
             foreach (var pair in new[] { new[] { "random_items", "随机物品" }, new[] { "wuqiang", "吴强" },
                 new[] { "random_skills.enabled", "随机技能" }, new[] { "love.enabled", "爱无限" }, new[] { "village", "村村通" } })
@@ -75,7 +83,73 @@ namespace Pal98Timer
             return covered ? Path.Combine(root, "Timelines", identity, name) : Path.Combine(root, "Timelines", "Unclassified", identity, name);
         }
     }
-    // One bounded background reader. No hashing, IO or waits in checkpoint processing.
+    // Ordinary runs allow PAL to restart without resetting the stopwatch. Keep
+    // their accepted identity across process gaps, but never certify the next
+    // process until its own gameplay and DLL observations match that identity.
+    internal sealed class GameplayContinuation
+    {
+        private Process process;
+        private GameplayIdentity identity;
+        private string ranking, dllHash, dllVersion;
+        internal GameplaySnapshot Snapshot { get; private set; }
+        internal bool Resumed { get; private set; }
+        internal string Error { get; private set; } = "";
+
+        internal bool WaitingFor(Process target, bool started)
+        {
+            if (!started || Snapshot == null || Error.Length != 0) return false;
+            if (!ReferenceEquals(process, target) || target == null) return true;
+            try { return target.HasExited; }
+            catch (Exception e) when (e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { return true; }
+        }
+        internal void Observe(Process target, GameplaySnapshot facts, string hash, string version, bool started, bool hardcore)
+        {
+            // Authenticated hardcore transitions remain owned by HardcoreRunEvidence.
+            if (hardcore) { Reset(); return; }
+            if (!started) Reset();
+            if (Error.Length != 0) return;
+            bool valid = facts != null && facts.covered && facts.Identity.Valid && facts.ranking?.covered == true;
+            if (Snapshot == null) {
+                if (target == null || !valid || !CompetitionProtocol.Digest(hash) || string.IsNullOrEmpty(version)) return;
+                process = target; Snapshot = facts; identity = facts.Identity.Copy();
+                ranking = facts.ranking.configuration_id; dllHash = hash; dllVersion = version;
+                return;
+            }
+            if (target == null) return;
+            // A missing first frame/hash from a replacement process is pending;
+            // a coherent changed/invalid frame is a real, sticky failure.
+            if (facts != null && (!valid || facts.rules_sha256 != identity.rules_sha256 ||
+                facts.content_id != identity.content_id || facts.content_sha256 != identity.content_sha256 ||
+                facts.family != identity.family || facts.fade_ms != identity.fade_ms || facts.map_speed_ticks != identity.map_speed_ticks ||
+                facts.ranking.configuration_id != ranking)) {
+                Error = "本局玩法规则或内容已改变，保留未归类记录；请重置后开始新跑次。";
+                return;
+            }
+            if (CompetitionProtocol.Digest(hash) && (hash != dllHash || version != dllVersion)) {
+                Error = "本局运行 DLL 已改变，保留未归类记录；请重置后开始新跑次。";
+                return;
+            }
+            if (!ReferenceEquals(process, target) && valid && CompetitionProtocol.Digest(hash) && !string.IsNullOrEmpty(version)) {
+                process = target; Resumed = true;
+            }
+        }
+        internal void Reset()
+        {
+            process = null; identity = null; ranking = dllHash = dllVersion = null;
+            Snapshot = null; Resumed = false; Error = "";
+        }
+    }
+    internal sealed class GameplayStartObservation
+    {
+        private readonly Task<GameplaySnapshot> decoded;
+        internal readonly long CapturedAt;
+        internal GameplayStartObservation(Task<GameplaySnapshot> value, long capturedAt) { decoded = value; CapturedAt = capturedAt; }
+        internal bool Pending => !decoded.IsCompleted;
+        internal GameplaySnapshot Snapshot => decoded.Status == TaskStatus.RanToCompletion ? decoded.Result : null;
+    }
+    // One bounded background reader. Decoding and hashing stay off the timing
+    // thread. At the start boundary only, copy the existing 32 KiB local mapping
+    // so delayed decoding cannot mistake a later rules snapshot for start proof.
     internal sealed class GameplayModeReader
     {
         private readonly object sync = new object();
@@ -83,43 +157,81 @@ namespace Pal98Timer
         internal string Route;
         private long next;
         private bool busy;
+        private long lastReadTick;
         private GameplaySnapshot current;
         internal GameplaySnapshot Current { get { lock (sync) return current; } }
+        internal GameplaySnapshot CurrentOrCapturedStart(GameplayStartObservation start)
+        {
+            // Read the frame and its timestamp together. A later invalid frame
+            // must win over an earlier valid start; an older pending read must not.
+            lock (sync) {
+                var origin = start?.Snapshot;
+                return origin != null && lastReadTick < start.CapturedAt ? origin : current;
+            }
+        }
+        private sealed class Frame
+        {
+            internal byte[] Bytes;
+            internal int Pid, Sequence;
+            internal long Creation, CapturedAt;
+        }
+        internal GameplayStartObservation CaptureStart(Process process)
+        {
+            var frame = ReadFrame(process); string route = Route;
+            return new GameplayStartObservation(frame == null ? Task.FromResult<GameplaySnapshot>(null) :
+                Task.Run(() => DecodeFrame(frame, route)), frame?.CapturedAt ?? Stopwatch.GetTimestamp());
+        }
+        private static Frame ReadFrame(Process process)
+        {
+            if (process == null) return null;
+            try {
+                int pid = process.Id;
+                long creation = process.StartTime.ToUniversalTime().ToFileTimeUtc();
+                using (var mapping = MemoryMappedFile.OpenExisting("Local\\PAL98.GameplayMode.v1." + pid, MemoryMappedFileRights.Read))
+                using (var view = mapping.CreateViewAccessor(0, 32808, MemoryMappedFileAccess.Read)) {
+                    var bytes = new byte[32808];
+                    for (int attempt = 0; attempt < 4; ++attempt) {
+                        int sequence = view.ReadInt32(24);
+                        if ((sequence & 1) != 0) { Thread.Yield(); continue; }
+                        view.ReadArray(0, bytes, 0, bytes.Length); Thread.MemoryBarrier();
+                        if (sequence != view.ReadInt32(24)) { Thread.Yield(); continue; }
+                        return process.HasExited ? null : new Frame { Bytes = bytes, Pid = pid, Creation = creation, Sequence = sequence, CapturedAt = Stopwatch.GetTimestamp() };
+                    }
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException ||
+                e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { }
+            return null;
+        }
+        private static GameplaySnapshot DecodeFrame(Frame frame, string route)
+        {
+            if (frame == null) return null;
+            var value = Decode(frame.Bytes, frame.Pid, frame.Creation, frame.Sequence, frame.Sequence);
+            if (value != null && CompetitionProtocol.Digest(route)) {
+                value.OrdinaryTimelineId = TimelineIdentity.Create(value.rules_sha256, route, false);
+                value.HardcoreTimelineId = TimelineIdentity.Create(value.rules_sha256, route, true);
+            }
+            return value;
+        }
         internal void Observe(Process process)
         {
             lock (sync)
             {
-                if (!ReferenceEquals(target, process)) { target = process; current = null; next = 0; }
+                if (!ReferenceEquals(target, process)) { target = process; current = null; next = 0; lastReadTick = 0; }
                 if (process == null || busy || Stopwatch.GetTimestamp() < next) return;
                 busy = true; next = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
                 Task.Run(() => {
                     GameplaySnapshot value = null;
+                    long capturedAt = Stopwatch.GetTimestamp();
                     try
                     {
-                        using (var mapping = MemoryMappedFile.OpenExisting("Local\\PAL98.GameplayMode.v1." + process.Id, MemoryMappedFileRights.Read))
-                        using (var view = mapping.CreateViewAccessor(0, 32808, MemoryMappedFileAccess.Read))
-                        {
-                            var bytes = new byte[32808];
-                            long creation = process.StartTime.ToUniversalTime().ToFileTimeUtc();
-                            // Retry only torn reads, on this background worker. A coherent
-                            // but invalid snapshot must never reuse a previous good value.
-                            for (int attempt = 0; attempt < 4; ++attempt) {
-                                int sequence = view.ReadInt32(24);
-                                view.ReadArray(0, bytes, 0, bytes.Length); Thread.MemoryBarrier();
-                                int after = view.ReadInt32(24);
-                                if (sequence != after || (sequence & 1) != 0) { Thread.Yield(); continue; }
-                                value = Decode(bytes, process.Id, creation, sequence, after); break;
-                            }
-                            if (process.HasExited) value = null;
-                            string route = Route;
-                            if (value != null && CompetitionProtocol.Digest(route)) {
-                                value.OrdinaryTimelineId = TimelineIdentity.Create(value.rules_sha256, route, false);
-                                value.HardcoreTimelineId = TimelineIdentity.Create(value.rules_sha256, route, true);
-                            }
-                        }
+                        var frame = ReadFrame(process);
+                        capturedAt = frame?.CapturedAt ?? Stopwatch.GetTimestamp();
+                        value = DecodeFrame(frame, Route);
+                        if (process.HasExited) value = null;
                     }
                     catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { }
-                    finally { lock (sync) { if (ReferenceEquals(target, process)) current = value; busy = false; } }
+                    finally { lock (sync) { if (ReferenceEquals(target, process)) { current = value; lastReadTick = capturedAt; } busy = false; } }
                 });
             }
         }

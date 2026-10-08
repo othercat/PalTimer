@@ -171,9 +171,18 @@ internal static class HardcoreBehavior
         var bytes=File.ReadAllBytes(path);
         var s=HardcoreModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),
             BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));
-        Check(s!=null&&s.Requested&&s.RulesSupported&&s.RulesVersion==3,"current native host snapshot accepted by actual timer consumer");
+        Check(s!=null&&s.Requested&&s.RulesSupported&&s.RulesVersion==4,"current native host snapshot accepted by actual timer consumer");
         var run=new HardcoreRunEvidence();run.Observe(s,false);
         Check(run.CaptureDisplay().Visible,"actual native waiting snapshot has a hardcore display");
+        string directory=Path.GetDirectoryName(path);
+        string controlFile=Path.Combine(directory,"control-final.bin"), restartFile=Path.Combine(directory,"restart-final.bin");
+        if(File.Exists(controlFile)&&File.Exists(restartFile)) {
+            var control=HardcoreControlSnapshot.Decode(File.ReadAllBytes(controlFile),s.Pid,s.ProcessCreation);
+            var restart=HardcoreRestartSnapshot.Decode(File.ReadAllBytes(restartFile),s.Pid,s.ProcessCreation);
+            Check(control!=null&&restart!=null&&control.State==2&&restart.State==2&&restart.Matches(control),
+                "actual native producer and Helper bytes accepted by timer decoder without ABI translation");
+            Check(restart.NewCreation>0&&restart.NewPid!=0,"actual launch identity survives old process exit");
+        }
     }
 
     static void TransportAndConfirmation()
@@ -370,6 +379,158 @@ internal static class HardcoreBehavior
         }
     }
 
+    static byte[] ControlBytes(bool restart=false)
+    {
+        var b=new byte[256]; U32(b,0,restart?0x31524350u:0x31544350u);U16(b,4,1);U16(b,6,256);
+        U32(b,8,(uint)host.Id);U32(b,12,0x01070200);U64(b,16,(ulong)creation);U32(b,24,2);
+        if(!restart)U32(b,28,1);return b;
+    }
+    static void PauseIntegration()
+    {
+        var core=new 仙剑98柔情DX9(null);
+        var current=Segment((uint)host.Id,creation);
+        var source=new ControlledReader { First=current,Later=current };
+        Set(core,"hardcoreReader",source); ObserveCore(core,false);
+        var ui=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+        Set(ui,"core",core); ui.btnPause=new GRender.GBtn(null);
+        var release=new KeyboardLib.HookStruct { vkCode=(int)Keys.F9,flags=128 };
+        bool blocked;
+        ui.OnKeyPress(release,out blocked);
+        Check(core.UsesHardcorePause&&!core.IsUIPause&&ui.ManualPauseCount==0&&!blocked,"hardcore F9 global release neither toggles nor swallows");
+        ui.ApplyHardcorePause(core,1,core.ScoreRunSequence);
+        Check(core.IsUIPause&&ui.ManualPauseCount==1&&ui.btnPause.IsRed(),"raw F9 reaches actual UI pause and increments manual count once");
+        source.Later=null; ObserveCore(core,false);
+        ui.OnKeyPress(release,out blocked);
+        Check(core.UsesHardcorePause&&core.IsUIPause&&ui.ManualPauseCount==1,"unknown snapshot cannot reopen global F9 duplicate path");
+        ui.ApplyHardcorePause(core,1,core.ScoreRunSequence);
+        Check(!core.IsUIPause&&ui.ManualPauseCount==1&&ui.btnPause.IsWhite(),"raw F9 resume preserves existing pause count semantics");
+        long previousRun=core.ScoreRunSequence; core.Reset();
+        bool paused=core.IsUIPause; int count=ui.ManualPauseCount;
+        ui.OnKeyPress(release,out blocked); ui.ApplyHardcorePause(core,1,previousRun);
+        Check(core.UsesHardcorePause&&core.IsUIPause==paused&&ui.ManualPauseCount==count,"Reset retains raw F9 owner and discards queued old-run toggle");
+        var other=new 仙剑98柔情DX9(null); Set(ui,"core",other);
+        ui.ApplyHardcorePause(core,1,core.ScoreRunSequence);
+        Check(!other.IsUIPause&&ui.ManualPauseCount==count,"queued event cannot pause a replacement core");
+        Set(ui,"core",core); source.Later=Decode(Bytes(0)); ObserveCore(core,false);
+        ui.OnKeyPress(release,out blocked);
+        Check(!core.UsesHardcorePause&&core.IsUIPause!=paused,"confirmed ordinary mode restores existing F9 behavior");
+        typeof(仙剑98柔情DX9).GetMethod("UpdateHardcorePauseOwner",BindingFlags.Instance|BindingFlags.NonPublic)
+            .Invoke(core,new object[]{current,(uint)host.Id,creation});
+        typeof(仙剑98柔情DX9).GetMethod("UpdateHardcorePauseOwner",BindingFlags.Instance|BindingFlags.NonPublic)
+            .Invoke(core,new object[]{null,(uint)host.Id+1,creation+1});
+        Check(!core.UsesHardcorePause,"a definite different ordinary process may release raw F9 ownership");
+    }
+    static HardcoreSnapshot Segment(uint pid,long time,bool waiting=false,uint dc=0,uint rc=0)
+    {
+        var b=NewBytes(confirmation:waiting,dc:dc,rc:rc);U32(b,8,pid);U64(b,16,(ulong)time);U32(b,12,0x01070200);U32(b,32,4);
+        return HardcoreModeReader.Decode(b,(int)pid,time,2,2);
+    }
+    static void ControlAndRestart()
+    {
+        var exports=new System.Collections.Generic.Dictionary<string,CompetitionHardcore>();
+        var b=ControlBytes();var r=ControlBytes(true);
+        Func<byte[],HardcoreControlSnapshot> decode=x=>HardcoreControlSnapshot.Decode(x,(uint)host.Id,creation);
+        Check(decode(b)!=null&&HardcoreRestartSnapshot.Decode(r,(uint)host.Id,creation)!=null,"control and restart ABI initial records");
+        foreach(int offset in new[]{0,4,6,8,16,24,28,76,96,255}) {
+            var bad=(byte[])b.Clone();bad[offset]^=1;Check(decode(bad)==null,"control malformed field rejected "+offset);
+        }
+        using(var cm=MemoryMappedFile.CreateNew(HardcoreControlReader.ControlPrefix+host.Id,256))
+        using(var cv=cm.CreateViewAccessor())
+        using(var rm=MemoryMappedFile.CreateNew(HardcoreControlReader.RestartPrefix+host.Id,256))
+        using(var rv=rm.CreateViewAccessor())
+        using(var reader=new HardcoreControlReader()) {
+            cv.WriteArray(0,b,0,256);rv.WriteArray(0,r,0,256);
+            Check(reader.Attach(Segment((uint)host.Id,creation)),"read-only pair attached to exact process");
+            U64(b,32,1);U64(b,40,100);cv.WriteArray(0,b,0,256);
+            Check(reader.TakePauseEvents(reader.ReadControl())==1&&reader.TakePauseEvents(reader.ReadControl())==0,"F9 sequence consumed exactly once");
+            U64(b,32,3);U64(b,40,300);cv.WriteArray(0,b,0,256);
+            Check(reader.TakePauseEvents(reader.ReadControl())==2,"two full F9 releases between reads retained");
+            cv.Write(24,3);Check(reader.ReadControl()==null&&reader.ControlBusy,"torn control is a busy read, never an event");
+            cv.Write(24,4);cv.Write(0,0u);Check(reader.ReadControl()==null&&!reader.ControlBusy,"stable malformed control is not a busy read");
+            var ticket=Guid.NewGuid().ToByteArray();Buffer.BlockCopy(ticket,0,r,32,16);
+            U32(r,28,1);U32(r,48,55);U64(r,56,123);U64(r,80,100);rv.WriteArray(0,r,0,256);
+            var prepared=reader.ReadRestart();
+            U32(r,28,2);U32(r,64,(uint)host.Id+1);U64(r,72,(ulong)creation+1);rv.WriteArray(0,r,0,256);
+            Check(reader.RefreshStoppedHelperResult(prepared,false).State==2,"helper exit re-reads its final Launched result after a Prepared sample");
+            rv.Write(24,3);Check(reader.ReadRestart()==null&&reader.RestartBusy,"helper seqlock write is distinguished from damaged evidence");
+        }
+        var old=Segment((uint)host.Id,creation);
+        Func<HardcoreRunEvidence> started=()=>{var run=new HardcoreRunEvidence();run.Observe(old,false);run.Observe(old,true,observedRuntimeIdentity:"dll|content");return run;};
+        Func<HardcoreSnapshot,string,HardcoreControlSnapshot> request=(s,t)=>new HardcoreControlSnapshot {
+            Pid=s.Pid,Creation=s.ProcessCreation,ProducerVersion=s.ProducerVersion,State=2,Ticket=t,HelperPid=55,HelperCreation=123,RequestQpc=110 };
+        Func<HardcoreControlSnapshot,HardcoreRestartSnapshot> result=q=>new HardcoreRestartSnapshot {
+            Pid=q.Pid,Creation=q.Creation,ProducerVersion=q.ProducerVersion,State=2,Ticket=q.Ticket,
+            HelperPid=q.HelperPid,HelperCreation=q.HelperCreation,NewPid=q.Pid+1,NewCreation=q.Creation+1,ChangedQpc=120 };
+        var run1=started();var q1=request(old,"first");var res=result(q1);res.State=1;res.NewPid=0;res.NewCreation=0;
+        exports["initial"]=run1.CaptureCompetition();
+        run1.Observe(null,true,q1,res,helperAlive:true);
+        exports["pending"]=run1.CaptureCompetition();
+        Check(run1.RestartPending&&!Verified(run1)&&!run1.CaptureCompetition().run_verified,"committed live helper gap waits and cannot export verified");
+        res=result(q1);var next=Segment(res.NewPid,res.NewCreation);
+        run1.Observe(Segment(res.NewPid,res.NewCreation,true),true,q1,res,"dll|content",res.NewPid,res.NewCreation,targetAlive:true);
+        Check(run1.RestartPending&&!Verified(run1),"new process waits for local physical confirmation");
+        run1.Observe(next,true,q1,res,null,res.NewPid,res.NewCreation,targetAlive:true);
+        Check(run1.RestartPending,"new process waits for actual DLL/content identity");
+        run1.Observe(next,true,q1,res,"dll|content",res.NewPid,res.NewCreation,targetAlive:true);
+        Check(Verified(run1)&&run1.Restarts==1&&!run1.RestartPending,"positive launch and matching confirmed identity continue same run");
+        var q2=request(next,"second");var res2=result(q2);var third=Segment(res2.NewPid,res2.NewCreation);
+        run1.Observe(third,true,q2,res2,"dll|content",res2.NewPid,res2.NewCreation,targetAlive:true);
+        Check(Verified(run1)&&run1.Restarts==2,"multiple P restarts retain run evidence");
+        run1.Complete();Check(run1.CaptureCompetition().run_verified&&run1.CaptureCompetition().rules_version==4,"completed restarted run exports existing server protocol");
+        exports["two_restarts_completed"]=run1.CaptureCompetition();
+        var busy=started();busy.Observe(null,true,q1,null,restartBusy:true);
+        Check(busy.RestartPending&&!Verified(busy),"committed ticket waits unverified for an in-progress helper write");
+        busy.Observe(null,true,null,null,controlBusy:true,restartBusy:true);
+        Check(busy.RestartPending&&!Record(busy).GetValue<string>("HardcoreValidationError").Contains("不完整"),"paired read contention does not erase a committed ticket");
+        busy.Observe(next,true,q1,res,"dll|content",next.Pid,next.ProcessCreation,targetAlive:true);
+        Check(Verified(busy),"stable launch after brief contention continues the run");
+        var stalled=started();stalled.Observe(null,true,q1,null,restartBusy:true);
+        Set(stalled,"restartBusyDeadline",Stopwatch.GetTimestamp()-1);
+        stalled.Observe(null,true,q1,null,restartBusy:true);
+        stalled.Observe(next,true,q1,res,"dll|content",next.Pid,next.ProcessCreation,targetAlive:true);
+        Check(!Verified(stalled),"a stalled writer cannot regain verification after its bounded wait");
+        exports["stalled_restart_writer"]=stalled.CaptureCompetition();
+        var missing=started();missing.Observe(null,true,q1,null);
+        Check(!missing.RestartPending&&!Verified(missing),"missing evidence never receives read-contention grace");
+        var totals=started();var oldCounts=Segment(old.Pid,old.ProcessCreation,dc:2,rc:2);
+        totals.Observe(oldCounts,true,observedRuntimeIdentity:"dll|content");
+        var nextCounts=Segment(next.Pid,next.ProcessCreation,dc:3,rc:2);
+        totals.Observe(nextCounts,true,q1,res,"dll|content",next.Pid,next.ProcessCreation,targetAlive:true);
+        var thirdCounts=Segment(third.Pid,third.ProcessCreation,dc:1,rc:1);
+        totals.Observe(thirdCounts,true,q2,res2,"dll|content",third.Pid,third.ProcessCreation,targetAlive:true);
+        Check(Verified(totals)&&Record(totals).GetValue<uint>("HardcoreDisconnectCount")==6&&Record(totals).GetValue<uint>("HardcoreReconnectCount")==5,"three process segments retain cumulative disconnect and reconnect counts");
+        foreach(string failure in new[]{"no-ticket","helper-failed","helper-gone","target-gone","wrong-ticket","wrong-helper","wrong-process","changed-dll","changed-config","old-invalid"}) {
+            var run=started();var q=request(old,"test");var rr=result(q);var ns=Segment(rr.NewPid,rr.NewCreation);
+            bool helper=true,target=true;string fp="dll|content";
+            if(failure=="no-ticket")q=null;
+            if(failure=="helper-failed"){rr.State=3;rr.Error=5;}
+            if(failure=="helper-gone"){rr.State=1;helper=false;}
+            if(failure=="target-gone")target=false;
+            if(failure=="wrong-ticket")rr.Ticket="different";
+            if(failure=="wrong-helper")rr.HelperCreation++;
+            if(failure=="wrong-process")ns=Segment(rr.NewPid+1,rr.NewCreation);
+            if(failure=="changed-dll")fp="different-dll|content";
+            if(failure=="changed-config") {
+                var nb=NewBytes();U32(nb,8,rr.NewPid);U64(nb,16,(ulong)rr.NewCreation);U32(nb,12,0x01070200);U32(nb,32,4);nb[72]=(byte)'c';
+                ns=HardcoreModeReader.Decode(nb,(int)rr.NewPid,rr.NewCreation,2,2);
+            }
+            if(failure=="old-invalid")run.Observe(null,true);
+            run.Observe(ns,true,q,rr,fp,ns.Pid,ns.ProcessCreation,helper,target);
+            Check(!Verified(run)&&!run.CaptureCompetition().run_verified,"restart cannot certify "+failure);
+            exports[failure]=run.CaptureCompetition();
+        }
+        var cancel=started();cancel.Observe(old,true,observedRuntimeIdentity:"dll|content");
+        Check(Verified(cancel)&&cancel.Restarts==0,"cancelled P has no ticket and preserves current run");
+        var replay=started();var replayRequest=request(old,"used");var replayResult=result(replayRequest);var replayNext=Segment(replayResult.NewPid,replayResult.NewCreation);
+        replay.Observe(replayNext,true,replayRequest,replayResult,"dll|content",replayNext.Pid,replayNext.ProcessCreation,targetAlive:true);
+        var reused=request(replayNext,"used");var reusedResult=result(reused);var reusedNext=Segment(reusedResult.NewPid,reusedResult.NewCreation);
+        replay.Observe(reusedNext,true,reused,reusedResult,"dll|content",reusedNext.Pid,reusedNext.ProcessCreation,targetAlive:true);
+        Check(!Verified(replay),"one-use handoff ticket cannot be replayed");
+        exports["replayed_ticket"]=replay.CaptureCompetition();
+        File.WriteAllText("hardcore-restart-exports.json",CompetitionProtocol.Json().Serialize(new {
+            schema="PalTimer.HardcoreRestartExports.v1", producer_version=GForm.CurrentVersion,
+            provenance="tests/hardcore_behavior.cs ControlAndRestart; synthetic runtime inputs; actual CaptureCompetition serializer", exports=exports }));
+    }
     static void Display()
     {
         var run=new HardcoreRunEvidence();var a=Bytes();Array.Clear(a,202,256);Text(a,202,"Alpha");
@@ -413,7 +574,7 @@ internal static class HardcoreBehavior
     [STAThread]
     static int Main(string[] args)
     {
-        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();
+        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();ControlAndRestart();PauseIntegration();
             if(args.Length==1)NativeSnapshot(args[0]);
             foreach(string operation in new[]{"export","reset","finish","import"})ConcurrentBoundary(operation);Display();
             Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}

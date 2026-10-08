@@ -93,9 +93,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.7.17","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.7.17","file version");
-        Check(GForm.CurrentVersion=="3.37.7","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.37.8.0","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.8.0","file version");
+        Check(GForm.CurrentVersion=="3.37.8","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -667,6 +667,38 @@ internal static class V169IntegrityBehavior
             Check(!warning.Contains("文件匹配")&&!warning.Contains("云ID")&&!warning.Contains("云认证"),"redundant success/cloud labels absent from warnings too");
         }finally{((IDisposable)monitor).Dispose();}
     }
+    static void RestartRunAlertHistory()
+    {
+        var monitor=New("RuntimeIntegrityMonitor");
+        try {
+            long generation=(long)Call(monitor,"SelectTarget",Host);
+            var old=New("RuntimeIntegrityEvidence");
+            Set(old,"Identity",New("PalLiveProcessIdentity",Host.Id,Birth,"fixture-old.exe"));
+            Set(old,"StickyAlerts",3u);Set(old,"FileMismatchSeen",true);Set(old,"CodeMismatchSeen",true);Set(old,"PalDllMismatchSeen",true);
+            Set(old,"PalDllSha256",new string('a',64));Set(old,"PalDllVersion","1.7.1.2");
+            Set(old,"FilesVerifiedAt",123L);Set(old,"ReadFailed",true);Set(old,"HeartbeatValid",true);Set(old,"LastAlert",Decode(Snapshot(3)));
+            Call(monitor,"Publish",Host,generation,old);Call(monitor,"BeginRunHistory");
+            Call(monitor,"SelectTarget",new object[]{null});generation=(long)Call(monitor,"SelectTarget",Host);
+            Check(Evidence(monitor).GetValue<string>("PalDllSha256")==""&&!Evidence(monitor).GetValue<bool>("HeartbeatValid"),"restart history cannot lend an old DLL hash or heartbeat to new target");
+            var next=New("RuntimeIntegrityEvidence");
+            Set(next,"Identity",New("PalLiveProcessIdentity",Host.Id+1,Birth+1,"fixture-new.exe"));
+            Set(next,"PalDllSha256",new string('b',64));Set(next,"PalDllVersion","1.7.2.0");
+            Set(next,"PalDll",Enum.Parse(Type("IntegrityCheckState"),"Match"));Set(next,"Files",Enum.Parse(Type("IntegrityCheckState"),"Match"));
+            Set(next,"Code",Enum.Parse(Type("IntegrityCheckState"),"Match"));Call(monitor,"Publish",Host,generation,next);
+            var record=Evidence(monitor);string title=(string)Call(monitor,"Summary",false);
+            Check(record.GetValue<uint>("Alerts")==3&&record.GetValue<bool>("FileMismatchSeen")&&record.GetValue<bool>("CodeMismatchSeen"),"P restart retains confirmed anomalies from old process segment");
+            Check(title.Contains("随机数待核验")&&title.Contains("运行完整性异常")&&!title.Contains("[测试版]"),"old diagnostic alerts remain without relabelling current approved DLL");
+            Check(record.GetValue<bool>("RunPalDllMismatchSeen")&&!record.GetValue<bool>("PalDllMismatchSeen")&&record.GetValue<bool>("PalDllApproved"),"historical DLL mismatch remains separate from current classification");
+            Check(record.GetValue<string>("FilesVerifiedAtQpc")=="0"&&!record.GetValue<bool>("ReadFailed")&&record.GetValue<string>("CodeState")=="Match","new target availability and verification states remain independent");
+            Check(record.GetValue<int>("LastAlertProcessId")==Host.Id&&record.GetValue<string>("LastAlertProcessCreationTime")==Birth.ToString(),"last alert retains its original process provenance");
+            var identityArgs=new object[]{null,null};Type("RuntimeIntegrityMonitor").GetMethod("CompetitionIdentity",Inst).Invoke(monitor,identityArgs);
+            Check((string)identityArgs[0]==new string('b',64)&&(string)identityArgs[1]=="1.7.2.0","online identity always comes from the current target");
+            Call(monitor,"ResetRunHistory");
+            Check(Evidence(monitor).GetValue<uint>("Alerts")==0&&!(bool)Evidence(monitor).GetValue<bool>("RunPalDllMismatchSeen"),"new run clears cross-process history");
+            Set(next,"StickyAlerts",2u);Call(monitor,"Publish",Host,generation,next);Call(monitor,"BeginRunHistory");Call(monitor,"ResetRunHistory");
+            Check(Evidence(monitor).GetValue<uint>("Alerts")==2,"Reset still cannot erase same-process confirmed evidence");
+        } finally { ((IDisposable)monitor).Dispose(); }
+    }
     static void DiagnosticStartupGrace()
     {
         using(var mapping=MemoryMappedFile.CreateNew("Local\\PAL98.RuntimeIntegrity.v1."+Host.Id,320))
@@ -717,6 +749,23 @@ internal static class V169IntegrityBehavior
     {
         var bytes=Snapshot();view.WriteArray(0,bytes,0,bytes.Length);Set(session,"NextFileSlice",0L);ObserveNow(monitor,Host);
         WaitUntil(()=> (int)Field(monitor,"working")==0,"scan slice finishes");
+    }
+    static void StartupIdentityRetry()
+    {
+        string dll=Path.Combine(Path.GetDirectoryName(Host.MainModule.FileName),"PAL.dll");
+        byte[] bytes=Encoding.ASCII.GetBytes("restart identity read retry fixture");
+        File.WriteAllBytes(dll,bytes);
+        var monitor=New("RuntimeIntegrityMonitor");
+        try {
+            using(var held=new FileStream(dll,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
+                ObserveNow(monitor,Host);
+                WaitUntil(()=> (int)Field(monitor,"working")==0,"initial locked DLL read completes");
+                Check(Evidence(monitor).GetValue<bool>("ReadFailed") && Evidence(monitor).GetValue<string>("PalDllSha256")=="",
+                    "temporary sharing failure cannot certify a new process using the old DLL identity");
+            }
+            WaitUntil(()=> { Call(monitor,"Observe",Host); return Evidence(monitor).GetValue<string>("PalDllSha256")==Hash(bytes); },
+                "released startup DLL recovers automatically without focus changes or manual retry");
+        } finally { ((IDisposable)monitor).Dispose(); }
     }
     static void PeriodicVerificationStability()
     {
@@ -868,6 +917,23 @@ internal static class V169IntegrityBehavior
         var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
         var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
         var v171Anu=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.1.2");
+        var v172=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.0");
+        var v172Dll=((IEnumerable)Property(v172,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        var v172Helper=((IEnumerable)Property(v172,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="Pal98ProcessHelper.exe");
+        var v172Winmm=((IEnumerable)Property(v172,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="winmm.dll");
+        Check((long)Property(v172Winmm,"size")==399360 && (string)Property(v172Winmm,"sha256")=="8f942204e0c0ed772bbcb118328b5ebb5eb0e1f1f9d1cbed73f0ecd3d2db2e7c","v1.7.2 required DxWrapper winmm stub identity");
+        Check((long)Property(v172Dll,"size")==2183168 && (string)Property(v172Dll,"sha256")=="58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39","v1.7.2 initialized gameplay publication frozen DLL identity");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2187776L,"96261d617492aabae629981745dbcdf5df5dd29397bc6349dfec65f6b8d3127c")==null,"superseded session-check candidate is not the current formal build");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2186752L,"b26679728e14156c2e529c483e75459e54b605600186b7e970032b07e086a884")==null,"superseded startup-race candidate is not the current formal build");
+        Check((long)Property(v172Helper,"size")==1251328 && (string)Property(v172Helper,"sha256")=="bf05bbf7e08192a6b1887f1f481c89a630aaf31f4f56e5bba440e46d666c4039","v1.7.2 matching restart helper identity");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2182144L,"158b79397a7f777c41f4102f58985e03af66cb5f5a1c42e70534c483f8499cdb")==null,"superseded alternating-steal candidate is not approved");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2181632L,"a95c8c3a2fa89beabab6fa22b88915437b5524379b782c913e10a17cbefb402c")==null,"superseded Q-PRD candidate is not approved");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size"),(string)Property(v172Dll,"sha256")) as string == "1.7.2.0","v1.7.2 exact bytes approved");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size"),new string('b',64)) == null,"same v1.7.2 DLL size cannot promote different bytes");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size")+1,(string)Property(v172Dll,"sha256")) == null,"v1.7.2 approval also requires exact size");
+        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.2.0","3.37.8.0"),"v1.7.2 matching lock readable");
+        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.1.1","3.37.8.0"),"v1.7.2 mixed runtime lock rejected");
+        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.2.0","3.37.7.17"),"v1.7.2 old timer lock rejected");
         var v171AnuDll=((IEnumerable)Property(v171Anu,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v171AnuDll,"size")==2156032 && (string)Property(v171AnuDll,"sha256")=="a15d3a922103ea8a4154106d93f1f73414ab8a869277943b0925968025899b48","v1.71 Anu dialogue repair frozen DLL identity");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v171AnuDll,"size"),(string)Property(v171AnuDll,"sha256")) as string == "1.7.1.2","v1.71 Anu dialogue repair exact hash approved");
@@ -923,6 +989,8 @@ internal static class V169IntegrityBehavior
             Scenario("r10_module_switches",R10ModuleSwitches);Scenario("r10_unknown_content",R10UncoveredStillChecksCore);Scenario("r10_setting_ranges",R10SettingRanges);
             Scenario("quiet_summary",QuietSuccessfulSummary);Scenario("seqlock_read",SeqlockReadAndExpiry);Scenario("periodic_scan",PeriodicVerificationStability);Scenario("diagnostic_grace",DiagnosticStartupGrace);Scenario("normal_detach",DetachedTargetClearsAvailabilityOnly);Scenario("official_dlls",OfficialPalDllClassification);
             Scenario("build_catalog",BuildCatalogSelectsHashNotVersion);
+            Scenario("restart_alert_history",RestartRunAlertHistory);
+            Scenario("startup_identity_retry",StartupIdentityRetry);
         }
         var result=new HObj();result["passed"]=Passed;result["failed"]=Failed;result["assertions"]=Assertions;result["failures"]=string.Join("\n",Failures);
         result["realGameUsed"]=false;result["realCloudUsed"]=false;

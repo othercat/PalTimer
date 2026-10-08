@@ -22,6 +22,31 @@ internal sealed class StorageAutomaticCore : Pal98Dx9Automatic
 }
 internal static class GameplayBehavior
 {
+    sealed class RestartAutomaticCore : Pal98Dx9Automatic
+    {
+        internal RestartAutomaticCore() : base(null) { }
+        public override string GetScoreValidationError() => ""; // timing identity has its own host
+        public override string GetGameVersion() => "restart integration fixture";
+        internal override void CaptureCompetitionIdentity(out string hash,out string version,out int fade,out int speed,out string error)
+        { hash=new string('a',64);version="1.7.2.0";fade=1200;speed=10;error=""; }
+    }
+    sealed class OnlineRecorder : IPalTimerOnlineV1
+    {
+        internal readonly List<OnlineSnapshotV1> Snapshots=new List<OnlineSnapshotV1>();
+        internal int Clocks;
+        public int ApiVersion => 1;
+        internal bool Available = true, DropNext;
+        public bool Enabled => Available;
+        public string LiveCaption => "";
+        public void ObserveTarget(int pid,long generation) { }
+        public void Publish(OnlineSnapshotV1 snapshot) { if (DropNext) { DropNext = false; return; } Snapshots.Add(snapshot); }
+        public void PublishClock(string token,long elapsed,bool running,long observedTick) { ++Clocks; }
+        public void Invalidate(string token) { }
+        public void ShowSettings(IWin32Window owner) { }
+        public void UiTick() { }
+        public System.Threading.Tasks.Task<bool> CloseAsync() => System.Threading.Tasks.Task.FromResult(true);
+        public void Dispose() { }
+    }
     static int checks;
     static void Check(bool value, string name) { if (!value) throw new Exception(name); Console.WriteLine("PASS " + name); checks++; }
     static void Set(object value,string field,object content) { for(var type=value.GetType();type!=null;type=type.BaseType) { var f=type.GetField(field,BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public|BindingFlags.DeclaredOnly); if(f!=null){f.SetValue(value,content);return;} } throw new Exception(field); }
@@ -114,6 +139,260 @@ internal static class GameplayBehavior
         Check(!string.IsNullOrEmpty(observed.ValidationError),"invalid current ranking cannot reuse frozen start eligibility");
         core.Unload();
     }
+    static void RestartTimelineAndOnline()
+    {
+        var core=new RestartAutomaticCore();Call(core,"InitCheckPoints");string route=(string)Get(core,"route");
+        var facts=Snapshot(route);var rankingRules=new Dictionary<string,string>(facts.rules) { ["family"]="standard" };
+        facts.ranking=new RankingConfiguration { schema="PAL98.RankingConfiguration.v1",covered=true,rules=rankingRules,configuration_id=RankingConfiguration.Digest(rankingRules) };
+        Func<uint,long,HardcoreSnapshot> segment=(pid,birth)=>{
+            var bytes=new byte[72];Action<int,byte[]> put=(at,value)=>Array.Copy(value,0,bytes,at,value.Length);
+            put(8,BitConverter.GetBytes(pid));put(12,BitConverter.GetBytes(0x01070200u));put(16,BitConverter.GetBytes(birth));
+            put(28,BitConverter.GetBytes(2u));put(32,BitConverter.GetBytes(4u));put(36,BitConverter.GetBytes(1u));
+            put(40,BitConverter.GetBytes(15u));put(56,BitConverter.GetBytes(100UL));
+            return new HardcoreSnapshot(bytes,new string('a',64),new string('b',64),"fixture","");
+        };
+        var run=(HardcoreRunEvidence)Get(core,"hardcoreRun");var old=segment(100,1000);
+        run.Observe(old,false);run.Observe(old,true,observedRuntimeIdentity:"dll|content");
+        Call(core,"SelectIdentity",facts,true);Set(core,"frozen",facts.HardcoreTimelineId);Set(core,"frozenHardcore",true);
+        var timer=(PTimer)Get(core,"MT");timer.SetTS(TimeSpan.FromSeconds(73));core.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(12));
+        var ui=(GForm)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm));
+        var online=new OnlineRecorder();Set(ui,"core",core);Set(ui,"competition",online);Set(core,"form",ui);
+        Set(Get(core,"gameplayReader"),"current",facts);
+        Call(core,"PublishCompetitionIfChanged");
+        Check(online.Snapshots.Count==1&&online.Snapshots[0].Hardcore.Verified&&string.IsNullOrEmpty(online.Snapshots[0].ValidationError),"actual online publisher starts with verified metadata");
+        Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+        Check(online.Snapshots.Count==1,"unchanged metadata remains deduplicated within one heartbeat");
+        online.Available=false;Call(core,"PublishCompetitionIfChanged");online.Available=true;
+        Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+        Check(online.Snapshots.Count==2,"settings reconnection republishes identical metadata");
+        online.DropNext=true;Set(core,"competitionMetadataPoll",0L);Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+        Check(online.Snapshots.Count==2,"fixture drops a publication during asynchronous reconnect");
+        Set(core,"competitionMetadataPoll",System.Diagnostics.Stopwatch.GetTimestamp()-1);Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+        Check(online.Snapshots.Count==3,"periodic metadata heals a lost publication without a new node or focus change");
+        for(int pass=0;pass<2;++pass) {
+            var q=new HardcoreControlSnapshot { Pid=old.Pid,Creation=old.ProcessCreation,ProducerVersion=old.ProducerVersion,State=2,
+                Ticket=Guid.NewGuid().ToString("N"),HelperPid=55,HelperCreation=555,RequestQpc=101 };
+            var r=new HardcoreRestartSnapshot { Pid=q.Pid,Creation=q.Creation,ProducerVersion=q.ProducerVersion,State=1,
+                Ticket=q.Ticket,HelperPid=q.HelperPid,HelperCreation=q.HelperCreation,ChangedQpc=102 };
+            run.Observe(null,true,q,r,helperAlive:true);
+            Set(Get(core,"gameplayReader"),"current",null);Set(Get(core,"onlineGameplayReader"),"current",null);
+            int published=online.Snapshots.Count,clocks=online.Clocks,step=core.CurrentStep;
+            Call(core,"ObserveGameplay");Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+            Check(online.Clocks==clocks+1&&online.Snapshots.Count==published,"pending P publishes clock without invalid metadata "+pass);
+            Check((string)Get(core,"validation")==""&&(string)Get(core,"frozen")==facts.HardcoreTimelineId&&core.CurrentStep==step&&timer.CurrentTSOnly==TimeSpan.FromSeconds(73)&&core.CheckPoints[0].Current==TimeSpan.FromSeconds(12),"pending P preserves timeline time and nodes "+pass);
+            r.State=2;r.NewPid=old.Pid+1;r.NewCreation=old.ProcessCreation+1;
+            old=segment(r.NewPid,r.NewCreation);Set(Get(core,"onlineGameplayReader"),"current",facts);
+            run.Observe(old,true,q,r,"dll|content",old.Pid,old.ProcessCreation,targetAlive:true);
+            Call(core,"ObserveGameplay");
+            Check((string)Get(core,"validation")==""&&core.CaptureHardcoreEvidence().run_verified,"verified reader bridges automatic reader startup after P "+pass);
+            // Reconnection must refresh metadata itself, even if gameplay,
+            // timing and the current node are identical to the old process.
+            Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+            var resumed=online.Snapshots.Last();
+            Check(online.Snapshots.Count==published+1&&resumed.Hardcore.Verified&&resumed.TimelineId==facts.HardcoreTimelineId&&string.IsNullOrEmpty(resumed.ValidationError),"resumed metadata remains eligible without sticky transition error "+pass);
+        }
+        run.Observe(null,true);Set(Get(core,"gameplayReader"),"current",facts);Call(core,"ObserveGameplay");
+        Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+        Check(!online.Snapshots.Last().Hardcore.Verified&&!string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),"genuine evidence failure leaves wait gate and reaches online review");
+        core.Unload();
+    }
+    sealed class RestartLegacyCore : 仙剑98柔情DX9
+    {
+        internal RestartLegacyCore() : base(null) { }
+        public override string GetScoreValidationError() => "";
+        public override string GetGameVersion() => "ordinary legacy fixture";
+        internal override void CaptureCompetitionIdentity(out string hash,out string version,out int fade,out int speed,out string error)
+        { hash=new string('a',64);version="1.7.2.0";fade=1200;speed=10;error=""; }
+    }
+    static void OrdinaryRestart()
+    {
+        using(var original=Process.GetCurrentProcess())
+        using(var replacement=Process.GetCurrentProcess()) {
+            // Separate wrappers model reader target generations. No game is run.
+            foreach(bool automatic in new[]{false,true}) {
+                仙剑98柔情DX9 core=automatic?(仙剑98柔情DX9)new RestartAutomaticCore():new RestartLegacyCore();
+                Call(core,"InitCheckPoints");
+                string route=CompetitionProtocol.RouteHash(core.CheckPoints.Select(p=>CompetitionProtocol.CheckpointId(p.Name)));
+                var facts=Snapshot(route);
+                var rules=new Dictionary<string,string>(facts.rules) { ["family"]="standard" };
+                facts.ranking=new RankingConfiguration {schema="PAL98.RankingConfiguration.v1",covered=true,rules=rules,configuration_id=RankingConfiguration.Digest(rules)};
+                Set(core,"PalProcess",original);Set(core,"_IsFirstStarted",true);
+                if(automatic) { Call(core,"SelectIdentity",facts,false);Set(core,"frozen",facts.OrdinaryTimelineId); }
+                var reader=Get(core,"onlineGameplayReader");Set(reader,"target",original);Set(reader,"current",facts);Set(reader,"busy",true);
+                if(automatic) { var autoReader=Get(core,"gameplayReader");Set(autoReader,"target",original);Set(autoReader,"current",facts);Set(autoReader,"busy",true); }
+                Set(Get(core,"runtimeIntegrity"),"evidence",new RuntimeIntegrityEvidence {PalDllSha256=new string('a',64),PalDllVersion="1.7.2.0"});
+                var timer=(PTimer)Get(core,"MT");timer.SetTS(TimeSpan.FromSeconds(73));core.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(12));
+                int step=core.CurrentStep;
+                var ui=(GForm)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm));
+                var online=new OnlineRecorder();Set(ui,"core",core);Set(ui,"competition",online);Set(core,"form",ui);
+                Call(core,"PublishCompetitionIfChanged");
+                Check(online.Snapshots.Count==1&&string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),"ordinary publisher starts with accepted facts: "+automatic);
+                Check(((GameplayContinuation)Get(core,"gameplayContinuation")).Snapshot==facts,"first publication retains its accepted gameplay for an immediate P: "+automatic);
+                Process previous=original;
+                for(int pass=0;pass<2;++pass) {
+                    int count=online.Snapshots.Count;
+                    Set(core,"PalProcess",null);Set(reader,"target",null);Set(reader,"current",null);
+                    if(automatic) Set(Get(core,"gameplayReader"),"current",null);
+                    Call(core,"ObserveGameplayContinuation",null,null,null,null);
+                    if(automatic) Call(core,"ObserveGameplay");
+                    Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                    Check(core.CompetitionMetadataPending&&online.Snapshots.Count==count,"ordinary P gap does not publish a false invalid frame: "+automatic+"/"+pass);
+                    if(automatic) {
+                        Check((string)Get(core,"validation")==""&&(string)Get(core,"frozen")==facts.OrdinaryTimelineId,"ordinary P preserves frozen gameplay without sticky failure: "+pass);
+                        var data=new HObj();Call(core,"FillMoreTimerData",data);
+                        Check(!data.GetValue<bool>("GameplayVerified"),"pending ordinary restart cannot certify an export: "+pass);
+                    }
+                    var next=ReferenceEquals(previous,original)?replacement:original;
+                    Set(core,"PalProcess",next);Set(reader,"target",next);
+                    Call(core,"ObserveGameplayContinuation",next,null,null,null);
+                    Check(core.CompetitionMetadataPending,"replacement waits for its own gameplay evidence: "+automatic);
+                    Set(reader,"current",facts);Call(core,"ObserveGameplayContinuation",next,facts,null,null);
+                    Check(core.CompetitionMetadataPending,"replacement gameplay alone cannot borrow the old DLL hash: "+automatic);
+                    Call(core,"ObserveGameplayContinuation",next,facts,new string('a',64),"1.7.2.0");
+                    if(automatic) Call(core,"ObserveGameplay");
+                    Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                    Check(!core.CompetitionMetadataPending&&online.Snapshots.Count==count+1&&string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),"ordinary P resumes accepted metadata after both readers recover: "+automatic+"/"+pass);
+                    Check(core.CurrentStep==step&&timer.CurrentTSOnly==TimeSpan.FromSeconds(73)&&core.CheckPoints[0].Current==TimeSpan.FromSeconds(12),"P continuation preserves stopwatch and checkpoint values: "+automatic);
+                    previous=next;
+                }
+                // A real runtime replacement must still become a sticky error.
+                Call(core,"ObserveGameplayContinuation",previous,facts,new string('b',64),"1.7.2.0");
+                Call(core,"ObserveGameplayContinuation",previous,facts,new string('a',64),"1.7.2.0");
+                Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                Check(!string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),"DLL mismatch remains invalid even after switching back: "+automatic);
+                core.Reset();Check(((GameplayContinuation)Get(core,"gameplayContinuation")).Snapshot==null,"explicit Reset clears continuation identity: "+automatic);
+                core.Unload();
+            }
+            foreach(string change in new[]{"rules","ranking","content","speed","coverage"}) {
+                var facts=Snapshot(new string('f',64));
+                var rules=new Dictionary<string,string>(facts.rules) { ["family"]="standard" };
+                facts.ranking=new RankingConfiguration {schema="PAL98.RankingConfiguration.v1",covered=true,rules=rules,configuration_id=RankingConfiguration.Digest(rules)};
+                var continuity=new GameplayContinuation();continuity.Observe(original,facts,new string('a',64),"1.7.2.0",true,false);
+                var changed=Snapshot(new string('f',64));changed.ranking=facts.ranking;
+                if(change=="rules")changed.rules_sha256=new string('d',64);
+                if(change=="ranking")changed.ranking=new RankingConfiguration {covered=true,configuration_id=new string('d',64)};
+                if(change=="content")changed.content_sha256=new string('d',64);
+                if(change=="speed")changed.fade_ms=800;
+                if(change=="coverage")changed.covered=false;
+                continuity.Observe(replacement,changed,new string('a',64),"1.7.2.0",true,false);
+                continuity.Observe(replacement,facts,new string('a',64),"1.7.2.0",true,false);
+                Check(continuity.Error.Length>0&&!continuity.WaitingFor(replacement,true),"restart mismatch remains a visible failure: "+change);
+            }
+        }
+    }
+    static void ImmediateStart()
+    {
+        using (var process=Process.GetCurrentProcess())
+        using (var mapping=MemoryMappedFile.CreateNew("Local\\PAL98.GameplayMode.v1."+process.Id,32808))
+        using (var view=mapping.CreateViewAccessor()) {
+            var core=new RestartAutomaticCore();Call(core,"InitCheckPoints");Set(core,"PalProcess",process);
+            string route=(string)Get(core,"route");var origin=Snapshot(route);var changed=Snapshot(route,true);
+            var reader=(GameplayModeReader)Get(core,"gameplayReader");
+            view.WriteArray(0,Frame(origin,process),0,32808);
+            var capture=reader.CaptureStart(process);
+            view.WriteArray(0,Frame(changed,process),0,32808);
+            var wait=System.Diagnostics.Stopwatch.StartNew();while(capture.Pending&&wait.ElapsedMilliseconds<3000)Thread.Sleep(5);
+            Check(!capture.Pending&&capture.Snapshot?.rules_sha256==origin.rules_sha256,"start copy cannot be replaced by rules published after local timing begins");
+            Check(reader.CurrentOrCapturedStart(capture)?.rules_sha256==origin.rules_sha256,"captured start bridges an earlier pending reader result");
+            reader.Observe(process);
+            wait.Restart();while(reader.Current?.rules_sha256!=changed.rules_sha256&&wait.ElapsedMilliseconds<3000)Thread.Sleep(5);
+            Check(reader.CurrentOrCapturedStart(capture)?.rules_sha256==changed.rules_sha256,"later coherent rules take precedence over the start frame");
+            view.Write(0,0);Set(reader,"next",0L);reader.Observe(process);
+            wait.Restart();while(reader.Current!=null&&wait.ElapsedMilliseconds<3000)Thread.Sleep(5);
+            Check(reader.CurrentOrCapturedStart(capture)==null,"a later invalid frame cannot borrow valid start evidence");
+            foreach(bool hardcore in new[]{false,true}) {
+                core.Reset();Set(core,"_IsFirstStarted",true);
+                var decode=new System.Threading.Tasks.TaskCompletionSource<GameplaySnapshot>();
+                Set(core,"startObservation",new GameplayStartObservation(decode.Task,capture.CapturedAt));
+                Set(core,"startProcess",process);Set(core,"startHardcore",hardcore);
+                Call(core,"FreezeStartIdentity");
+                Check(core.CompetitionMetadataPending&&!(bool)Get(core,"startedWithoutIdentity"),"delayed decoding is pending, not a permanent unknown start: "+hardcore);
+                decode.SetResult(capture.Snapshot);Call(core,"FreezeStartIdentity");
+                Check(!core.CompetitionMetadataPending&&(string)Get(core,"frozen")== (hardcore?origin.HardcoreTimelineId:origin.OrdinaryTimelineId)&& (string)Get(core,"validation")=="",
+                    "immediate local start keeps captured gameplay while server/decoder connects: "+hardcore);
+            }
+            core.Reset();Set(core,"_IsFirstStarted",true);
+            Set(core,"startObservation",new GameplayStartObservation(System.Threading.Tasks.Task.FromResult<GameplaySnapshot>(null),System.Diagnostics.Stopwatch.GetTimestamp()));
+            Call(core,"FreezeStartIdentity");Call(core,"SelectIdentity",origin,false);
+            Check((bool)Get(core,"startedWithoutIdentity")&&Get(core,"identity")==null,"missing start frame cannot be certified using later facts");
+            core.Unload();
+        }
+    }
+    static GameplaySnapshot NativeFrame(string path)
+    {
+        var bytes=File.ReadAllBytes(path);
+        return GameplayModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),
+            BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));
+    }
+    static void NativeStartupRestart(string directory,string prematureFrame)
+    {
+        var premature=NativeFrame(prematureFrame);
+        var ready=NativeFrame(Path.Combine(directory,"ready-frame.bin"));
+        var resumed=NativeFrame(Path.Combine(directory,"restart-frame.bin"));
+        var invalid=NativeFrame(Path.Combine(directory,"invalid-frame.bin"));
+        var changed=NativeFrame(Path.Combine(directory,"changed-frame.bin"));
+        Check(premature?.covered==true&&premature.ranking?.covered==false,
+            "old production publisher emits coherent but provisional ranking failure");
+        Check(ready?.ranking?.covered==true&&resumed?.ranking?.covered==true,
+            "fixed production first and replacement frames both pass the managed decoder");
+        using(var original=Process.GetCurrentProcess())
+        using(var replacement=Process.GetCurrentProcess()) {
+            var negative=new GameplayContinuation();
+            negative.Observe(original,ready,new string('a',64),"1.7.2.0",true,false);
+            negative.Observe(replacement,premature,new string('a',64),"1.7.2.0",true,false);
+            negative.Observe(replacement,resumed,new string('a',64),"1.7.2.0",true,false);
+            Check(negative.Error=="本局玩法规则或内容已改变，保留未归类记录；请重置后开始新跑次。",
+                "old native startup frame reproduces the exact sticky live failure");
+            foreach(bool automatic in new[]{false,true}) {
+                仙剑98柔情DX9 core=automatic?(仙剑98柔情DX9)new RestartAutomaticCore():new RestartLegacyCore();
+                Call(core,"InitCheckPoints");
+                string route=CompetitionProtocol.RouteHash(core.CheckPoints.Select(p=>CompetitionProtocol.CheckpointId(p.Name)));
+                foreach(var facts in new[]{ready,resumed,invalid,changed}) {
+                    facts.OrdinaryTimelineId=TimelineIdentity.Create(facts.rules_sha256,route,false);
+                    facts.HardcoreTimelineId=TimelineIdentity.Create(facts.rules_sha256,route,true);
+                }
+                Set(core,"PalProcess",original);Set(core,"_IsFirstStarted",true);
+                var timer=(PTimer)Get(core,"MT");timer.SetTS(TimeSpan.FromSeconds(73));
+                core.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(12));
+                int step=core.CurrentStep;
+                var reader=Get(core,"onlineGameplayReader");Set(reader,"target",original);Set(reader,"current",ready);Set(reader,"busy",true);
+                if(automatic) {
+                    Call(core,"SelectIdentity",ready,false);Set(core,"frozen",ready.OrdinaryTimelineId);
+                    var autoReader=Get(core,"gameplayReader");Set(autoReader,"target",original);Set(autoReader,"current",ready);Set(autoReader,"busy",true);
+                }
+                Set(Get(core,"runtimeIntegrity"),"evidence",new RuntimeIntegrityEvidence {PalDllSha256=new string('a',64),PalDllVersion="1.7.2.0"});
+                var ui=(GForm)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm));
+                var online=new OnlineRecorder();Set(ui,"core",core);Set(ui,"competition",online);Set(core,"form",ui);
+                Call(core,"PublishCompetitionIfChanged");
+                Check(online.Snapshots.Count==1&&string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),
+                    "native initial facts publish accepted metadata: "+automatic);
+                Set(core,"PalProcess",replacement);Set(reader,"target",replacement);Set(reader,"current",null);
+                if(automatic) Set(Get(core,"gameplayReader"),"current",null);
+                Call(core,"ObserveGameplayContinuation",replacement,null,null,null);
+                if(automatic) Call(core,"ObserveGameplay");
+                Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                Check(core.CompetitionMetadataPending&&online.Snapshots.Count==1,
+                    "fixed native initialization gap retains metadata without a false invalid update: "+automatic);
+                Set(reader,"current",resumed);
+                Call(core,"ObserveGameplayContinuation",replacement,resumed,new string('a',64),"1.7.2.0");
+                if(automatic) Call(core,"ObserveGameplay");
+                Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                Check(!core.CompetitionMetadataPending&&online.Snapshots.Count==2&&string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),
+                    "fixed native replacement frame resumes online validity: "+automatic);
+                Check(core.CurrentStep==step&&timer.CurrentTSOnly==TimeSpan.FromSeconds(73)&&core.CheckPoints[0].Current==TimeSpan.FromSeconds(12),
+                    "native restart replay preserves stopwatch and route nodes: "+automatic);
+                Call(core,"ObserveGameplayContinuation",replacement,invalid,new string('a',64),"1.7.2.0");
+                Call(core,"ObserveGameplayContinuation",replacement,resumed,new string('a',64),"1.7.2.0");
+                Set(core,"competitionPoll",0L);Call(core,"PublishCompetitionIfChanged");
+                Check(!string.IsNullOrEmpty(online.Snapshots.Last().ValidationError),
+                    "real native runtime coverage loss still reaches online validation: "+automatic);
+                core.Unload();
+            }
+            var change=new GameplayContinuation();change.Observe(original,ready,new string('a',64),"1.7.2.0",true,false);
+            change.Observe(replacement,changed,new string('a',64),"1.7.2.0",true,false);
+            Check(change.Error.Length>0,"native effective ranking changes still invalidate continuation");
+        }
+    }
     static void Cores() {
         var auto=new Pal98Dx9Automatic(null);Call(auto,"InitCheckPoints");
         var legacy=new 仙剑98柔情DX9(null);Call(legacy,"InitCheckPoints");
@@ -168,6 +447,65 @@ internal static class GameplayBehavior
         Check(File.Exists(TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory,facts.HardcoreTimelineId,false,"best.json")),"unverified hardcore saves to quarantine");
         core.Unload();reopened.Unload();
     }
+    static void ContinuousStealPresentation()
+    {
+        string route = CompetitionProtocol.RouteHash(new[] { "鬼将军", "拜月" });
+        var automatic = new Pal98Dx9Automatic(null);
+        var legacy = new 仙剑98柔情DX9(null);
+        var facts = Snapshot(route);
+        facts.rules["prd.EnableScopedStealPrd"] = "1";
+        facts.rules["prd.scoped_steal_policy"] = "battle-shared-continuous-70-exact-v4";
+        Set(automatic, "selected", facts);
+        var reader = (GameplayModeReader)Get(legacy, "onlineGameplayReader");
+        Set(reader, "current", facts);
+        foreach (var mode in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 }, new[] { 1200, 9 } })
+        {
+            facts.fade_ms = mode[0]; facts.map_speed_ticks = mode[1];
+            string expected = (mode[0] == 800 ? "0.8" : "1.2") + (mode[1] == 9 ? "+快走速A" : "+普通走速A");
+            string before = Rules(facts.rules);
+            foreach (var core in new 仙剑98柔情DX9[] { legacy, automatic })
+            {
+                Set(core, "lastConfirmedTimingMode", new RuntimeTimingMode(mode[0], mode[1], false,
+                    "classic-v5", "1.0.22", facts.content_sha256, "速通 v5"));
+                Check(((string)Call(core, "FormatGameTitle", "1.7.2")).Contains(expected), "title uses compact enabled A for " + expected);
+                Check(core.GameplayWindowTitleSuffix == " " + expected, "native window title uses the same A mode");
+                Check(core.AppendGameplayCodes("custom title") == "custom title A", "small-window header keeps A and user or plugin title");
+                Check((string)Call(core, "GameplayTimingDisplayLabel") == expected, "OBS uses the same A mode");
+                object previous = Get(core, "form");
+                Set(core, "form", System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm)));
+                try { Check((string)Get(Call(core, "CreateDx9OverlaySnapshot"), "TimingModeLabel") == expected,
+                    "real overlay snapshot carries A without an extra config read"); }
+                finally { Set(core, "form", previous); }
+                Check(!((string)Call(core, "FormatPaletteFadeVersion", "1.7.2")).Contains("A"), "structured DX9Version stays unchanged");
+            }
+            Check(Rules(facts.rules) == before, "display never changes canonical gameplay identity");
+        }
+        foreach (string value in new[] { "0", "requested-but-disabled", "", "1" })
+        {
+            facts.rules["prd.EnableScopedStealPrd"] = value;
+            if (value == "1") facts.rules["prd.scoped_steal_policy"] = "battle-shared-continuous-70-exact-v3";
+            Check(facts.DisplayCodes == "" && automatic.GameplayWindowTitleSuffix == "" && legacy.GameplayWindowTitleSuffix == "",
+                "disabled or old theft policy does not claim A: " + value);
+            Check(automatic.AppendGameplayCodes("custom title") == "custom title", "disabled A preserves configured header text");
+            Check(!((string)Call(automatic,"GameplayTimingDisplayLabel")).Contains("A") &&
+                !((string)Call(legacy,"GameplayTimingDisplayLabel")).Contains("A"), "disabled A clears both OBS paths");
+        }
+        facts.rules.Remove("prd.EnableScopedStealPrd");
+        facts.rules["prd.EnablePlayerFleePrd"] = "1";
+        facts.rules["prd.EnableBeehiveDropPrd"] = "1";
+        Check(facts.DisplayCodes == "", "legacy bee and Q flags never display A");
+        facts.rules["prd.EnableScopedStealPrd"] = "1";
+        facts.rules["prd.scoped_steal_policy"] = "battle-shared-continuous-70-exact-v4";
+        facts.covered = false;
+        Check(facts.Label(false).Contains("A") && facts.Label(false).EndsWith("未归类"), "A does not invent ranking coverage");
+        using (var process = Process.GetCurrentProcess()) { Set(reader,"target",process); reader.Observe(null); }
+        Check(legacy.GameplayWindowTitleSuffix == "" && !((string)Call(legacy,"GameplayTimingDisplayLabel")).Contains("A"),
+            "disconnect clears traditional title and OBS together");
+        automatic.Reset();
+        Check(automatic.GameplayWindowTitleSuffix == "" && !((string)Call(automatic,"GameplayTimingDisplayLabel")).Contains("A"),
+            "reset clears automatic title and OBS together");
+        automatic.Unload(); legacy.Unload();
+    }
     static void Presentation()
     {
         var core = new Pal98Dx9Automatic(null);
@@ -196,6 +534,8 @@ internal static class GameplayBehavior
                 Dx9TimingCategory.Suffix(core.RecordedTimingMode), "structured version suffix does not gain gameplay text");
         }
         Set(core, "requested", false);
+        facts.rules["prd.EnableScopedStealPrd"] = "1";
+        facts.rules["prd.scoped_steal_policy"] = "battle-shared-continuous-70-exact-v4";
         string example = "[测试版] " + core.GetGameVersion();
         facts.family = "drawcard";
         foreach (string key in new[] { "random_items", "random_skills.enabled", "love.enabled", "village" }) facts.rules[key] = "1";
@@ -213,7 +553,7 @@ internal static class GameplayBehavior
         using (var board = new GBoard())
         {
             var render = new GRender(panel); render.SetGBoard(board);
-            render.SetTitle("自动计时器"); render.SetVersion("3.37.7"); render.SetMainTimer(TimeSpan.Zero);
+            render.SetTitle(core.AppendGameplayCodes("自动计时器")); render.SetVersion("3.37.8"); render.SetMainTimer(TimeSpan.Zero);
             render.SetMoreInfo(legacy.GetMoreInfo()); render.SetSubTimer("0.00s");
             render.AddBtn("隐藏", null); render.AddBtn("重置", null); render.AddBtn("功能", null); render.AddBtn("云", null);
             if (size.Height > 250) {
@@ -275,7 +615,10 @@ internal static class GameplayBehavior
         }
     }
     [STAThread]
-    static int Main(string[] args) { try { Decoder();Identity();Cores();Storage();LiveRanking();Presentation();
-        foreach(var path in args){var bytes=File.ReadAllBytes(path);var decoded=GameplayModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));Check(decoded!=null&&decoded.covered,"actual native snapshot validates in managed reader: "+Path.GetDirectoryName(path));Check(decoded.ranking!=null&&decoded.ranking.Valid(decoded.Identity),"actual native online ranking validates independently of local timeline");}
+    static int Main(string[] args) { try { Decoder();Identity();Cores();Storage();LiveRanking();RestartTimelineAndOnline();OrdinaryRestart();ImmediateStart();ContinuousStealPresentation();Presentation();
+        for(int i=0;i<args.Length;++i) {
+            if(args[i]=="--startup") { NativeStartupRestart(args[++i],args[++i]);continue; }
+            var decoded=NativeFrame(args[i]);Check(decoded!=null&&decoded.covered,"actual native snapshot validates in managed reader: "+Path.GetDirectoryName(args[i]));Check(decoded.ranking!=null&&decoded.ranking.Valid(decoded.Identity),"actual native online ranking validates independently of local timeline");
+        }
         Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}catch(Exception error){Console.Error.WriteLine(error);return 1;} }
 }

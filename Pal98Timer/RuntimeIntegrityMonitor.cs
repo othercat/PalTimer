@@ -96,6 +96,7 @@ namespace Pal98Timer
         internal const int ObservationMilliseconds = 500;
         internal const int BackgroundSliceMilliseconds = 1000;
         internal const int FileRecheckSeconds = 300;
+        internal const int FileReadRetrySeconds = 1;
         internal const int ModuleRefreshSeconds = 10;
         private static readonly object ledgerSync = new object();
         private static readonly Dictionary<string, RuntimeIntegrityEvidence> ledger = new Dictionary<string, RuntimeIntegrityEvidence>();
@@ -109,13 +110,72 @@ namespace Pal98Timer
         private long nextObservation;
         private int working;
         private Session session;
+        private bool trackRunHistory;
+        private readonly Dictionary<string,RuntimeIntegrityEvidence> runHistory=new Dictionary<string,RuntimeIntegrityEvidence>();
+        internal void BeginRunHistory()
+        {
+            lock(targetSync) { trackRunHistory=true; RememberRunAlerts(evidence); }
+        }
+        internal void ResetRunHistory()
+        {
+            // Process-local evidence and the existing process ledger survive Reset.
+            lock(targetSync) { trackRunHistory=false; runHistory.Clear(); }
+        }
+        private void RememberRunAlerts(RuntimeIntegrityEvidence state)
+        {
+            if(!trackRunHistory || state.Identity==null ||
+                (state.StickyAlerts==0 && !state.FileMismatchSeen && !state.CodeMismatchSeen && !state.PalDllMismatchSeen && state.LastAlert==null)) return;
+            string key=Key(state.Identity);
+            if(!runHistory.TryGetValue(key,out RuntimeIntegrityEvidence prior)) {
+                prior=new RuntimeIntegrityEvidence { Identity=state.Identity }; runHistory.Add(key,prior);
+            }
+            MergeRunAlerts(prior,state); prior.PalDllMismatchSeen|=state.PalDllMismatchSeen;
+        }
+        private static void MergeRunAlerts(RuntimeIntegrityEvidence target,RuntimeIntegrityEvidence source)
+        {
+            target.StickyAlerts|=source.StickyAlerts;
+            target.FileMismatchSeen|=source.FileMismatchSeen; target.CodeMismatchSeen|=source.CodeMismatchSeen;
+            if(source.LastAlert!=null && (target.LastAlert==null || source.LastAlert.LastEvent>=target.LastAlert.LastEvent)) target.LastAlert=source.LastAlert;
+        }
+        private RuntimeIntegrityEvidence DiagnosticView()
+        {
+            var view=Copy(evidence);
+            foreach(var prior in runHistory.Values) MergeRunAlerts(view,prior);
+            return view; // hashes, current states, heartbeat and availability stay current
+        }
         internal string Append(string title, bool cloudCertified)
         {
-            string summary = observed ? evidence.Summary(cloudCertified) : "";
+            string summary = Summary(cloudCertified);
             return summary.Length == 0 ? title : summary + " " + title;
         }
-        internal string Summary(bool cloudCertified) { return observed ? evidence.Summary(cloudCertified) : ""; }
-        internal void Fill(HObj target, bool cloudCertified) { evidence.Fill(target, cloudCertified); }
+        internal string Summary(bool cloudCertified) { lock(targetSync) return observed ? DiagnosticView().Summary(cloudCertified) : ""; }
+        internal void Fill(HObj target, bool cloudCertified)
+        {
+            lock(targetSync) {
+                var view=DiagnosticView(); view.Fill(target,cloudCertified);
+                var data=target.GetValue<HObj>("RuntimeIntegrity"); var segments=new HObj();
+                bool historicalDllMismatch=false; var alertIdentity=evidence.Identity;
+                foreach(var pair in runHistory) {
+                    var prior=pair.Value; var entry=new HObj();
+                    entry["ProcessId"]=prior.Identity.Pid; entry["ProcessCreationTime"]=prior.Identity.CreationTime.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    entry["Alerts"]=prior.StickyAlerts; entry["FileMismatchSeen"]=prior.FileMismatchSeen;
+                    entry["CodeMismatchSeen"]=prior.CodeMismatchSeen; entry["PalDllMismatchSeen"]=prior.PalDllMismatchSeen;
+                    if(prior.LastAlert!=null) {
+                        entry["LastAlertEventSequence"]=prior.LastAlert.EventSequence;
+                        entry["LastAlertDetail"]="运行说明："+prior.LastAlert.Detail;
+                        if(ReferenceEquals(view.LastAlert,prior.LastAlert)) alertIdentity=prior.Identity;
+                    }
+                    segments[prior.Identity.Pid+"_"+prior.Identity.CreationTime]=entry;
+                    historicalDllMismatch|=prior.PalDllMismatchSeen;
+                }
+                data["RunAlertSegments"]=segments; data["RunPalDllMismatchSeen"]=historicalDllMismatch;
+                if(view.LastAlert!=null && alertIdentity!=null) {
+                    data["LastAlertProcessId"]=alertIdentity.Pid;
+                    data["LastAlertProcessCreationTime"]=alertIdentity.CreationTime.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                target["RuntimeIntegrity"]=data;
+            }
+        }
         internal void CompetitionIdentity(out string hash, out string version)
         {
             var snapshot = evidence;
@@ -130,6 +190,7 @@ namespace Pal98Timer
             {
                 if (!ReferenceEquals(targetProcess, process))
                 {
+                    RememberRunAlerts(evidence);
                     targetProcess = process; ++targetGeneration;
                     Interlocked.Exchange(ref nextObservation, 0);
                     if (process != null)
@@ -163,7 +224,9 @@ namespace Pal98Timer
         {
             Remember(state);
             lock (targetSync)
-                if (!disposed && targetGeneration == generation && ReferenceEquals(targetProcess, process)) evidence = Copy(state);
+                if (!disposed && targetGeneration == generation && ReferenceEquals(targetProcess, process)) {
+                    RememberRunAlerts(state); evidence = Copy(state);
+                }
         }
         private void PublishSession(Process process, long generation, RuntimeIntegrityEvidence state)
         {
@@ -284,7 +347,12 @@ namespace Pal98Timer
                 state.FilesVerifiedAt = Stopwatch.GetTimestamp();
             if (state.Files == IntegrityCheckState.Mismatch) state.FileMismatchSeen = true;
             Checkpoint(state);
-            if (session.Verifier.Complete && session.NextFileScan == long.MaxValue) session.NextFileScan = now + FileRecheckSeconds * Stopwatch.Frequency;
+            // A transient sharing/access failure at process startup must not
+            // hold the restart handoff for the normal five-minute audit period.
+            // Retry the same checks; missing/mismatched files remain evidence,
+            // and no prior process hash is borrowed while the read is unknown.
+            if (session.Verifier.Complete && session.NextFileScan == long.MaxValue)
+                session.NextFileScan = now + (session.Verifier.HasReadFailure ? FileReadRetrySeconds : FileRecheckSeconds) * Stopwatch.Frequency;
 
             // The first stable diagnostic heartbeat is published after native
             // initialization. Preparing refers to role baseline readiness, not RNG.

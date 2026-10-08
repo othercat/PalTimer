@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [string[]]$NativeSnapshotFile)
+param([switch]$SkipBuild, [string[]]$NativeSnapshotFile, [string]$StartupSnapshotDirectory, [string]$PrematureStartupFrame)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo ('artifacts\gameplay-behavior-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
@@ -31,6 +31,10 @@ Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination
 Copy-Item -LiteralPath (Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe') -Destination $out
 $hostArgs = @()
 if ($NativeSnapshotFile) { $hostArgs += (Resolve-Path -LiteralPath $NativeSnapshotFile).Path }
+if ($StartupSnapshotDirectory) {
+    if (!$PrematureStartupFrame) { throw 'A pre-fix startup frame is required for the negative control' }
+    $hostArgs += '--startup', (Resolve-Path -LiteralPath $StartupSnapshotDirectory).Path, (Resolve-Path -LiteralPath $PrematureStartupFrame).Path
+}
 Push-Location -LiteralPath $out
 try { & $exe @hostArgs 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.log'); $result = $LASTEXITCODE }
 finally { Pop-Location }
@@ -41,6 +45,8 @@ $receipt = [ordered]@{
     releaseExeSha256=(Get-FileHash -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Algorithm SHA256).Hash;
     keyChangerSha256=(Get-FileHash -LiteralPath (Join-Path $out 'KeyChanger.exe') -Algorithm SHA256).Hash;
     nativeSnapshotSha256=$(if ($NativeSnapshotFile) { (Get-FileHash -LiteralPath $NativeSnapshotFile).Hash } else { $null });
+    nativeStartupDirectory=$StartupSnapshotDirectory;
+    prematureStartupSha256=$(if ($PrematureStartupFrame) { (Get-FileHash -LiteralPath $PrematureStartupFrame).Hash } else { $null });
     sourceHashes=@($sources | ForEach-Object { [ordered]@{path=$_; sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash} });
     results=(Join-Path $out 'result.log')
 }

@@ -929,7 +929,10 @@ namespace Pal98Timer
         private string competitionCoreId = Guid.NewGuid().ToString("N");
         internal string CompetitionToken { get { return competitionCoreId + ":" + ScoreRunSequence; } }
         internal virtual Process CompetitionGameProcess { get { return null; } }
-        private long competitionSequence = -1, competitionPoll;
+        internal virtual bool CompetitionRestartPending => false;
+        internal virtual bool CompetitionMetadataPending => CompetitionRestartPending;
+        private long competitionSequence = -1, competitionPoll, competitionMetadataPoll;
+        private Process competitionProcess;
         private int competitionStep = -2;
         private string competitionFingerprint = "";
         private bool competitionBeganHere;
@@ -939,7 +942,8 @@ namespace Pal98Timer
         internal virtual void CaptureCompetitionGameplay(CompetitionObservation observation) { }
         private void PublishCompetitionIfChanged()
         {
-            if (form == null || !form.CompetitionEnabled(this) || CheckPoints == null || CheckPoints.Count == 0) return;
+            if (form == null || CheckPoints == null || CheckPoints.Count == 0) return;
+            if (!form.CompetitionEnabled(this)) { competitionMetadataPoll = 0; return; }
             string coreIdentity = competitionCoreId;
             long sequence = ScoreRunSequence, now = Stopwatch.GetTimestamp(); int step = CurrentStep;
             if (sequence == competitionSequence && step == competitionStep && now < competitionPoll) return;
@@ -948,13 +952,23 @@ namespace Pal98Timer
             // The live worker owns serialization, signing, HTTP and persistence.
             form.PublishCompetitionClock(this, coreIdentity + ":" + sequence,
                 MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond, MT.IsRunning, now);
+            // Keep publishing the actual stopped/running clock while preserving
+            // the existing lease metadata during an authenticated P transition.
+            // Exports still report pending as unverified; failed transitions
+            // leave this gate and publish the original sticky failure normally.
+            if(CompetitionMetadataPending) { competitionMetadataPoll = 0; return; }
+            Process process = CompetitionGameProcess;
             string hash, version, error; int fade, speed;
             CaptureCompetitionIdentity(out hash, out version, out fade, out speed, out error);
             if (sequence != competitionSequence) competitionBeganHere = CanBeginCompetitionHere(step);
             var observation = new CompetitionObservation();
             CaptureCompetitionGameplay(observation);
             string fingerprint = (observation.TimelineId ?? "") + "|" + observation.Ranking?.configuration_id + "|" + observation.ValidationError + "|" + (observation.Hardcore?.run_verified ?? false) + "|" + coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
-            if (fingerprint == competitionFingerprint) return;
+            // A reconnect can discard the consumer's last snapshot without
+            // changing gameplay or the node. Republish on process changes and
+            // periodically so an asynchronous disable/invalidate cannot lose
+            // the only copy forever. The worker still owns all network work.
+            if (fingerprint == competitionFingerprint && ReferenceEquals(process, competitionProcess) && now < competitionMetadataPoll) return;
             var splits = new CompetitionSplit[CheckPoints.Count];
             for (int index = 0; index < splits.Length; index++)
             {
@@ -966,6 +980,7 @@ namespace Pal98Timer
             long totalMilliseconds = MT.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond;
             if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
+            competitionProcess = process; competitionMetadataPoll = now + 5 * Stopwatch.Frequency;
             form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
                 Step = step, TotalMilliseconds = totalMilliseconds, GameTitle = GetGameVersion(),
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,

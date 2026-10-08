@@ -14,6 +14,7 @@ namespace Pal98Timer
         internal int Status;
         internal string Body = "";
         internal int RetryAfterSeconds;
+        internal DateTimeOffset? ServerDate, ReceivedAt;
         internal bool Success { get { return Status >= 200 && Status < 300; } }
         internal bool Retryable { get { return Status == 0 || Status == 408 || Status == 429 || Status >= 500; } }
         internal string Description { get { return Status == 0 ? "比赛服务暂不可用，后台稍后重试" : "比赛服务返回 HTTP " + Status; } }
@@ -45,7 +46,8 @@ namespace Pal98Timer
                 {
                     using (var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false))
                     {
-                        var result = new CompetitionHttpResult { Status = (int)response.StatusCode };
+                        var result = new CompetitionHttpResult { Status = (int)response.StatusCode,
+                            ServerDate = response.Headers.Date, ReceivedAt = DateTimeOffset.UtcNow };
                         var retry = response.Headers.RetryAfter;
                         if (retry != null)
                         {

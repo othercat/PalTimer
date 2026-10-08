@@ -150,7 +150,7 @@ namespace Pal98Timer
             {
                 if (!File.Exists(ConfigFileName))
                 {
-                    return false;
+                    return true;
                 }
 
                 return File.ReadAllText(ConfigFileName, Encoding.UTF8).Trim() == "1";

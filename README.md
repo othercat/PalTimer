@@ -7,7 +7,18 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.37.7（文件版本 3.37.7.17）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.37.8（文件版本 3.37.8.0）；需要 .NET Framework 4.7.2 框架**
+
+2026-10-08 配套 PALDLL／Helper／配置工具 **1.7.2.0**、联机模块 **1.0.0.2**：
+
+- 开局时保留当时的共享玩法快照，后台解析使用该证据；普通与自动 DX9 核心在正常 P 重启后保留当前时间、节点和玩法，待新进程身份核对完成后继续。真实规则变更和已有异常仍保留。
+- 硬核通过绑定键盘的 F9 完整按下/抬起消费暂停事件，正常 P 重启通过 DLL/Helper 的一次性衔接记录恢复证据；不以新进程的“硬核生效”覆盖旧跑次异常。
+- 重连后补报当前状态并定期补发；临时 DLL 文件读取失败约一秒后重试。网络工作继续在后台进行，不阻塞本地节点计时。
+- 握手发现本机与服务器时间差时，明确显示方向、差值和校时入口；校时后自动重连，不修改系统时间或放宽认证。
+- 无已保存设置时，默认启用跳图路线及 DX9 OBS 独立遮罩；已有手动关闭值继续生效。连续偷盗方案启用时，标题和遮罩显示 A 标识。
+- 正式 DLL 按 SHA-256 `58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39` 识别，旧指定构建继续保留；同版本号的其它 DLL 不自动获得资格。
+
+EXE、PalTimerOnline.dll、PalCompetitionAuth.dll 与 PalCompetitionRegistration.public.json 必须配套更新。沿用自动登记流程，新组合仍需后台批准，原云 ID 激活独立办理；这些同步修复不要求修改 PalServer 产品代码。本轮 Release x64 构建、定向宿主/界面回归和配套加载核验已通过，真实 P 重启、OBS 软件采集、完整路线和跨主机表现仍须独立验收。以下日期段落为此前发布记录。
 
 2026-10-04 联机配置兼容修复：`PalTimerOnline.dll` 升级为 **1.0.0.1**，同步 EXE 已支持的 1.7.1.0／1.7.1.1 签名配置读取规则，修复配置工具已开启联机、计时器却显示“联机未开启”的问题。配置读取失败的原因只显示在“联机与排名”设置窗口；不增加节点 IO 或联网等待。此次 EXE、PAL.dll、配置工具和原云组件均保持原字节；联机 DLL、配对认证 DLL、公开登记文件必须一起更新。无需重新办理忽爷 EXE 激活，新的联机组件组合仍需后台批准。发布者公钥未变。
 

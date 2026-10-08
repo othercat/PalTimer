@@ -36,6 +36,7 @@ namespace Pal98Timer
         private Process PalProcess;
         private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private readonly GameplayModeReader onlineGameplayReader = new GameplayModeReader();
+        private readonly GameplayContinuation gameplayContinuation = new GameplayContinuation();
         private PalLiveProcessIdentity attachedProcessIdentity;
         private PalLiveProcessIdentity rejectedProfileIdentity;
         // Keep the successfully attached installation across P/exit/restart.
@@ -44,6 +45,20 @@ namespace Pal98Timer
         private readonly TimingModeReader paletteFadeMode = new TimingModeReader();
         private readonly IHardcoreModeReader hardcoreReader = new HardcoreModeReader();
         private readonly HardcoreRunEvidence hardcoreRun = new HardcoreRunEvidence();
+        private readonly HardcoreControlReader hardcoreControl = new HardcoreControlReader();
+        private volatile bool usesHardcorePause;
+        private HardcoreSnapshot hardcorePauseOwner;
+        internal bool UsesHardcorePause => usesHardcorePause;
+        protected bool HardcoreRestartPending => hardcoreRun.RestartPending;
+        private bool GameplayRunCompleted => CheckPoints != null && CheckPoints.Count > 0 && CurrentStep >= CheckPoints.Count;
+        protected bool GameplayRestartPending => HardcoreRestartPending ||
+            (!GameplayRunCompleted && gameplayContinuation.WaitingFor(PalProcess, GameplayRunStarted));
+        protected string GameplayContinuationError => gameplayContinuation.Error;
+        internal override bool CompetitionRestartPending => hardcoreRun.RestartPending;
+        internal override bool CompetitionMetadataPending => base.CompetitionMetadataPending || GameplayRestartPending;
+        internal GameplaySnapshot ResumedHardcoreGameplay => hardcoreRun.Restarts>0 && hardcoreRun.CaptureCompetition().run_verified ? onlineGameplayReader.Current : null;
+        internal GameplaySnapshot ResumedGameplay => gameplayContinuation.Resumed && !GameplayRestartPending ? onlineGameplayReader.Current : ResumedHardcoreGameplay;
+        protected void SetHardcoreGameplayRoute(string route) { onlineGameplayReader.Route=route; }
         private readonly object hardcoreObservationSync = new object();
         private RuntimeTimingMode lastConfirmedTimingMode;
         private string lastConfirmedTournamentDisplayName = "";
@@ -509,11 +524,13 @@ namespace Pal98Timer
             observation.Hardcore = CaptureHardcoreEvidence();
             onlineGameplayReader.Observe(PalProcess);
             var snapshot = onlineGameplayReader.Current;
+            RememberGameplayForContinuation(snapshot);
             observation.Gameplay = snapshot?.Identity; observation.Ranking = snapshot?.ranking;
             // Identity hashing stays on the reader/background upload worker.
             observation.TimelineId = snapshot?.rules_sha256 + "|" + observation.Hardcore.requested;
             if (snapshot == null || !snapshot.covered || snapshot.ranking?.covered != true)
                 observation.ValidationError = "本局联机玩法未完整识别，成绩需服务端审核";
+            if (GameplayContinuationError.Length != 0) observation.ValidationError = GameplayContinuationError;
         }
 
         internal override Process CompetitionGameProcess { get { return PalProcess; } }
@@ -521,6 +538,7 @@ namespace Pal98Timer
         public override void Unload()
         {
             runtimeIntegrity?.Dispose();
+            lock(hardcoreObservationSync) hardcoreControl.Dispose();
             base.Unload();
         }
 
@@ -551,8 +569,30 @@ namespace Pal98Timer
             }
         }
 
+        private protected virtual GameplaySnapshot DisplayGameplaySnapshot => onlineGameplayReader.Current ??
+            (GameplayRestartPending ? gameplayContinuation.Snapshot : null);
+        internal string AppendGameplayCodes(string title)
+        {
+            string codes = DisplayGameplaySnapshot?.DisplayCodes ?? "";
+            return title + (codes.Length == 0 ? "" : " " + codes);
+        }
+        internal string GameplayWindowTitleSuffix
+        {
+            get {
+                var snapshot = DisplayGameplaySnapshot;
+                return snapshot != null && snapshot.DisplayCodes.Length != 0 ? " " + snapshot.CompactTimingLabel : "";
+            }
+        }
+        private string GameplayTimingDisplayLabel()
+        {
+            var snapshot = DisplayGameplaySnapshot;
+            return snapshot != null && snapshot.DisplayCodes.Length != 0 ? snapshot.CompactTimingLabel :
+                Dx9TimingCategory.ModeLabel(RecordedTimingMode);
+        }
         protected virtual string FormatGameTitle(string version)
         {
+            var snapshot = DisplayGameplaySnapshot;
+            if (snapshot != null && snapshot.DisplayCodes.Length != 0) return version + "-" + snapshot.CompactTimingLabel;
             return FormatPaletteFadeVersion(version);
         }
 
@@ -645,6 +685,10 @@ namespace Pal98Timer
             timingRunInvalidated = false;
             importedUnverifiedTiming = false;
             hardcoreRun.Reset();
+            runtimeIntegrity.ResetRunHistory();
+            gameplayContinuation.Reset();
+            hardcoreControl.Dispose();
+            // Reset changes the run, not the physical keyboard's F9 owner.
             MoveSpeed = 0;
             HasAlertMutiPal = false;
             HasUnCheated = false;
@@ -1729,7 +1773,7 @@ namespace Pal98Timer
                 state,
                 antiCheatPaused,
                 paused,
-                Dx9TimingCategory.ModeLabel(RecordedTimingMode),
+                GameplayTimingDisplayLabel(),
                 hardcore.Status,
                 hardcore.Device,
                 runtimeIntegrity == null ? "" : runtimeIntegrity.Summary(cloudId >= 0),
@@ -1883,6 +1927,7 @@ namespace Pal98Timer
                     ST.Stop();
                     if (!_IsFirstStarted)
                     {
+                        OnGameplayStarting();
                         _IsFirstStarted = true;
                     }
                     if (!HasUnCheated)
@@ -1925,13 +1970,80 @@ namespace Pal98Timer
             PreData();
         }
 
+        protected virtual void OnGameplayStarting() { }
+
+        protected void RefreshHardcoreRuntime()
+        {
+            ObserveHardcoreRuntime(GetPalHandle()?PalProcess:null);
+        }
         private void ObserveHardcoreRuntime(Process process, bool beginning = false)
         {
             if (TimingModeMs == 0) return;
             // Sampling and submission are one operation. A cloud/export read
             // must not submit an older frame after the timer thread's new one.
-            lock (hardcoreObservationSync)
-                hardcoreRun.Observe(hardcoreReader.Read(process), beginning || _IsFirstStarted || MT.CurrentTS.Ticks > 0);
+            lock (hardcoreObservationSync) {
+                var snapshot=hardcoreReader.Read(process);
+                if((beginning || _IsFirstStarted || MT.CurrentTS.Ticks>0) &&
+                    (snapshot!=null && snapshot.Requested || hardcorePauseOwner!=null && hardcorePauseOwner.Requested))
+                    runtimeIntegrity.BeginRunHistory();
+                runtimeIntegrity.Observe(process);
+                onlineGameplayReader.Observe(process);
+                runtimeIntegrity.CompetitionIdentity(out string dllHash,out string dllVersion);
+                var gameplay=onlineGameplayReader.Current;
+                string runtimeIdentity=process!=null && CompetitionProtocol.Digest(dllHash) && gameplay!=null && gameplay.Identity.Valid
+                    ? dllHash+"|"+dllVersion+"|"+gameplay.rules_sha256+"|"+gameplay.content_id+"|"+gameplay.content_sha256 : null;
+                var control=hardcoreControl.ReadControl(); var restart=hardcoreControl.ReadRestart();
+                uint actualPid=0; long actualCreation=0;
+                try { if(process!=null && !process.HasExited) { actualPid=(uint)process.Id; actualCreation=process.StartTime.ToUniversalTime().ToFileTimeUtc(); } }
+                catch(Exception e) when(e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { }
+                bool helperAlive=control!=null && control.State==2 && HardcoreControlReader.Alive(control.HelperPid,control.HelperCreation);
+                restart=hardcoreControl.RefreshStoppedHelperResult(restart,helperAlive);
+                uint beforeRestarts=hardcoreRun.Restarts;
+                hardcoreRun.Observe(snapshot,beginning || _IsFirstStarted || MT.CurrentTS.Ticks>0,control,restart,runtimeIdentity,
+                    actualPid,actualCreation,helperAlive,
+                    restart!=null && restart.State==2 && HardcoreControlReader.Alive(restart.NewPid,restart.NewCreation),
+                    hardcoreControl.ControlBusy,hardcoreControl.RestartBusy);
+                ObserveGameplayContinuation(process,gameplay,dllHash,dllVersion);
+                UpdateHardcorePauseOwner(snapshot,actualPid,actualCreation);
+                if(!hardcoreRun.RestartPending && snapshot!=null && !hardcoreControl.Matches(snapshot)) {
+                    hardcoreControl.Attach(snapshot,hardcoreRun.Restarts>beforeRestarts);
+                    control=hardcoreControl.ReadControl();
+                }
+                if(hardcoreControl.Matches(snapshot)) {
+                    uint events=hardcoreControl.TakePauseEvents(control);
+                    if(events>0) form?.QueueHardcorePause(this,events);
+                }
+            }
+        }
+
+        private void ObserveGameplayContinuation(Process process, GameplaySnapshot gameplay, string hash, string version)
+        {
+            if (GameplayRunStarted && GameplayRunCompleted) return;
+            gameplayContinuation.Observe(process,gameplay,hash,version,GameplayRunStarted,hardcoreRun.CaptureCompetition().requested);
+        }
+
+        private protected void RememberGameplayForContinuation(GameplaySnapshot gameplay)
+        {
+            // Bind the facts before their first online publication as well:
+            // a player may press P immediately after that accepted frame.
+            lock (hardcoreObservationSync) {
+                runtimeIntegrity.CompetitionIdentity(out string hash,out string version);
+                ObserveGameplayContinuation(PalProcess,gameplay,hash,version);
+            }
+        }
+
+        private void UpdateHardcorePauseOwner(HardcoreSnapshot snapshot,uint pid,long creation)
+        {
+            if(snapshot!=null) {
+                hardcorePauseOwner=snapshot;
+                usesHardcorePause=snapshot.Requested && snapshot.ProducerVersion>=HardcoreControlReader.ProducerVersion;
+            } else if(pid!=0 && hardcorePauseOwner!=null &&
+                (pid!=hardcorePauseOwner.Pid || creation!=hardcorePauseOwner.ProcessCreation) && !hardcoreRun.RestartPending) {
+                hardcorePauseOwner=null; usesHardcorePause=false;
+            }
+            // Unknown reads, the restart gap and Reset cannot temporarily send
+            // the same physical release through the old global-hook path.
+            if(hardcoreRun.RestartPending) usesHardcorePause=true;
         }
 
         protected override void OnCheckPointEnd()

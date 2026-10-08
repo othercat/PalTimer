@@ -77,7 +77,8 @@ internal static class OnlineModuleLoaderBehavior
             new[] { "1.6.8.17", "1.6.8.17", "3.37.7.6" },
             new[] { "1.7.0.0", "1.7.0.0", "3.37.7.16" },
             new[] { "1.7.1.0", "1.7.1.0", "3.37.7.17" },
-            new[] { "1.7.1.1", "1.7.1.1", "3.37.7.17" }
+            new[] { "1.7.1.1", "1.7.1.1", "3.37.7.17" },
+            new[] { "1.7.2.0", "1.7.2.0", "3.37.8.0" }
         };
         foreach (var v in versions) {
             foreach (var assembly in new[] { host, online })
@@ -96,7 +97,7 @@ internal static class OnlineModuleLoaderBehavior
             File.WriteAllBytes(Path.Combine(root, "DATA.MKF"), new byte[] { 3, 2, 1 }); Rejected(online, root, "Changed dependency accepted.");
             Console.WriteLine("PASS packaged signed settings " + v[0] + "; signature/dependencies remain enforced");
         }
-        foreach (var v in new[] { new[] { "1.7.1.1", "1.7.0.0", "3.37.7.17" }, new[] { "99.0.0.0", "99.0.0.0", "3.37.7.17" } }) {
+        foreach (var v in new[] { new[] { "1.7.1.1", "1.7.0.0", "3.37.7.17" }, new[] { "1.7.2.0", "1.7.1.1", "3.37.8.0" }, new[] { "1.7.2.0", "1.7.2.0", "3.37.7.17" }, new[] { "99.0.0.0", "99.0.0.0", "3.37.7.17" } }) {
             string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configuration-fixtures", "rejected-" + v[0]);
             WriteLock(host, root, v[0], v[1], v[2]); Rejected(online, root, "Unknown/mixed lock version accepted.");
         }

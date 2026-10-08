@@ -43,7 +43,11 @@ namespace Pal98Timer
         internal bool SameRun(HardcoreSnapshot other)
         {
             return other != null && Pid == other.Pid && ProcessCreation == other.ProcessCreation &&
-                ProducerVersion == other.ProducerVersion && RulesVersion == other.RulesVersion &&
+                SamePolicy(other);
+        }
+        internal bool SamePolicy(HardcoreSnapshot other)
+        {
+            return other != null && ProducerVersion == other.ProducerVersion && RulesVersion == other.RulesVersion &&
                 BlacklistVersion == other.BlacklistVersion && ConfigurationHash == other.ConfigurationHash &&
                 BindingHash == other.BindingHash && VendorId == other.VendorId && ProductId == other.ProductId &&
                 KeyboardTransport == other.KeyboardTransport;

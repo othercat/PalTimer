@@ -37,10 +37,11 @@ internal static class LiveBehavior
     }
     sealed class Transport : ICompetitionTransport
     {
-        internal bool Supported = true, Approved = true, WrongAck, WrongRank;
+        internal bool Supported = true, Approved = true, WrongAck, WrongRank, WrongChallenge, MissingDate;
+        internal int ServerClockOffset, ExpiryAdjustment;
         internal int Active, MaxActive, Updates, Gets, Sessions, Challenges, UpdateStatus = 200;
         internal volatile Request Last;
-        internal TaskCompletionSource<bool> Gate;
+        internal TaskCompletionSource<bool> Gate, SessionGate;
         internal string Session = Guid.NewGuid().ToString("D"), Instance;
         static CompetitionHttpResult Reply(object value) => new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(value) };
         static CompetitionReply Board(string config = null, string route = null, string checkpoint = null, long? elapsed = null, string custom = null, string board = "overall") => new CompetitionReply {
@@ -62,12 +63,18 @@ internal static class LiveBehavior
                     live_protocol = Supported ? CompetitionClient.LiveProtocol : null });
                 if (url.EndsWith("/live/challenges")) {
                     Challenges++; var input = json.Deserialize<CompetitionLiveChallenge>(body); Instance = input.instance_id;
-                    return Reply(new CompetitionLiveChallenge { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
+                    var received = DateTimeOffset.UtcNow;
+                    var reply = Reply(new CompetitionLiveChallenge { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
                         server_origin = origin, key_id = input.key_id, timer_exe_sha256 = input.timer_exe_sha256, hwid = hwid,
-                        instance_id = input.instance_id, nonce = new string('d',64), challenge_id = Guid.NewGuid().ToString("D"), expires_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 120 });
+                        instance_id = WrongChallenge ? Guid.NewGuid().ToString("D") : input.instance_id, nonce = new string('d',64),
+                        challenge_id = Guid.NewGuid().ToString("D"), expires_at = received.ToUnixTimeSeconds() + ServerClockOffset + 120 + ExpiryAdjustment });
+                    reply.ReceivedAt = received;
+                    reply.ServerDate = MissingDate ? (DateTimeOffset?)null : received.AddSeconds(ServerClockOffset);
+                    return reply;
                 }
                 if (url.EndsWith("/live/sessions")) {
-                    Sessions++; return Reply(new CompetitionLiveSession { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
+                    Sessions++; var sessionGate = SessionGate; if (sessionGate != null) await sessionGate.Task;
+                    return Reply(new CompetitionLiveSession { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
                         server_origin = origin, public_id = "1042", session_id = Session, session_token = new string('e',64), heartbeat_seconds = 5, offline_seconds = 20 });
                 }
                 if (url.EndsWith("/live/updates")) {
@@ -115,6 +122,34 @@ internal static class LiveBehavior
         Check(status.Caption(true,now) == " [已连接:1042]", "short ID in title only after ACK");
         Check(status.Caption(true,now+20*Stopwatch.Frequency) == " [连接失败]", "lease expires without worker/UI intervention");
 
+        foreach (int offset in new[] { 182, -182 }) {
+            var clockWire = new Transport { ServerClockOffset = offset };
+            var clockAuth = new Auth(); var clockClient = Client(root,"clock-" + offset,clockWire,clockAuth);
+            await Until(() => clockClient.ClockWarning != null, "clock mismatch has explicit warning: " + offset);
+            var issue = clockClient.ClockWarning;
+            Check(clockClient.LiveCaption == " [系统时间不同步]" && issue.Message.Contains((offset > 0 ? "慢" : "快") + "约 3分2秒") &&
+                issue.Message.Contains("立即同步") && issue.Message.Contains("本地计时继续"), "clock direction, amount and recovery guidance: " + offset);
+            Check(clockAuth.Proofs == 0 && clockWire.Sessions == 0, "clock diagnosis never bypasses expiry authentication: " + offset);
+            int challenges = clockWire.Challenges;
+            clockClient.Retry();
+            await Until(() => clockWire.Challenges > challenges && clockClient.ClockWarning != null, "clock retry completes: " + offset);
+            Check(clockClient.ClockWarning.Id == issue.Id, "retry keeps one warning episode: " + offset);
+            clockWire.ServerClockOffset = 0;
+            await Until(() => clockClient.LiveCaption == " [已连接:1042]", "clock correction automatically reconnects: " + offset);
+            Check(clockClient.ClockWarning == null && clockAuth.Proofs == 1, "clock recovery clears warning after valid challenge: " + offset);
+            await clockClient.CloseAsync();
+        }
+        foreach (var fault in new[] {
+            new Transport { ServerClockOffset = 182, WrongChallenge = true },
+            new Transport { ServerClockOffset = 182, MissingDate = true },
+            new Transport { ExpiryAdjustment = 182 },
+            new Transport { ServerClockOffset = 182, ExpiryAdjustment = 600 } }) {
+            var faultAuth = new Auth(); var faultClient = Client(root,"clock-invalid-" + Guid.NewGuid().ToString("N"),fault,faultAuth);
+            await Until(() => faultClient.LiveCaption == " [连接失败]", "invalid or unverified challenge remains a handshake failure");
+            Check(faultClient.ClockWarning == null && faultAuth.Proofs == 0, "no invented clock diagnosis or proof without matching time evidence");
+            await faultClient.CloseAsync();
+        }
+
         var wire = new Transport(); var auth = new Auth(); var client = Client(root,"normal",wire,auth);
         await Until(() => client.LiveCaption == " [已连接:1042]", "real background session and heartbeat acknowledged");
         Check(wire.Last.observation.state == "waiting" && wire.Last.observation.run_id == null, "connected idle is not an invented run");
@@ -134,6 +169,10 @@ internal static class LiveBehavior
         client.PublishClock("first",4600,true,Stopwatch.GetTimestamp()-5*Stopwatch.Frequency); client.Retry();
         await Until(() => wire.Last.sequence > sequence && wire.Last.observation.state == "invalid", "stale local observation is not advertised as running");
         Check(wire.Last.observation.elapsed_ms == 4600, "stale sample retains observed time instead of inventing elapsed");
+
+        client.PublishClock("first",4700,true,Stopwatch.GetTimestamp());client.Retry();
+        await Until(() => wire.Last.observation.state == "running" && wire.Last.observation.elapsed_ms == 4700, "fresh timing heals transient invalid state under the same run");
+        Check(wire.Last.observation.run_id == firstRun,"invalid-to-running recovery does not invent a new run");
 
         wire.Gate = new TaskCompletionSource<bool>(); client.Retry();
         int updates = wire.Updates;
@@ -156,6 +195,20 @@ internal static class LiveBehavior
         Check(wire.MaxActive == 1, "all HTTP stays serialized");
         await client.CloseAsync();
 
+        wire = new Transport { SessionGate = new TaskCompletionSource<bool>() };
+        client = Client(root,"early-start",wire,new Auth());
+        await Until(() => wire.Sessions > 0,"connection handshake is held in the background");
+        Check(client.Enabled && client.LiveCaption != " [已连接:1042]","local publication is available before connected confirmation");
+        client.Invalidate("early-start");client.Publish(Observe("early-start",0));
+        client.PublishClock("early-start",1800,true,Stopwatch.GetTimestamp());
+        client.Publish(Observe("early-start",1));
+        client.PublishClock("early-start",4500,true,Stopwatch.GetTimestamp());
+        wire.SessionGate.SetResult(true);
+        await Until(() => wire.Last?.observation.state == "running" && wire.Last.observation.elapsed_ms == 4500,"delayed connection receives the latest already-running state");
+        Check(wire.Last.observation.current_checkpoint == "通关" && wire.Last.observation.splits[0].status == "completed",
+            "starting and crossing a checkpoint before connected retains current progress");
+        await client.CloseAsync();
+
         wire = new Transport { Supported = false }; client = Client(root,"old-server",wire,new Auth());
         await Until(() => client.LiveCaption == " [连接失败]", "old server has explicit connection feedback");
         Check(wire.Challenges == 0 && client.Enabled, "old server receives no unsupported calls and remains usable locally");
@@ -175,13 +228,14 @@ internal static class LiveBehavior
         await Until(() => client.LiveCaption == " [已连接:1042]", "game-managed live session connects");
         client.Publish(Observe("restart",0));client.PublishClock("restart",2400,true,Stopwatch.GetTimestamp());
         await Until(() => wire.Last.observation.state=="running", "game-managed run visible");
-        int sessionCount=wire.Sessions;
+        int sessionCount=wire.Sessions; string restartRun=wire.Last.observation.run_id;
         client.ObserveGame(null);client.Retry();
         await Until(() => wire.Last.observation.state=="no_game", "PAL exit stops current gameplay display");
         client.ObserveGame(Process.GetCurrentProcess());
         await Until(() => client.Enabled,"PAL restart rereads settings");
         client.Publish(Observe("restart",0));client.PublishClock("restart",2500,true,Stopwatch.GetTimestamp());
         await Until(() => wire.Last.observation.state=="running", "PAL restart resumes live state");
+        Check(wire.Last.observation.run_id==restartRun,"PAL reconnect preserves this run until an explicit Reset");
         Check(wire.Sessions==sessionCount&&client.LiveCaption==" [已连接:1042]","PAL restart keeps timer connection and short ID");
         await client.CloseAsync();
 

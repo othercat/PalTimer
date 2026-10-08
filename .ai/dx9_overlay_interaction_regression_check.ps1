@@ -60,6 +60,13 @@ try {
     $assembly = [Reflection.Assembly]::LoadFrom($ExePath)
     $layoutType = $assembly.GetType("Pal98Timer.Dx9OverlayLayoutSettings", $true)
     $settingsType = $assembly.GetType("Pal98Timer.Dx9OverlaySettings", $true)
+    $loadEnabled = $settingsType.GetMethod("LoadEnabled", $binding)
+    $saveEnabled = $settingsType.GetMethod("SaveEnabled", $binding)
+    Assert-True ($loadEnabled.Invoke($null, @())) "missing overlay preference must default to enabled"
+    $saveEnabled.Invoke($null, @($false))
+    Assert-True (-not $loadEnabled.Invoke($null, @())) "saved disabled overlay preference must be preserved"
+    $saveEnabled.Invoke($null, @($true))
+    Assert-True ($loadEnabled.Invoke($null, @())) "saved enabled overlay preference must be preserved"
     $snapshotType = $assembly.GetType("Pal98Timer.Dx9OverlaySnapshot", $true)
     $timelineType = $assembly.GetType("Pal98Timer.Dx9OverlayTimelineEntry", $true)
     $overlayType = $assembly.GetType("Pal98Timer.Dx9OverlayForm", $true)

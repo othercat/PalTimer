@@ -184,6 +184,7 @@
     <Compile Include="ReleaseIntegrityVerifier.cs" />
     <Compile Include="RuntimeIntegrityMonitor.cs" />
     <Compile Include="HardcoreModeReader.cs" />
+    <Compile Include="HardcoreControlReader.cs" />
     <Compile Include="HardcoreRunEvidence.cs" />
     <Compile Include="HardcoreKeyChangerGuard.cs" />
     <Compile Include="Pal98Dx9Fast800Speed.cs" />
@@ -308,6 +309,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="release_integrity.1.6.8.17.v1.json">
       <LogicalName>Pal98Timer.release_integrity.1.6.8.17.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="release_integrity.1.7.2.0.v1.json">
+      <LogicalName>Pal98Timer.release_integrity.1.7.2.0.v1.json</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="release_integrity.1.7.1.2.v1.json">
       <LogicalName>Pal98Timer.release_integrity.1.7.1.2.v1.json</LogicalName>

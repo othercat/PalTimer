@@ -7,6 +7,37 @@ using System.Windows.Forms;
 
 namespace Pal98Timer
 {
+    internal sealed class CompetitionClockWarningForm : Form
+    {
+        private readonly Label message;
+        internal CompetitionClockWarningForm(string text)
+        {
+            Text = "联机连接失败：系统时间不同步";
+            StartPosition = FormStartPosition.CenterScreen; AutoScaleMode = AutoScaleMode.Dpi;
+            FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false;
+            Font = new Font("Microsoft YaHei UI", 10F);
+            AutoSize = true; AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            var layout = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1 };
+            message = new Label { AutoSize = true, MaximumSize = new Size(540, 0), ForeColor = Color.Firebrick,
+                Margin = new Padding(3, 3, 3, 16), Text = text };
+            var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
+            var settings = new Button { Name = "btnClockSettings", Text = "打开日期和时间设置", AutoSize = true };
+            var dismiss = new Button { Text = "知道了", AutoSize = true };
+            settings.Click += delegate {
+                try { Process.Start(new ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true }); }
+                catch {
+                    try { Process.Start(new ProcessStartInfo("control.exe", "timedate.cpl") { UseShellExecute = true }); }
+                    catch { message.Text = text + "\r\n无法直接打开设置，请手动进入 Windows 日期和时间设置。"; }
+                }
+            };
+            dismiss.Click += delegate { Close(); };
+            buttons.Controls.AddRange(new Control[] { settings, dismiss });
+            layout.Controls.Add(message, 0, 0); layout.Controls.Add(buttons, 0, 1); Controls.Add(layout);
+            AcceptButton = CancelButton = dismiss;
+        }
+        internal void UpdateMessage(string text) { if (message.Text != text) message.Text = text; }
+    }
+
     internal sealed class CompetitionSettingsForm : Form
     {
         private readonly CompetitionClient client;

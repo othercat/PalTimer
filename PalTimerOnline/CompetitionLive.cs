@@ -9,6 +9,12 @@ namespace Pal98Timer
 {
     internal interface ICompetitionLiveAuth { string ProveLive(string challengeJson); }
 
+    internal sealed class CompetitionClockWarning
+    {
+        internal long Id;
+        internal string Message;
+    }
+
     internal sealed class CompetitionLiveClock
     {
         internal string Token;
@@ -102,15 +108,20 @@ namespace Pal98Timer
         private CompetitionLiveClock liveClock;
         private CompetitionLiveSession liveSession;
         private string serverLiveProtocol, liveObservedRunId;
-        private DateTime nextLiveDue, nextLiveAttempt;
+        private long nextLiveDueTick, nextLiveAttemptTick;
+        private volatile CompetitionClockWarning clockWarning;
+        private long clockWarningSequence;
         private long liveSequence, liveGeneration, liveRevision, liveObservedRevision;
         private int liveFailures;
 
-        internal string LiveCaption { get { return liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
+        internal CompetitionClockWarning ClockWarning { get { return enabled && settings.Enabled ? clockWarning : null; } }
+        internal string LiveCaption { get { return ClockWarning != null ? " [系统时间不同步]" : liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
         internal string LiveDetail
         {
             get {
                 if (!enabled || !settings.Enabled) return "联机未开启";
+                var warning = ClockWarning;
+                if (warning != null) return "[系统时间不同步] · " + warning.Message;
                 var state = liveConnection;
                 string caption = state.Caption(true, Stopwatch.GetTimestamp()).Trim();
                 if (caption.StartsWith("[已连接:", StringComparison.Ordinal)) return caption + " · 实时进度已连接；通关成绩按原规则提交";
@@ -129,12 +140,13 @@ namespace Pal98Timer
         private void ResetLiveConnection()
         {
             liveSession = null; serverLiveProtocol = null; liveFailures = 0;
-            nextLiveDue = nextLiveAttempt = DateTime.MinValue;
+            nextLiveDueTick = nextLiveAttemptTick = 0;
+            clockWarning = null;
             liveConnection = new CompetitionLiveConnection();
         }
         private void RetryLiveConnection()
         {
-            nextLiveDue = nextLiveAttempt = DateTime.MinValue; liveFailures = 0;
+            nextLiveDueTick = nextLiveAttemptTick = 0; liveFailures = 0;
             if (liveSession == null) liveConnection = new CompetitionLiveConnection { Id = liveConnection.Id };
         }
         private void LiveFailure(string detail, int status, bool force = false)
@@ -147,7 +159,9 @@ namespace Pal98Timer
             liveFailures = Math.Min(8, liveFailures + 1);
             int delay = liveFailures == 1 ? 5 : liveFailures == 2 ? 10 : liveFailures == 3 ? 20 : liveFailures == 4 ? 30 : 60;
             int seconds = Math.Max(delay, response.RetryAfterSeconds);
-            nextLiveAttempt = DateTime.UtcNow.AddSeconds(Math.Min(86400, seconds));
+            // System time can change while the player fixes a clock warning.
+            // Retry and heartbeat delays must continue on a monotonic clock.
+            nextLiveAttemptTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * Math.Min(86400, seconds);
             if (response.Status == 401 || response.Status == 403) {
                 liveSession = null;
                 // Revocation is authoritative; recheck approval instead of waiting five minutes.
@@ -162,6 +176,25 @@ namespace Pal98Timer
         { return new string((value ?? "").Where(c => !char.IsControl(c)).Take(limit).ToArray()); }
         private bool LiveCurrent(long epoch, string server)
         { return enabled && settings.Enabled && epoch == Interlocked.Read(ref generation) && settings.Server == server && !stop.IsCancellationRequested; }
+        private bool ExplainLiveClockFailure(CompetitionHttpResult response, CompetitionLiveChallenge challenge)
+        {
+            // HTTP Date is diagnostic only. Never use it to relax the local
+            // expiry check or to generate an otherwise rejected proof.
+            if (!response.ServerDate.HasValue || !response.ReceivedAt.HasValue) return false;
+            long serverNow = response.ServerDate.Value.ToUnixTimeSeconds();
+            if (challenge.expires_at <= serverNow || challenge.expires_at > serverNow + 180) return false;
+            long offset = (long)Math.Round((response.ServerDate.Value - response.ReceivedAt.Value).TotalSeconds);
+            if (Math.Abs(offset) < 30) return false;
+            var duration = TimeSpan.FromSeconds(Math.Abs(offset));
+            string amount = (duration.Days > 0 ? duration.Days + "天" : "") +
+                (duration.Hours > 0 ? duration.Hours + "小时" : "") +
+                (duration.Minutes > 0 ? duration.Minutes + "分" : "") + duration.Seconds + "秒";
+            var previous = clockWarning;
+            clockWarning = new CompetitionClockWarning { Id = previous == null ? ++clockWarningSequence : previous.Id,
+                Message = "本机时间比服务器" + (offset > 0 ? "慢" : "快") + "约 " + amount + "，实时联机认证无法通过。\r\n" +
+                    "请打开 Windows“日期和时间”，开启“自动设置时间”，点击“立即同步”。校时后会自动重连；本地计时继续。" };
+            return true;
+        }
         private async Task<bool> OpenLiveSession(CompetitionSettings cfg, CompetitionAuthIdentity identity, long epoch)
         {
             var auth = authentication as ICompetitionLiveAuth;
@@ -175,9 +208,14 @@ namespace Pal98Timer
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             if (challenge == null || challenge.protocol != LiveProtocol || challenge.scope != CompetitionProtocol.Scope || challenge.server_origin != cfg.Server ||
                 challenge.hwid != credential.Hwid || challenge.key_id != identity.key_id || challenge.timer_exe_sha256 != identity.timer_exe_sha256 ||
-                challenge.instance_id != liveInstanceId || !LiveUuid(challenge.challenge_id) || !CompetitionProtocol.Digest(challenge.nonce) ||
-                challenge.expires_at <= now || challenge.expires_at > now + 180)
+                challenge.instance_id != liveInstanceId || !LiveUuid(challenge.challenge_id) || !CompetitionProtocol.Digest(challenge.nonce))
             { LiveRetry(response, "实时联机握手失败，正在后台重试"); return false; }
+            if (challenge.expires_at <= now || challenge.expires_at > now + 180) {
+                bool explained = ExplainLiveClockFailure(response, challenge);
+                LiveRetry(response, explained ? clockWarning.Message : "实时联机握手已过期或时间无效，正在后台重试");
+                return false;
+            }
+            clockWarning = null;
             string proof = auth.ProveLive(response.Body);
             if (proof == null) { LiveRetry(new CompetitionHttpResult(), "认证组件未通过实时联机校验，请确认配套文件完整"); return false; }
             body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, proof_base64 = CompetitionAuthProtocol.Encode(proof) });
@@ -249,14 +287,14 @@ namespace Pal98Timer
         }
         private async Task PumpLive(CompetitionAuthIdentity identity, bool approved)
         {
-            if (DateTime.UtcNow < nextLiveAttempt) return;
+            if (Stopwatch.GetTimestamp() < nextLiveAttemptTick) return;
             if (identity == null) { LiveFailure("配套认证组件不可用；本地计时照常", 0, true); return; }
             if (!approved) { LiveFailure("当前构建尚未获服务器批准；本地计时和参考查询照常", 0, true); return; }
             if (serverLiveProtocol != LiveProtocol) { LiveFailure("服务器尚未支持实时联机，请管理员更新服务器", 0, true); return; }
             long epoch = Interlocked.Read(ref generation);
             var cfg = settings;
             if (liveSession == null && !await OpenLiveSession(cfg, identity, epoch).ConfigureAwait(false)) return;
-            if (!LiveCurrent(epoch, cfg.Server) || DateTime.UtcNow < nextLiveDue) return;
+            if (!LiveCurrent(epoch, cfg.Server) || Stopwatch.GetTimestamp() < nextLiveDueTick) return;
             long revision = Interlocked.Read(ref liveRevision), serial = Interlocked.Read(ref querySerial);
             string token = Volatile.Read(ref activeToken);
             var snapshot = CaptureLiveObservation(); var compare = LiveComparison(snapshot);
@@ -270,10 +308,10 @@ namespace Pal98Timer
             if (ack == null || ack.protocol != LiveProtocol || ack.scope != CompetitionProtocol.Scope || ack.server_origin != cfg.Server ||
                 ack.session_id != session.session_id || ack.public_id != session.public_id || ack.sequence != sequence)
             { LiveRetry(response, "实时心跳未获确认，正在后台重连"); return; }
-            liveFailures = 0; nextLiveAttempt = DateTime.MinValue;
-            nextLiveDue = DateTime.UtcNow.AddSeconds(5);
+            liveFailures = 0; nextLiveAttemptTick = 0;
+            nextLiveDueTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
             liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接" };
-            if (revision != Interlocked.Read(ref liveRevision)) { nextLiveDue = DateTime.MinValue; return; }
+            if (revision != Interlocked.Read(ref liveRevision)) { nextLiveDueTick = 0; return; }
             if (serial == Interlocked.Read(ref querySerial) && token == Volatile.Read(ref activeToken))
                 AcceptLiveStandings(ack.standings, compare, epoch, serial, token);
         }
