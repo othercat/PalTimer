@@ -41,6 +41,7 @@ internal static class ClockWarningUiBehavior
             Set(client, "clockWarning", issue(1)); Call(module, "UiTick");
             var first = (Form)Get(module, "clockWarningForm");
             Check(first.Visible && !first.Modal && first.Enabled, "clock warning is visible and modeless");
+            Check(first.TopMost && first.ShowInTaskbar && first.Text.Contains("时间校验异常"), "time warning has a clear title and stays above the game");
             Check(first.Controls.Find("btnClockSettings", true).Length == 1, "clock settings action is available");
             Call(module, "UiTick");
             Check(ReferenceEquals(first, Get(module, "clockWarningForm")), "repeated UI ticks retain the same warning window");

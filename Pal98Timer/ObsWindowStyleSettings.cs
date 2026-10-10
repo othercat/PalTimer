@@ -40,7 +40,7 @@ namespace Pal98Timer
 
     internal static class ObsWindowStyleStore
     {
-        internal const string ConfigFileName = "obs_window_style";
+        internal static string ConfigFileName { get { return TimerUserSettings.GetPath("obs_window_style"); } }
 
         public static ObsWindowStyleSettings Load()
         {
@@ -83,6 +83,7 @@ namespace Pal98Timer
                     }
                 }
             }
+            catch (TimerSettingsException) { throw; }
             catch
             {
                 return ObsWindowStyleSettings.CreateDefault();
@@ -106,7 +107,7 @@ namespace Pal98Timer
             text.AppendLine("enabled=" + (value.Enabled ? "1" : "0"));
             text.AppendLine("chrome_opacity=" + value.ChromeOpacity.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("toggle_hotkey=" + ((int)value.ToggleHotkey).ToString(CultureInfo.InvariantCulture));
-            File.WriteAllText(ConfigFileName, text.ToString(), new UTF8Encoding(false));
+            TimerUserSettings.WriteText("obs_window_style", text.ToString(), new UTF8Encoding(false));
         }
     }
 }

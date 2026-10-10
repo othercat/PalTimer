@@ -392,6 +392,7 @@ internal static class HardcoreBehavior
         var source=new ControlledReader { First=current,Later=current };
         Set(core,"hardcoreReader",source); ObserveCore(core,false);
         var ui=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+        Set(ui,"startupCompleted",true);
         Set(ui,"core",core); ui.btnPause=new GRender.GBtn(null);
         var release=new KeyboardLib.HookStruct { vkCode=(int)Keys.F9,flags=128 };
         bool blocked;
@@ -574,6 +575,8 @@ internal static class HardcoreBehavior
     [STAThread]
     static int Main(string[] args)
     {
+        typeof(TimerUserSettings).GetField("store", BindingFlags.Static | BindingFlags.NonPublic).SetValue(null,
+            new TimerSettingsStore(AppDomain.CurrentDomain.BaseDirectory, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user")));
         try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();ControlAndRestart();PauseIntegration();
             if(args.Length==1)NativeSnapshot(args[0]);
             foreach(string operation in new[]{"export","reset","finish","import"})ConcurrentBoundary(operation);Display();

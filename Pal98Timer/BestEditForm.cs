@@ -33,7 +33,7 @@ namespace Pal98Timer
                 {
                     bestFile += ".txt";
                 }
-                tarfile = bestFile;
+                tarfile = TimerUserSettings.BestPath(bestFile);
             }
 
             if (File.Exists(tarfile))
@@ -56,7 +56,7 @@ namespace Pal98Timer
         private void initBest()
         {
             Encoding charset = TimerCore.GetFileEncodeType(tarfile);
-            using (FileStream fileStream = new FileStream(tarfile, FileMode.Open))
+            using (FileStream fileStream = new FileStream(tarfile, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 using (StreamReader streamReader = new StreamReader(fileStream, charset))
                 {

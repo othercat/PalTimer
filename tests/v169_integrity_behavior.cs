@@ -93,9 +93,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.8.0","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.8.0","file version");
-        Check(GForm.CurrentVersion=="3.37.8","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.37.9.0","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.9.0","file version");
+        Check(GForm.CurrentVersion=="3.37.9","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -526,6 +526,21 @@ internal static class V169IntegrityBehavior
         }
         string legacy=Path.Combine(Directory.GetCurrentDirectory(),"v1");Directory.CreateDirectory(legacy);WriteLock(legacy,"",1);
         Check(Property(Static("TournamentLockInfoReader","Load",legacy),"State").ToString()=="Locked","original v1 lock remains valid");
+        string migrated=Path.Combine(Directory.GetCurrentDirectory(),"migrated-lock"), local=Path.Combine(migrated,"isolated-user");
+        Directory.CreateDirectory(migrated);WriteLock(migrated,"1.6.8.12");
+        var store=new Pal98.Storage.UserDataStore(migrated,local);
+        string userRoot=store.ComponentDirectory("game"), lockRelative="palmod/TournamentLock/v1";
+        foreach(string file in Directory.GetFiles(Path.Combine(migrated,lockRelative),"*",SearchOption.AllDirectories)) {
+            string relative=file.Substring(migrated.Length+1);store.Resolve("game",relative,file);
+        }
+        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Locked","timer reads migrated signed lock with resources still in package");
+        File.WriteAllBytes(Path.Combine(migrated,"DATA.MKF"),new byte[]{7,2,3});
+        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Invalid","migrated lock still rejects changed package resource");
+        File.WriteAllBytes(Path.Combine(migrated,"DATA.MKF"),new byte[]{1,2,3});
+        Directory.Move(Path.Combine(userRoot,lockRelative),Path.Combine(userRoot,"unlocked-history"));
+        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Unlocked","timer sees user unlock instead of package lock");
+        store.WriteText("game","hardcore-transaction.pending","pending");
+        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Invalid","user pending transaction fails closed in timer");
     }
     static void WaitUntil(Func<bool> predicate, string message)
     {

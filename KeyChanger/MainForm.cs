@@ -8,6 +8,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Pal98Timer;
 
 namespace KeyChanger
 {
@@ -98,6 +99,7 @@ namespace KeyChanger
             {
                 initForPaint();
             }
+            catch (TimerSettingsException) { throw; }
             catch
             { }
             if (imgok)
@@ -119,10 +121,11 @@ namespace KeyChanger
         {
             try
             {
-                if (File.Exists("keychange.txt"))
+                string settingsPath = TimerUserSettings.GetPath("keychange.txt");
+                if (File.Exists(settingsPath))
                 {
                     string keychangestr = "";
-                    using (FileStream fileStream = new FileStream("keychange.txt", FileMode.Open))
+                    using (FileStream fileStream = new FileStream(settingsPath, FileMode.Open, FileAccess.Read))
                     {
                         using (StreamReader streamReader = new StreamReader(fileStream, Encoding.Default))
                         {
@@ -132,6 +135,7 @@ namespace KeyChanger
                     kc = new KC(keychangestr);
                 }
             }
+            catch (TimerSettingsException) { throw; }
             catch
             { }
             RefreshHardcoreProtection();
@@ -148,18 +152,20 @@ namespace KeyChanger
         private bool drawok = false;
         private void initForPaint()
         {
-            if (File.Exists("keyboard\\normal.png") && File.Exists("keyboard\\act.png") && File.Exists("keyboard\\keys.meta"))
+            string normalPath = TimerUserSettings.GetPath("keyboard/normal.png"), activePath = TimerUserSettings.GetPath("keyboard/act.png");
+            string metadataPath = TimerUserSettings.GetPath("keyboard/keys.meta"), arrowPath = TimerUserSettings.GetPath("keyboard/arr.png");
+            if (File.Exists(normalPath) && File.Exists(activePath) && File.Exists(metadataPath))
             {
-                bg = Image.FromFile("keyboard\\normal.png");
-                act= Image.FromFile("keyboard\\act.png");
-                if (File.Exists("keyboard\\arr.png"))
+                bg = Image.FromFile(normalPath);
+                act= Image.FromFile(activePath);
+                if (File.Exists(arrowPath))
                 {
-                    arr = Image.FromFile("keyboard\\arr.png");
+                    arr = Image.FromFile(arrowPath);
                 }
                 si = (Image)bg.Clone();
                 g = Graphics.FromImage(si);
                 OBJ o = null;
-                using (FileStream fs = new FileStream("keyboard\\keys.meta", FileMode.Open, FileAccess.Read))
+                using (FileStream fs = new FileStream(metadataPath, FileMode.Open, FileAccess.Read))
                 {
                     using (StreamReader sr = new StreamReader(fs, Encoding.UTF8))
                     {

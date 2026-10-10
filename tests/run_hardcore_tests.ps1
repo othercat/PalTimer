@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [string]$NativeSnapshotFile)
+param([switch]$SkipBuild, [string]$NativeSnapshotFile, [string]$TimerDirectory, [string]$KeyboardExe)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo ('artifacts\hardcore-behavior-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
@@ -20,7 +20,7 @@ $references = @($project.Project.ItemGroup.Reference | Where-Object { $_.Include
     if ($_.HintPath) { '/reference:' + (Join-Path $repo ('Pal98Timer\' + $_.HintPath)) }
     else { '/reference:' + $_.Include.Split(',')[0] + '.dll' }
 })
-$runtime = Join-Path $repo 'Pal98Timer\bin\x64\Release'
+$runtime = if ($TimerDirectory) { [IO.Path]::GetFullPath($TimerDirectory) } else { Join-Path $repo 'Pal98Timer\bin\x64\Release' }
 $references += '/reference:System.Core.dll'
 $references += '/reference:' + (Join-Path $runtime 'TimerPluginBase.dll')
 $exe = Join-Path $out 'HardcoreBehavior.exe'
@@ -28,7 +28,8 @@ $exe = Join-Path $out 'HardcoreBehavior.exe'
 if ($LASTEXITCODE -ne 0) { throw "Hardcore host compilation failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($exe + '.config')
-Copy-Item -LiteralPath (Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe') -Destination $out
+$keyboard = if ($KeyboardExe) { [IO.Path]::GetFullPath($KeyboardExe) } else { Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe' }
+Copy-Item -LiteralPath $keyboard -Destination $out
 $hostArgs = @()
 if ($NativeSnapshotFile) { $hostArgs += (Resolve-Path -LiteralPath $NativeSnapshotFile).Path }
 Push-Location -LiteralPath $out

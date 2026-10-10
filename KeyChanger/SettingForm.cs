@@ -6,6 +6,7 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
+using Pal98Timer;
 
 namespace KeyChanger
 {
@@ -24,12 +25,13 @@ namespace KeyChanger
         }
         private void AutoPosition()
         {
-            if (File.Exists("trect"))
+            string rectanglePath = TimerUserSettings.GetPath("trect");
+            if (File.Exists(rectanglePath))
             {
                 try
                 {
                     string ps = "";
-                    using (FileStream fs = new FileStream("trect", FileMode.Open, FileAccess.Read))
+                    using (FileStream fs = new FileStream(rectanglePath, FileMode.Open, FileAccess.Read))
                     {
                         using (StreamReader sr = new StreamReader(fs, Encoding.UTF8))
                         {
@@ -61,10 +63,11 @@ namespace KeyChanger
 
         private void InitFromFile()
         {
-            if (File.Exists("keychange.txt"))
+            string settingsPath = TimerUserSettings.GetPath("keychange.txt");
+            if (File.Exists(settingsPath))
             {
                 string keychangestr = "";
-                using (FileStream fileStream = new FileStream("keychange.txt", FileMode.Open))
+                using (FileStream fileStream = new FileStream(settingsPath, FileMode.Open, FileAccess.Read))
                 {
                     using (StreamReader streamReader = new StreamReader(fileStream, Encoding.Default))
                     {
@@ -89,18 +92,7 @@ namespace KeyChanger
             kc.IsEnable = cbEnable.Checked;
             try
             {
-                if (File.Exists("keychange.txt"))
-                {
-                    File.Delete("keychange.txt");
-                }
-                using (FileStream fileStream = new FileStream("keychange.txt", FileMode.OpenOrCreate))
-                {
-                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.Default))
-                    {
-                        streamWriter.Write(kc.ToString());
-                        streamWriter.Flush();
-                    }
-                }
+                TimerUserSettings.WriteText("keychange.txt", kc.ToString(), Encoding.Default);
             }
             catch (Exception ex)
             {

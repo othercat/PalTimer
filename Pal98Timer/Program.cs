@@ -17,10 +17,50 @@ namespace Pal98Timer
         [STAThread]
         static void Main()
         {
-            // Core-specific scores and settings belong beside the executable,
-            // including launches from another program or working directory.
-            Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            // Keep game/resources relative to the executable. Personal settings
+            // use the current user's directory, independent of elevation.
+            try {
+                AppContext.SetSwitch("Switch.System.IO.UseLegacyPathHandling", false);
+                AppContext.SetSwitch("Switch.System.IO.BlockLongPaths", false);
+                Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
+                bool startupCheck = System.Array.IndexOf(Environment.GetCommandLineArgs(), "--startup-check") >= 0;
+                StartupDependencies.WriteLog("start version=" + typeof(Program).Assembly.GetName().Version + " os=" + Environment.OSVersion + " clr=" + Environment.Version + " x64=" + Environment.Is64BitProcess);
+                if (!StartupDependencies.Check(AppDomain.CurrentDomain.BaseDirectory, (message, fatal) => {
+                    string log = StartupDependencies.WriteLog(message);
+                    if (!startupCheck) MessageBox.Show(message + "\n\n启动日志：" + log, "计时器依赖文件缺失", MessageBoxButtons.OK,
+                        fatal ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
+                })) { Environment.ExitCode = 1; return; }
+                if (startupCheck) {
+                    CheckStartupComposition(); return;
+                }
+                TimerUserSettings.Store.Initialize();
+                StartupDependencies.WriteLog("settings-directory=" + TimerUserSettings.Store.DirectoryPath);
+                RunApplication();
+            } catch (Exception ex) {
+                string log = StartupDependencies.WriteLog(ex.ToString());
+                if (!(ex is TimerSettingsException))
+                    TimerUserSettings.ShowError("计时器启动失败：" + ex.GetType().Name + "\n" + ex.Message + "\n\n请提供启动日志：" + log, "计时器启动失败");
+                // A failed constructor can leave worker threads alive. Do not
+                // resume its message loop or leave an invisible timer process.
+                Environment.Exit(1);
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void CheckStartupComposition()
+        {
+            try {
+                using (var lease = OnlineModuleLoader.Load(AppDomain.CurrentDomain.BaseDirectory)) {
+                    StartupDependencies.WriteLog("startup-check=pass online-api=" + lease.Module.ApiVersion);
+                }
+            } catch (Exception ex) { StartupDependencies.WriteLog("startup-check=failed " + ex); Environment.ExitCode = 1; }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void RunApplication()
+        {
             AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             using (EventWaitHandle tournamentCapability =
                 TournamentTimerCapability.Publish())
             using (var presetCapability = TournamentTimerCapability.Publish(@"Local\PAL98.PalTimer.TournamentLock.v2"))
@@ -35,14 +75,16 @@ namespace Pal98Timer
         }
         static void ClearTmpBG()
         {
-            string p = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+            string p = TimerUserSettings.Store.DirectoryPath;
             string[] fs = Directory.GetFiles(p);
             foreach (string fn in fs)
             {
                 string sfn=Path.GetFileName(fn);
                 if (sfn.StartsWith("tmpbg_") && sfn.EndsWith(".png"))
                 {
-                    File.Delete(fn);
+                    try { File.Delete(fn); }
+                    catch (UnauthorizedAccessException ex) { StartupDependencies.WriteLog("temporary-background-cleanup-skipped " + ex.GetType().Name); }
+                    catch (IOException ex) { StartupDependencies.WriteLog("temporary-background-cleanup-skipped " + ex.GetType().Name); }
                 }
             }
         }
@@ -75,24 +117,12 @@ namespace Pal98Timer
                 if (NeedUpdateFiles.ContainsKey(sfn))
                 {
                     string nfn = NeedUpdateFiles[sfn];
-                    string content = "";
-                    Encoding ed = TimerCore.GetFileEncodeType(fn);
-                    using (FileStream fs = new FileStream(fn, FileMode.Open, FileAccess.Read))
-                    {
-                        using (StreamReader sr = new StreamReader(fs, ed))
-                        { 
-                            content = sr.ReadToEnd();
-                        }
-                    }
-                    File.Delete(fn);
-                    using (FileStream fs = new FileStream(p + nfn, FileMode.OpenOrCreate, FileAccess.ReadWrite))
-                    {
-                        using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                        {
-                            sw.Write(content);
-                            sw.Flush();
-                        }
-                    }
+                    // Rename only when no newer reference exists. A failed
+                    // migration must preserve the original and permit startup.
+                    if (File.Exists(TimerUserSettings.BestPath(nfn))) continue;
+                    try { TimerUserSettings.Store.WriteBytes("timelines/" + nfn, File.ReadAllBytes(fn)); }
+                    catch (UnauthorizedAccessException ex) { StartupDependencies.WriteLog("best-migration-skipped file=" + sfn + " " + ex.GetType().Name); }
+                    catch (IOException ex) { StartupDependencies.WriteLog("best-migration-skipped file=" + sfn + " " + ex.GetType().Name); }
                 }
             }
         }

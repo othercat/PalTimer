@@ -107,7 +107,7 @@ namespace Pal98Timer
             {
                 string root = Path.GetFullPath(gameDirectory);
                 string profilesRoot = Path.Combine(root, "palmod", "Profiles");
-                string pointerPath = Path.Combine(profilesRoot, "current.json");
+                string pointerPath = Pal98.Storage.UserDataStore.ReadGamePath(root, "palmod/Profiles/current.json");
                 RejectReparsePoint(profilesRoot, "profile 根目录");
                 RejectReparsePoint(pointerPath, "current.json");
 
@@ -133,7 +133,7 @@ namespace Pal98Timer
                     throw new InvalidDataException("profile staging 越出游戏目录。");
                 }
 
-                string descriptorPath = Path.Combine(staging, "manifest", "game-profile.json");
+                string descriptorPath = Pal98.Storage.UserDataStore.ReadGamePath(root, "palmod/Profiles/" + selected.ProfileId + "/" + selected.ProfileVersion + "/manifest/game-profile.json");
                 RejectReparsePoint(Path.Combine(profilesRoot, selected.ProfileId), "profile ID 目录");
                 RejectReparsePoint(staging, "profile 版本目录");
                 RejectReparsePoint(Path.Combine(staging, "manifest"), "profile manifest 目录");

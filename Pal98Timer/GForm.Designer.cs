@@ -56,7 +56,7 @@
             // 
             // tmMain
             // 
-            this.tmMain.Enabled = true;
+            this.tmMain.Enabled = false;
             this.tmMain.Tick += new System.EventHandler(this.tmMain_Tick);
             // 
             // mnData

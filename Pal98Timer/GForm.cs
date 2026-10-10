@@ -11,8 +11,8 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.37.8";
-        public const string bgpath = @"bg.png";
+        public const string CurrentVersion = "3.37.9";
+        public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;
         private Dictionary<string, ToolStripMenuItem> CoreBtns;
@@ -45,6 +45,7 @@ namespace Pal98Timer
         private int locx = 0;
         private int locy = 0;
         private bool IsCriticalExitRequested = false;
+        private bool startupCompleted;
         public GForm():base(true)
         {
             _keyboardHook = new KeyboardLib();
@@ -56,7 +57,7 @@ namespace Pal98Timer
             this.FormClosed += GForm_FormClosed;
             this.Shown += GForm_Shown;
 
-            string filepath = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + "\\size";
+            string filepath = TimerUserSettings.GetPath("size");
             try
             {
                 if (File.Exists(filepath))
@@ -135,11 +136,12 @@ namespace Pal98Timer
             }
             try
             {
-                if (File.Exists("LastCore"))
+                string lastCorePath = TimerUserSettings.GetPath("LastCore");
+                if (File.Exists(lastCorePath))
                 {
                     string lc = "";
-                    Encoding charset = TimerCore.GetFileEncodeType("LastCore");
-                    using (FileStream fileStream = new FileStream("LastCore", FileMode.Open))
+                    Encoding charset = TimerCore.GetFileEncodeType(lastCorePath);
+                    using (FileStream fileStream = new FileStream(lastCorePath, FileMode.Open, FileAccess.Read))
                     {
                         using (StreamReader sr = new StreamReader(fileStream, charset))
                         {
@@ -153,6 +155,7 @@ namespace Pal98Timer
                     throw new Exception("LoadDefaultCore");
                 }
             }
+            catch (TimerSettingsException) { throw; }
             catch (Exception ex)
             {
                 LoadCore(new Pal98Dx9Automatic(this));
@@ -162,10 +165,13 @@ namespace Pal98Timer
 
             ShowKCEnable();
             LoadTransparency();
+            startupCompleted = true;
         }
 
         private void GForm_Shown(object sender, EventArgs e)
         {
+            if (!startupCompleted) return;
+            tmMain.Start();
             this.SetDesktopBounds(locx, locy, this.Width, this.Height);
             try
             {
@@ -361,19 +367,9 @@ namespace Pal98Timer
             catch { }
             try
             {
-                if (File.Exists("LastCore"))
-                {
-                    File.Delete("LastCore");
-                }
-                using (FileStream fileStream = new FileStream("LastCore", FileMode.Create))
-                {
-                    using (StreamWriter streamWriter = new StreamWriter(fileStream, Encoding.UTF8))
-                    {
-                        streamWriter.Write(core.GetType().Name);
-                        streamWriter.Flush();
-                    }
-                }
+                TimerUserSettings.WriteText("LastCore", core.GetType().Name, Encoding.UTF8);
             }
+            catch (TimerSettingsException) { if (!startupCompleted) throw; }
             catch { }
             this.core = core;
             InvalidateCompetition(core, core.CompetitionToken);
@@ -495,6 +491,7 @@ namespace Pal98Timer
         public void OnKeyPress(KeyboardLib.HookStruct hookStruct, out bool handle)
         {
             handle = false; //预设不拦截任何键
+            if (!startupCompleted) return;
             if (((Keys)(hookStruct.vkCode)) == Keys.Enter && (OnCtrlDown || OnCtrlDown2) && this.core != null && this.core.NeedBlockCtrlEnter())
             {
                 handle = true;
@@ -755,16 +752,7 @@ namespace Pal98Timer
             if (core != null && core.CoreName != "S")
             {
                 string sizestr = this.Width + "*" + this.Height + "*" + this.DesktopBounds.X + "*" + this.DesktopBounds.Y;
-                string filepath = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + "\\size";
-                if (File.Exists(filepath)) File.Delete(filepath);
-                using (FileStream fs = new FileStream(filepath, FileMode.Create, FileAccess.ReadWrite))
-                {
-                    using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                    {
-                        sw.Write(sizestr);
-                        sw.Flush();
-                    }
-                }
+                TimerUserSettings.WriteText("size", sizestr, Encoding.UTF8);
             }
             if (!IsCriticalExitRequested && !Confirm("确定退出计时器么？"))
             {
@@ -817,6 +805,7 @@ namespace Pal98Timer
 
         private void tmMain_Tick(object sender, EventArgs e)
         {
+            if (!startupCompleted) return;
             KeyChangerDel.RefreshHardcoreProtection();
             KeyChangerDel.TryAutoOpen();
             ShowKCEnable();
@@ -935,13 +924,7 @@ namespace Pal98Timer
             Run(delegate () {
                 if (!KeyChangerDel.IsEnableRequestCurrent(keyChangerRequest)) return;
                 string ps = this.DesktopBounds.X + "," + this.DesktopBounds.Y + "," + this.DesktopBounds.Width + "," + this.DesktopBounds.Height;
-                using (FileStream fs = new FileStream("trect",FileMode.Create,FileAccess.ReadWrite))
-                {
-                    using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                    {
-                        sw.Write(ps);
-                    }
-                }
+                TimerUserSettings.WriteText("trect", ps, Encoding.UTF8);
                 KeyChangerDel.Edit(keyChangerRequest);
                 UI(delegate () {
                     ShowKCEnable();
@@ -1100,7 +1083,7 @@ namespace Pal98Timer
 
         private void LoadTransparency()
         {
-            string transparencyFile = "transparency";
+            string transparencyFile = TimerUserSettings.GetPath("transparency");
             try
             {
                 if (File.Exists(transparencyFile))
@@ -1118,10 +1101,9 @@ namespace Pal98Timer
 
         private void SaveTransparency()
         {
-            string transparencyFile = "transparency";
             try
             {
-                File.WriteAllText(transparencyFile, transparencyValue.ToString());
+                TimerUserSettings.WriteText("transparency", transparencyValue.ToString(), new UTF8Encoding(false));
             }
             catch { }
         }
@@ -1130,12 +1112,14 @@ namespace Pal98Timer
         {
             try
             {
-                if (File.Exists("skip_node"))
+                string path = TimerUserSettings.GetPath("skip_node");
+                if (File.Exists(path))
                 {
-                    string content = File.ReadAllText("skip_node").Trim();
+                    string content = File.ReadAllText(path).Trim();
                     IsNonSequentialCheck = content == "1";
                 }
             }
+            catch (TimerSettingsException) { throw; }
             catch { }
             btnNonSequentialCheck.Checked = IsNonSequentialCheck;
         }
@@ -1153,7 +1137,7 @@ namespace Pal98Timer
         {
             try
             {
-                File.WriteAllText("skip_node", IsNonSequentialCheck ? "1" : "0");
+                TimerUserSettings.WriteText("skip_node", IsNonSequentialCheck ? "1" : "0", new UTF8Encoding(false));
             }
             catch { }
         }
@@ -1407,11 +1391,13 @@ namespace Pal98Timer
         public string[] Lucks = new string[] { "" };
         public void LoadConfig(string cfgpath = "config.txt")
         {
+            bool userSettings = cfgpath == "config.txt";
+            if (userSettings) cfgpath = TimerUserSettings.GetPath(cfgpath);
             string cfgstr = "";
             if (File.Exists(cfgpath))
             {
                 Encoding charset = TimerCore.GetFileEncodeType(cfgpath);
-                using (FileStream fileStream = new FileStream(cfgpath, FileMode.Open))
+                using (FileStream fileStream = new FileStream(cfgpath, FileMode.Open, FileAccess.Read))
                 {
                     using (StreamReader streamReader = new StreamReader(fileStream, charset))
                     {
@@ -1422,13 +1408,7 @@ namespace Pal98Timer
             else
             {
                 cfgstr = "自动计时器\r\n彩蛋\r\n大吉|小吉";
-                using (FileStream fs = new FileStream(cfgpath, FileMode.Create))
-                {
-                    using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                    {
-                        sw.Write(cfgstr);
-                    }
-                }
+                TrySaveStartupConfig(cfgpath, cfgstr, userSettings);
             }
 
             if (cfgstr != "")
@@ -1471,16 +1451,22 @@ namespace Pal98Timer
                             updatecfgstr += "|";
                         }
                     }
-                    File.Delete(cfgpath);
-                    using (FileStream fs = new FileStream(cfgpath, FileMode.Create))
-                    {
-                        using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                        {
-                            sw.Write(updatecfgstr);
-                        }
-                    }
+                    TrySaveStartupConfig(cfgpath, updatecfgstr, userSettings);
                 }
             }
+        }
+        private static void TrySaveStartupConfig(string path, string text, bool userSettings)
+        {
+            // Loading a portable timer must not require write permission.
+            // Keep the in-memory/default settings when this directory is read-only.
+            try {
+                if (userSettings)
+                    TimerUserSettings.WriteText("config.txt", text, Encoding.UTF8);
+                else File.WriteAllText(path, text, Encoding.UTF8);
+            }
+            catch (TimerSettingsException) { throw; }
+            catch (UnauthorizedAccessException ex) { StartupDependencies.WriteLog("config-write-skipped path=" + Path.GetFullPath(path) + " " + ex.GetType().Name); }
+            catch (IOException ex) { StartupDependencies.WriteLog("config-write-skipped path=" + Path.GetFullPath(path) + " " + ex.GetType().Name); }
         }
         private int LuckIdx = -1;
         public string Luck(bool IsReset = false)

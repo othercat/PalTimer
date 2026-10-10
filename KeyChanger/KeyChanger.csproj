@@ -45,7 +45,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\PALDLL_DX9\shared\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
     <Compile Include="..\Pal98Timer\HardcoreModeReader.cs"><Link>HardcoreModeReader.cs</Link></Compile>
+    <Compile Include="..\Pal98Timer\TimerUserSettings.cs"><Link>TimerUserSettings.cs</Link></Compile>
     <Compile Include="..\Pal98Timer\HardcoreKeyChangerGuard.cs"><Link>HardcoreKeyChangerGuard.cs</Link></Compile>
     <Compile Include="KeyAddForm.cs">
       <SubType>Form</SubType>

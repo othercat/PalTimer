@@ -121,8 +121,8 @@ namespace Pal98Timer
 
         protected override void InitCheckPoints()
         {
-            string sourceBestFile = "best" + LegacyCoreName + ".txt";
-            string targetBestFile = "best" + CanonicalCoreName + ".txt";
+            string sourceBestFile = TimerUserSettings.BestPath("best" + LegacyCoreName + ".txt");
+            string targetBestFile = TimerUserSettings.BestPath("best" + CanonicalCoreName + ".txt");
             if (File.Exists(sourceBestFile) && !File.Exists(targetBestFile))
             {
                 File.Copy(sourceBestFile, targetBestFile);

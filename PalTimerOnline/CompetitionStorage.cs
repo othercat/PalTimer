@@ -32,11 +32,26 @@ namespace Pal98Timer
     internal sealed class CompetitionStorage
     {
         internal readonly string Root;
+        private readonly string logDirectory;
         private readonly Lazy<string> hardwareId;
         internal CompetitionStorage(string root = null, Func<string> hardwareId = null)
         {
             Root = root ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PalTimer", "Competition-v1");
+            logDirectory = root ?? ResolveLogDirectory();
             this.hardwareId = new Lazy<string>(hardwareId ?? ReadWindowsIdentity);
+        }
+        private static string ResolveLogDirectory()
+        {
+            string directory = System.IO.Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\', '/');
+            string installation = directory;
+            for (int level = 0; level < 6 && directory != null; ++level) {
+                if (File.Exists(System.IO.Path.Combine(directory, "PAL.exe"))) { installation = directory; break; }
+                directory = System.IO.Path.GetDirectoryName(directory);
+            }
+            using (var sha = SHA256.Create()) {
+                string id = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(installation.ToUpperInvariant()))).Replace("-", "").ToLowerInvariant().Substring(0, 24);
+                return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PAL98", "UserData", "v1", id, "logs", "timer");
+            }
         }
         // Local display and credential creation share one identity. Reading it
         // neither creates credentials nor requires a server or a running game.
@@ -131,8 +146,8 @@ namespace Pal98Timer
             // Background only. Never log credentials, HWID, body, URL or exception text.
             try
             {
-                Directory.CreateDirectory(Root);
-                string path = System.IO.Path.Combine(Root, "network.log");
+                Directory.CreateDirectory(logDirectory);
+                string path = System.IO.Path.Combine(logDirectory, "network.log");
                 if (File.Exists(path) && new FileInfo(path).Length > 524288)
                 {
                     string previous = path + ".previous";

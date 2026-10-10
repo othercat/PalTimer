@@ -67,7 +67,8 @@ namespace Pal98Timer
         internal static bool SupportedLockVersions(string producer, string contract, string runtime, string timer)
         {
             if (contract != "PAL98.Settings.v1") return false;
-            return (producer == "1.7.2.0" && runtime == producer && timer == "3.37.8.0") ||
+            return (producer == "1.7.3.0" && runtime == producer && timer == "3.37.9.0") ||
+                (producer == "1.7.2.0" && runtime == producer && timer == "3.37.8.0") ||
                 (producer == "1.7.1.1" && runtime == producer && timer == "3.37.7.17") ||
                 (producer == "1.7.1.0" && runtime == producer && timer == "3.37.7.17") ||
                 (producer == "1.7.0.0" && runtime == producer && timer == "3.37.7.16") ||
@@ -105,19 +106,22 @@ namespace Pal98Timer
         }
 
         public static TournamentLockInfo Load(string gameDirectory)
+        { return LoadFromStorage(gameDirectory, null); }
+
+        internal static TournamentLockInfo LoadFromStorage(string gameDirectory, string localAppData)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(gameDirectory))
                     return Invalid("game directory is empty");
-                if (File.Exists(Path.Combine(gameDirectory, "hardcore-transaction.pending"))) return Invalid("配置事务未完成，请重开配置工具恢复。");
-                string active = Path.Combine(gameDirectory, RelativeDirectory);
+                if (Pal98.Storage.UserDataStore.FileExists(Pal98.Storage.UserDataStore.ReadGamePath(gameDirectory, "hardcore-transaction.pending", localAppData))) return Invalid("配置事务未完成，请重开配置工具恢复。");
+                string active = Pal98.Storage.UserDataStore.ReadGamePath(gameDirectory, RelativeDirectory, localAppData);
                 string manifestPath = Path.Combine(active, "manifest.json");
                 string signaturePath = Path.Combine(active, "manifest.sig");
-                bool activeDirectoryExists = Directory.Exists(active);
-                bool activeExists = activeDirectoryExists || File.Exists(active);
-                bool manifestExists = File.Exists(manifestPath);
-                bool signatureExists = File.Exists(signaturePath);
+                bool activeDirectoryExists = Pal98.Storage.UserDataStore.DirectoryExists(active);
+                bool activeExists = activeDirectoryExists || Pal98.Storage.UserDataStore.FileExists(active);
+                bool manifestExists = Pal98.Storage.UserDataStore.FileExists(manifestPath);
+                bool signatureExists = Pal98.Storage.UserDataStore.FileExists(signaturePath);
                 if (!activeExists && !manifestExists && !signatureExists)
                 {
                     return new TournamentLockInfo
@@ -156,7 +160,7 @@ namespace Pal98Timer
                 string commonTools = null;
                 if (!Validate(active, manifest, out error, (name, data) => {
                     if (name == "palmod/common-tools.v1.json") commonTools = new UTF8Encoding(false, true).GetString(data);
-                })) return Invalid(error);
+                }, gameDirectory, localAppData)) return Invalid(error);
                 return new TournamentLockInfo
                 {
                     State = TournamentLockReadState.Locked,
@@ -192,7 +196,7 @@ namespace Pal98Timer
         private static bool Validate(
             string activeDirectory,
             TournamentTimerManifest manifest,
-            out string error, Action<string, byte[]> inspected = null)
+            out string error, Action<string, byte[]> inspected = null, string originalRoot = null, string localAppData = null)
         {
             error = string.Empty;
             if (manifest == null || (manifest.schema != Schema || manifest.version != 1) && (manifest.schema != "PAL98.TournamentLock.v2" || manifest.version != 2) || !manifest.locked)
@@ -295,8 +299,11 @@ namespace Pal98Timer
                     manifest.dependencies == null || manifest.absent_files == null || manifest.absent_files.Length > 256)
                 { error = "比赛配置版本或身份不匹配，请更新配套工具。"; return false; }
                 string root = Path.GetFullPath(Path.Combine(activeDirectory, "..", "..", ".."));
+                string packageRoot = originalRoot ?? root;
                 foreach (string absent in manifest.absent_files) {
-                    if (!AllowedSnapshot(absent, 2) || !seen.Add(absent) || File.Exists(Path.Combine(root, absent)) || Directory.Exists(Path.Combine(root, absent)))
+                    if (!AllowedSnapshot(absent, 2) || !seen.Add(absent) ||
+                        (!absent.Equals("palmod/common-tools.v1.json", StringComparison.OrdinalIgnoreCase) &&
+                        (File.Exists(Path.Combine(root, absent)) || Directory.Exists(Path.Combine(root, absent)))))
                     { error = "比赛配置缺失文件证明不匹配：" + absent; return false; }
                 }
                 var dependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -304,8 +311,8 @@ namespace Pal98Timer
                 {
                     if (dependency == null || !SafeRelative(dependency.path) || !dependencies.Add(dependency.path) || dependency.size < 0 || !Regex.IsMatch(dependency.sha256 ?? "", "^[0-9a-f]{64}$"))
                     { error = "比赛资源身份无效。"; return false; }
-                    if (dependency.path.StartsWith("Musics/", StringComparison.OrdinalIgnoreCase) || dependency.path.StartsWith("Voices/", StringComparison.OrdinalIgnoreCase)) continue;
-                    string path = Path.Combine(root, dependency.path);
+                    if (IsPlayerAudioPath(dependency.path)) continue;
+                    string path = Pal98.Storage.UserDataStore.ReadGamePath(packageRoot, dependency.path, localAppData);
                     if (!File.Exists(path) || IsReparsePoint(path) || new FileInfo(path).Length != dependency.size || HashFile(path) != dependency.sha256)
                     { error = "比赛资源缺失或不匹配：" + dependency.path; return false; }
                 }
@@ -326,6 +333,13 @@ namespace Pal98Timer
         {
             using (var file = File.OpenRead(path)) using (var sha = SHA256.Create()) return ToHex(sha.ComputeHash(file));
         }
+        private static bool IsPlayerAudioPath(string path) =>
+            path.StartsWith("Musics/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("Midi/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("Voices/", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("MUS.MKF", StringComparison.OrdinalIgnoreCase) ||
+            new[] { ".mp3", ".wav", ".mid", ".midi", ".rmi", ".ogg", ".flac", ".sf2", ".sfz", ".rix" }
+                .Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
         private static byte[] ReadBounded(string path, int maximumBytes)
         {
             var info = new FileInfo(path);

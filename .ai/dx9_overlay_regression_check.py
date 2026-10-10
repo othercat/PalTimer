@@ -68,10 +68,10 @@ def main() -> int:
 
     checks = {
         "project compiles the dedicated overlay form": '<Compile Include="Dx9OverlayForm.cs">' in project,
-        "missing config is default-on": (
-            'internal const string ConfigFileName = "dx9_overlay";' in overlay
+        "missing config is default-off": (
+            'TimerUserSettings.GetPath("dx9_overlay")' in overlay
             and "if (!File.Exists(ConfigFileName))" in overlay
-            and "return true;" in _extract(overlay, "public static bool LoadEnabled()", "public static void SaveEnabled")
+            and "return false;" in _extract(overlay, "public static bool LoadEnabled()", "public static void SaveEnabled")
         ),
         "disabled path returns before form creation": (
             "if (!enabled)" in enable_method
@@ -90,14 +90,14 @@ def main() -> int:
             and "PositionY = 1.0F" in overlay
             and "Rectangle movementBounds = SystemInformation.VirtualScreen;" in overlay
             and "LayoutSettings.HasWindowPosition = true;" in overlay
-            and "LayoutSettings.WindowLeft = overlayLeft;" in overlay
-            and "LayoutSettings.WindowTop = overlayTop;" in overlay
+            and "LastGameAnchor" in overlay
+            and "Point?" in overlay
             and "availableWidth * LayoutSettings.PositionX" in overlay
             and "availableHeight * LayoutSettings.PositionY" in overlay
             and "SetBounds(overlayLeft, overlayTop, overlayWidth, overlayHeight);" in overlay
         ),
         "layout config is bounded backward-compatible and only saved on explicit interaction": (
-            'internal const string LayoutConfigFileName = "dx9_overlay_layout";' in overlay
+            'TimerUserSettings.GetPath("dx9_overlay_layout")' in overlay
             and "if (!File.Exists(LayoutConfigFileName))" in overlay
             and "MinimumScale = 0.50F" in overlay
             and "MaximumScale = 2.00F" in overlay
@@ -249,10 +249,10 @@ def main() -> int:
             "Dx9Overlay" not in path.read_text(encoding="utf-8-sig")
             for path in OTHER_PAL98_CORES
         ),
-        "display version is 3.37.8 and assembly identity is 3.37.8.0": (
-            'public const string CurrentVersion = "3.37.8";' in gform
-            and '[assembly: AssemblyVersion("3.37.8.0")]' in assembly
-            and '[assembly: AssemblyFileVersion("3.37.8.0")]' in assembly
+        "display version is 3.37.9 and assembly identity is 3.37.9.0": (
+            'public const string CurrentVersion = "3.37.9";' in gform
+            and '[assembly: AssemblyVersion("3.37.9.0")]' in assembly
+            and '[assembly: AssemblyFileVersion("3.37.9.0")]' in assembly
         ),
     }
 
@@ -263,7 +263,7 @@ def main() -> int:
             print(f"- {name}")
         return 1
 
-    print("PASS: PAL98DX9 overlay is default-on, 10 Hz, current-time timeline enabled, edit-gated, conflict-guarded, capture-free, network-free, and isolated from other cores.")
+    print("PASS: PAL98DX9 overlay is default-off, 10 Hz, anchored to the game client, edit-gated, conflict-guarded, capture-free, network-free, and isolated from other cores.")
     return 0
 
 

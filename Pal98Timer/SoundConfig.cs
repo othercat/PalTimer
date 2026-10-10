@@ -114,7 +114,7 @@ namespace Pal98Timer
         // 是否播放关闭提示音
         public bool SoundEnabledOffEnabled { get; set; } = false;
 
-        private string _configPath = "sound_config.txt";
+        private string _configPath { get { return TimerUserSettings.GetPath("sound_config.txt"); } }
         private int _mciAliasCounter = 0;
 
         // 优先级跟踪
@@ -284,7 +284,7 @@ namespace Pal98Timer
             try
             {
                 Encoding charset = TimerCore.GetFileEncodeType(_configPath);
-                using (FileStream fs = new FileStream(_configPath, FileMode.Open))
+                using (FileStream fs = new FileStream(_configPath, FileMode.Open, FileAccess.Read))
                 using (StreamReader sr = new StreamReader(fs, charset))
                 {
                     string line;
@@ -404,8 +404,7 @@ namespace Pal98Timer
         {
             try
             {
-                using (FileStream fs = new FileStream(_configPath, FileMode.Create))
-                using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
+                using (StringWriter sw = new StringWriter())
                 {
                     sw.WriteLine("# PalTimer 音效配置");
                     sw.WriteLine("# 格式: 触发类型=启用|音量(0-100)|文件路径");
@@ -424,6 +423,7 @@ namespace Pal98Timer
                         string path = _soundPaths[type] ?? "";
                         sw.WriteLine(type.ToString() + "=" + enabled + "|" + volume + "|" + path);
                     }
+                    TimerUserSettings.WriteText("sound_config.txt", sw.ToString(), Encoding.UTF8);
                 }
             }
             catch (Exception ex)

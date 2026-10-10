@@ -65,6 +65,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\PAL98DX9_PROFILE_CORES.md') -D
 
 $sourceStage = Join-Path $candidateRoot '_source-stage'
 New-Item -ItemType Directory -Path $sourceStage | Out-Null
+$sourceRepoStage = Join-Path $sourceStage 'PalTimer'
 
 $sourceFiles = @(& git -C $repoRoot -c core.quotepath=false ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) {
@@ -82,12 +83,21 @@ foreach ($relative in $sourceFiles) {
 
     $source = Join-Path $repoRoot $relative
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
-    $destination = Join-Path $sourceStage $relative
+    $destination = Join-Path $sourceRepoStage $relative
     $destinationDirectory = Split-Path -Parent $destination
     if (-not (Test-Path -LiteralPath $destinationDirectory)) {
         New-Item -ItemType Directory -Path $destinationDirectory | Out-Null
     }
     Copy-Item -LiteralPath $source -Destination $destination
+}
+
+# Preserve the same sibling-repository layout used by the linked build source.
+# No other PALDLL_DX9 sources or private authentication inputs are collected.
+$sharedRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\PALDLL_DX9\shared'))
+$sharedStage = Join-Path $sourceStage 'PALDLL_DX9\shared'
+New-Item -ItemType Directory -Path $sharedStage -Force | Out-Null
+foreach ($name in @('PalUserData.cs', 'user-data-contract.v1.json')) {
+    Copy-Item -LiteralPath (Join-Path $sharedRoot $name) -Destination (Join-Path $sharedStage $name)
 }
 
 $head = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -97,7 +107,8 @@ $metadata = @(
     "Repository: https://github.com/othercat/PalTimer"
     "Source revision: $head"
     'Snapshot policy: current tracked and untracked build sources, excluding generated outputs, local Goal overlays, private-agent notes and signing-key file types.'
-    'Build: Visual Studio 2026 / MSBuild 18, Pal98Timer.sln, Release|x64'
+    'Build: Visual Studio 2026 / MSBuild 18, PalTimer/Pal98Timer.sln, Release|x64; keep the sibling PALDLL_DX9/shared directory.'
+    ('Shared storage source SHA256: ' + (Get-FileHash -LiteralPath (Join-Path $sharedRoot 'PalUserData.cs') -Algorithm SHA256).Hash)
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $sourceStage 'SOURCE_SNAPSHOT_METADATA.txt'), $metadata + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 

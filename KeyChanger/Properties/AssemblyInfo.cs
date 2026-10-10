@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Houou")]
 [assembly: AssemblyProduct("KeyChanger")]
+[assembly: AssemblyMetadata("PalTimer.Settings", "UserV1")]
 [assembly: AssemblyCopyright("Copyright © Houou 2022")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

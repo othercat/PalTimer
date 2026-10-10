@@ -129,14 +129,14 @@ namespace Pal98Timer
         {
             var result = new Context();
             result.RuntimeHash = Hash(Read(Within(gameFolder, "PAL.dll")));
-            string pointerPath = Within(gameFolder, "palmod/Profiles/current.json");
+            string pointerPath = Pal98.Storage.UserDataStore.ReadGamePath(gameFolder, "palmod/Profiles/current.json");
             byte[] sss;
             if (File.Exists(pointerPath))
             {
                 var pointer = Json(Read(pointerPath));
                 if (Text(pointer, "schema") != "PAL98.EffectiveGameProfilePointer.v1")
                     throw new InvalidDataException("当前内容包指针无效。");
-                string stage = Within(Within(gameFolder, "palmod/Profiles"), Text(pointer, "staging_relative_path"));
+                string stage = Pal98.Storage.UserDataStore.ReadGamePath(gameFolder, "palmod/Profiles/" + Text(pointer, "staging_relative_path"));
                 byte[] descriptorBytes = Read(Within(stage, "manifest/game-profile.json"));
                 if (!SameHash(Hash(descriptorBytes), Text(pointer, "descriptor_sha256")))
                     throw new InvalidDataException("当前内容包描述文件校验失败。");

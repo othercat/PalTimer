@@ -12,7 +12,8 @@ namespace Pal98Timer
         private readonly Label message;
         internal CompetitionClockWarningForm(string text)
         {
-            Text = "联机连接失败：系统时间不同步";
+            Text = "联机连接失败：时间校验异常";
+            TopMost = true; ShowInTaskbar = true;
             StartPosition = FormStartPosition.CenterScreen; AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false;
             Font = new Font("Microsoft YaHei UI", 10F);

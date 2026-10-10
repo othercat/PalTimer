@@ -450,6 +450,84 @@ internal static class V165TimingBehavior
         }
     }
 
+    static void ClearPrediction()
+    {
+        bool soundEnabled = SoundConfig.ins.GlobalEnabled;
+        SoundConfig.ins.GlobalEnabled = false;
+        try
+        {
+            var form = (GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            var core = new Pal98Dx9Automatic(form);
+            core.InitCheckPointsEx();
+            var facts = Activator.CreateInstance(Product.GetType("Pal98Timer.GameplaySnapshot"), true);
+            facts.GetType().GetProperty("covered").SetValue(facts, true);
+            string identity = new string('c', 64);
+            Set(facts, "OrdinaryTimelineId", identity);
+            Action select = () => {
+                Set(core, "referenceReady", false);
+                Call(core, "SelectIdentity", facts, false);
+                Check(SpinWait.SpinUntil(() => (bool)Field(core, "referenceReady"), 2000), "Reference read completes offline");
+            };
+            select();
+            var data = new HObj(); data["TimelineIdentity"] = identity;
+            var points = new HObj();
+            for (int i = 0; i < core.CheckPoints.Count; ++i)
+            {
+                double seconds = i == 0 ? 600 : i == 1 ? 1200 : 1200 + (i - 1) * 2400.0 / (core.CheckPoints.Count - 2);
+                var point = new HObj(); point["name"] = core.CheckPoints[i].Name;
+                point["des"] = ""; point["time"] = TItem.TimeSpanToFullString(TimeSpan.FromSeconds(seconds)); points.Add(point);
+            }
+            data["CheckPoints"] = points;
+            Directory.CreateDirectory(Path.GetDirectoryName(core.ActiveBestPath));
+            File.WriteAllText(core.ActiveBestPath, data.ToJson(), Encoding.UTF8);
+            core.RefreshBestReference();
+            Check(core.GetWillClearStr() == "01:00:00", "Late automatic reference supplies the finish total before the first node");
+
+            Set(facts, "OrdinaryTimelineId", new string('d', 64)); select();
+            core.RefreshBestReference();
+            Check(core.GetWillClearStr() == "00:00:00", "A different pre-start timeline cannot retain the previous forecast");
+            core.CheckPoints[0].Current = TimeSpan.FromSeconds(15); core.CurrentStep = 1;
+            Check(core.GetWillClearStr() == "00:00:00", "Missing finish reference does not present a split delta as a forecast");
+            Set(facts, "OrdinaryTimelineId", identity); select();
+            Set(core, "_CurrentStep", -1); core.RefreshBestReference();
+            Set(core, "frozen", identity);
+            Watch(core).SetTS(TimeSpan.FromMinutes(30));
+            core.CheckPoints[0].Current = TimeSpan.FromSeconds(615);
+            core.CheckPoints[0].Status = CheckPointStatus.Completed; core.CurrentStep = 1;
+            Check(core.GetWillClearStr() == "01:00:15", "Fifteen seconds behind adds to the finish total, not 00:00:15");
+            core.CheckPoints[1].Current = TimeSpan.FromSeconds(1190);
+            core.CheckPoints[1].Status = CheckPointStatus.Completed; core.CurrentStep = 2;
+            Check(core.GetWillClearStr() == "00:59:50", "Ten seconds ahead subtracts from the finish total, not zero");
+
+            long run = core.ScoreRunSequence;
+            var originalPoints = core.CheckPoints.ToArray();
+            var times = core.CheckPoints.Select(p => p.Current).ToArray();
+            var statuses = core.CheckPoints.Select(p => p.Status).ToArray();
+            var checks = core.CheckPoints.Select(p => p.Check).ToArray();
+            TimeSpan span = (TimeSpan)Field(core, "PointSpan"); string action = core.AAction;
+            int callbacks = 0; core.OnCurrentStepChanged += step => ++callbacks;
+            ((HObj)points.ToList().Last())["time"] = "02:00:00.00";
+            File.WriteAllText(core.ActiveBestPath, data.ToJson(), Encoding.UTF8); core.RefreshBestReference();
+            Check(core.GetWillClearStr() == "01:59:50", "Reference edit immediately recalculates using the last completed node");
+            Check(core.CurrentStep == 2 && Watch(core).CurrentTSOnly == TimeSpan.FromMinutes(30) &&
+                core.ScoreRunSequence == run && (string)Field(core, "frozen") == identity, "Prediction refresh preserves clock, step and run identity");
+            Check(core.CheckPoints.SequenceEqual(originalPoints) && core.CheckPoints.Select(p => p.Current).SequenceEqual(times) &&
+                core.CheckPoints.Select(p => p.Status).SequenceEqual(statuses) && core.CheckPoints.Select(p => p.Check).SequenceEqual(checks),
+                "Prediction refresh preserves checkpoint objects, recorded times, statuses and conditions");
+            Check(callbacks == 0 && core.AAction == action && (TimeSpan)Field(core, "PointSpan") == span,
+                "Reference refresh does not replay node callbacks or change split bookkeeping");
+
+            foreach (TimerCore fixedCore in new TimerCore[] { new 仙剑98柔情(form), new 仙剑98柔情DX9(form), new 仙剑98柔情不欢乐模式(form) })
+            {
+                fixedCore.InitCheckPointsEx(); TimeSpan total = fixedCore.CheckPoints.Last().Best;
+                fixedCore.CheckPoints[0].Current = fixedCore.CheckPoints[0].Best + TimeSpan.FromSeconds(15); fixedCore.CurrentStep = 1;
+                Check(total > TimeSpan.Zero && fixedCore.GetWillClearStr() == TimerCore.TimeSpanToStringLite(total + TimeSpan.FromSeconds(15)),
+                    "Fixed core retains total plus split delta: " + fixedCore.CoreName);
+            }
+        }
+        finally { SoundConfig.ins.GlobalEnabled = soundEnabled; }
+    }
+
     static void StorageIsolation()
     {
         var cores=Enumerable.Range(0,3).Select(Core).ToArray();
@@ -629,6 +707,24 @@ internal static class V165TimingBehavior
             }
         }
     }
+    static void StartupDependencyWarnings()
+    {
+        string directory=Path.GetFullPath("dependency-fixture");Directory.CreateDirectory(directory);
+        var method=typeof(GForm).Assembly.GetType("Pal98Timer.StartupDependencies").GetMethod("Check",BindingFlags.Static|BindingFlags.NonPublic);
+        string[] names={"PalCloudLib.dll","System.Web.Script.Serialization.dll","TimerPluginBase.dll","PalTimerOnline.dll","PalCompetitionAuth.dll"};
+        foreach(string name in names)File.WriteAllText(Path.Combine(directory,name),"file-presence fixture");
+        int warnings=0;bool fatal=false;string message="";
+        Action<string,bool> notify=(text,stop)=>{++warnings;message=text;fatal=stop;};
+        Check((bool)method.Invoke(null,new object[]{directory,notify})&&warnings==0,"complete dependencies do not prompt");
+        foreach(string missing in names) {
+            string path=Path.Combine(directory,missing);File.Move(path,path+".held");warnings=0;
+            bool allowed=(bool)method.Invoke(null,new object[]{directory,notify});
+            bool core=Array.IndexOf(names,missing)<3;
+            Check(warnings==1&&fatal==core&&allowed!=core,"missing dependency explicitly reports fatal/local-only state: "+missing);
+            Check(message.Contains(missing)&&message.Contains(directory),"warning identifies the file and timer directory");
+            File.Move(path+".held",path);
+        }
+    }
     [STAThread]
     static int Main(string[] args)
     {
@@ -642,6 +738,8 @@ internal static class V165TimingBehavior
             Scenario("cross_imports",CrossImports);Scenario("content_imports",ContentImports);Scenario("run_identity",RunIdentity);
             Scenario("legacy_records",LegacyRecords);Scenario("storage_isolation",StorageIsolation);
             Scenario("storage_transactions",StorageTransactions);
+            Scenario("clear_prediction",ClearPrediction);
+            Scenario("startup_dependencies",StartupDependencyWarnings);
             Scenario("completed_main_watch",CompletedMainWatch);
             Scenario("restart_idle_timing",RestartIdleTiming);
             Scenario("presentation_completion",PresentationAndCompletion);Scenario("overlay_layout",OverlayLayout);

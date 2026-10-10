@@ -78,7 +78,8 @@ internal static class OnlineModuleLoaderBehavior
             new[] { "1.7.0.0", "1.7.0.0", "3.37.7.16" },
             new[] { "1.7.1.0", "1.7.1.0", "3.37.7.17" },
             new[] { "1.7.1.1", "1.7.1.1", "3.37.7.17" },
-            new[] { "1.7.2.0", "1.7.2.0", "3.37.8.0" }
+            new[] { "1.7.2.0", "1.7.2.0", "3.37.8.0" },
+            new[] { "1.7.3.0", "1.7.3.0", "3.37.9.0" }
         };
         foreach (var v in versions) {
             foreach (var assembly in new[] { host, online })

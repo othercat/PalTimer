@@ -219,9 +219,12 @@ namespace Pal98Timer
                     Image tmp = cf.GetResult();
                     if (tmp != null)
                     {
-                        SelectedBGPath = "tmpbg_" + Guid.NewGuid().ToString() + ".png";
+                        SelectedBGPath = TimerUserSettings.GetPath("tmpbg_" + Guid.NewGuid().ToString() + ".png");
                         //if (File.Exists("tmp.png")) File.Delete("tmp.png");
-                        tmp.Save(SelectedBGPath, System.Drawing.Imaging.ImageFormat.Png);
+                        using (var output = new MemoryStream()) {
+                            tmp.Save(output, System.Drawing.Imaging.ImageFormat.Png);
+                            TimerUserSettings.Store.WriteBytes(System.IO.Path.GetFileName(SelectedBGPath), output.ToArray());
+                        }
                         tmp.Dispose();
                         rr.SetBG(SelectedBGPath);
                         rr.IsForceRefreshAll = true;
@@ -239,17 +242,14 @@ namespace Pal98Timer
             mf.rr.SetGBoard(bb);
             if (SelectedBGPath != GForm.bgpath)
             {
-                if (File.Exists(GForm.bgpath))
-                {
-                    File.Move(GForm.bgpath, GForm.bgpath.Replace("bg", "bg_" + DateTime.Now.ToString("yyyyMMddHHmmssfff")));
-                }
                 if (File.Exists(SelectedBGPath))
                 {
-                    File.Copy(SelectedBGPath, GForm.bgpath);
+                    TimerUserSettings.Store.WriteBytes("bg.png", File.ReadAllBytes(SelectedBGPath));
                     mf.rr.SetBG(GForm.bgpath);
                 }
                 else
                 {
+                    TimerUserSettings.Store.Remove("bg.png");
                     mf.rr.SetBG("");
                 }
             }

@@ -3101,20 +3101,10 @@ namespace Pal98Timer
             }
             GC.Collect();
         }
-        public const string Path = "GDisplay.cnf";
+        public static string Path { get { return TimerUserSettings.GetPath("GDisplay.cnf"); } }
         public void Save()
         {
-            if (File.Exists(Path))
-            {
-                File.Delete(Path);
-            }
-            using (FileStream fs = new FileStream(Path, FileMode.Create, FileAccess.ReadWrite))
-            {
-                using (StreamWriter sw = new StreamWriter(fs, Encoding.UTF8))
-                {
-                    sw.Write(ToString());
-                }
-            }
+            TimerUserSettings.WriteText("GDisplay.cnf", ToString(), Encoding.UTF8);
         }
         public void Load()
         {

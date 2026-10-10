@@ -156,8 +156,8 @@ namespace Pal98Timer
         protected override void InitCheckPoints()
         {
             // 如果本地存在bestPAL98.txt且不存在bestPAL98DX9.txt，则复制
-            string sourceBestFile = "bestPAL98.txt";
-            string targetBestFile = "bestPAL98DX9.txt";
+            string sourceBestFile = TimerUserSettings.BestPath("bestPAL98.txt");
+            string targetBestFile = TimerUserSettings.BestPath("bestPAL98DX9.txt");
             if (CoreName == "PAL98DX9" && File.Exists(sourceBestFile) && !File.Exists(targetBestFile))
             {
                 File.Copy(sourceBestFile, targetBestFile);
@@ -1359,7 +1359,7 @@ namespace Pal98Timer
             btnDx9OverlayReset.Enabled = false;
             btnDx9OverlayReset.Click += delegate (object sender, EventArgs e) {
                 if (Dx9Overlay == null || Dx9Overlay.IsDisposed ||
-                    !form.Confirm("恢复主屏幕右下角位置、1.0比例、自动宋体/细明体和默认颜色，并清除遮罩开关快捷键？"))
+                    !form.Confirm("恢复游戏画面右下角位置、1.0比例、自动宋体/细明体和默认颜色，并清除遮罩开关快捷键？"))
                 {
                     return;
                 }

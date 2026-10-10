@@ -283,7 +283,7 @@ namespace Pal98Timer
         /// <summary>
         /// 从文件里加载最佳时间线
         /// </summary>
-        public virtual string ActiveBestPath => "best" + CoreName + ".txt";
+        public virtual string ActiveBestPath => TimerUserSettings.BestPath("best" + CoreName + ".txt");
         protected virtual void LoadBest()
         {
             string BestFile = ActiveBestPath;
@@ -291,7 +291,7 @@ namespace Pal98Timer
             {
                 string beststr = "";
                 Encoding charset = GetFileEncodeType(BestFile);
-                using (FileStream fileStream = new FileStream(BestFile, FileMode.Open))
+                using (FileStream fileStream = new FileStream(BestFile, FileMode.Open, FileAccess.Read))
                 {
                     using (StreamReader streamReader = new StreamReader(fileStream, charset))
                     {
@@ -372,7 +372,7 @@ namespace Pal98Timer
         /// </summary>
         /// <param name="str"></param>
         protected virtual string GetScoreSavePath(DateTime now) { return ActiveBestPath; }
-        protected virtual string GetExportPath(DateTime now) => CoreName + now.ToString("yyyyMMddHHmmss") + ".txt";
+        protected virtual string GetExportPath(DateTime now) => Path.Combine(TimerUserSettings.Store.DirectoryPath, "timelines", CoreName + now.ToString("yyyyMMddHHmmss") + ".txt");
 
         protected void SaveBest(string str)
         {
@@ -428,6 +428,7 @@ namespace Pal98Timer
                 CheckPointNewer reference;
                 if (Best.TryGetValue(point.Name, out reference)) point.SetBestReference(reference);
             }
+            RefreshClearPrediction();
         }
 
         // Reference editing must work offline and must never turn the current
@@ -503,17 +504,25 @@ namespace Pal98Timer
         /// 最佳通关时间
         /// </summary>
         protected TimeSpan BestClear = new TimeSpan(0);
+
+        protected void RefreshClearPrediction()
+        {
+            BestClear = CheckPoints != null && CheckPoints.Count > 0
+                ? CheckPoints[CheckPoints.Count - 1].Best : TimeSpan.Zero;
+            WillClear = BestClear;
+            // Automatic timelines arrive after checkpoint initialization. Always
+            // use the active reference's total; a split delta alone is not a forecast.
+            if (BestClear.Ticks <= 0 || _CurrentStep <= 0 || _CurrentStep > CheckPoints.Count) return;
+            long predictedTicks = BestClear.Ticks + CheckPoints[_CurrentStep - 1].GetCHA() * TimeSpan.TicksPerSecond;
+            if (predictedTicks > 0) WillClear = new TimeSpan(predictedTicks);
+        }
         /// <summary>
         /// 供主界面调用的节点初始化
         /// </summary>
         public void InitCheckPointsEx()
         {
             InitCheckPoints();
-            if (CheckPoints!=null && CheckPoints.Count > 0)
-            {
-                BestClear = new TimeSpan(CheckPoints[CheckPoints.Count - 1].Best.Ticks);
-                WillClear = new TimeSpan(BestClear.Ticks);
-            }
+            RefreshClearPrediction();
             SendPluginsEvent("InitCheckPoints", null);
         }
         /// <summary>
@@ -538,15 +547,7 @@ namespace Pal98Timer
 
                 if (_CurrentStep > 0 && _CurrentStep <= CheckPoints.Count)
                 {
-                    long cha = CheckPoints[_CurrentStep - 1].GetCHA() * 1000 * 10000;
-                    if ((BestClear.Ticks + cha) <= 0)
-                    {
-                        WillClear = new TimeSpan(BestClear.Ticks);
-                    }
-                    else
-                    {
-                        WillClear = new TimeSpan(BestClear.Ticks + cha);
-                    }
+                    RefreshClearPrediction();
                     if (_CurrentStep == 1)
                     {
                         PointSpanName = "[0~1]";
@@ -1943,23 +1944,8 @@ namespace Pal98Timer
             get { return _enable; }
             set
             {
+                TimerUserSettings.WriteText("plugins/" + Path.GetFileName(FileName) + ".enabled", value ? "1" : "0", Encoding.UTF8);
                 _enable = value;
-                using (FileStream fs = new FileStream(FileName, FileMode.Open, FileAccess.ReadWrite))
-                {
-                    byte[] e = new byte[fs.Length];
-                    fs.Read(e, 0, e.Length);
-                    if (_enable)
-                    {
-                        e[0] = 100;
-                    }
-                    else
-                    {
-                        e[0] = 200;
-                    }
-                    fs.Seek(0, SeekOrigin.Begin);
-                    fs.Write(e, 0, e.Length);
-                    fs.Flush();
-                }
             }
         }
         private bool _enable;
@@ -2035,6 +2021,8 @@ namespace Pal98Timer
 
                 byte enable = bEnable[0];
                 _enable = (enable != 200);
+                string preference = TimerUserSettings.GetPath("plugins/" + Path.GetFileName(FileName) + ".enabled");
+                if (File.Exists(preference)) _enable = File.ReadAllText(preference).Trim() == "1";
 
                 Version = Encoding.UTF8.GetString(bVersion);
                 Des = Encoding.UTF8.GetString(bDes);

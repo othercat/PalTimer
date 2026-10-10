@@ -399,7 +399,7 @@ internal static class GameplayBehavior
         Check(auto.CheckPoints.Select(p=>p.Name).SequenceEqual(legacy.CheckPoints.Select(p=>p.Name)),"automatic and legacy have identical ordered nodes");
         Check(auto.CheckPoints.All(p=>p.Best==TimeSpan.Zero),"new line starts with zero reference");
         Check(auto.CheckPoints.Select(p=>p.Check.Method).SequenceEqual(legacy.CheckPoints.Select(p=>p.Check.Method)),"automatic reuses original checkpoint predicates");
-        Check(legacy.ActiveBestPath=="bestPAL98DX9.txt","legacy best filename unchanged");
+        Check(Path.GetFullPath(legacy.ActiveBestPath)==Path.GetFullPath("bestPAL98DX9.txt"),"writable legacy best location and filename unchanged");
         string route=(string)Get(auto,"route");var a=Snapshot(route);Call(auto,"SelectIdentity",a,false);string first=auto.ActiveBestPath;
         Check(first.EndsWith(Path.Combine(a.OrdinaryTimelineId,"best.json")),"active best storage uses gameplay identity");
         Thread.Sleep(100);Set(auto,"frozen",a.OrdinaryTimelineId);Call(auto,"SelectIdentity",Snapshot(route,true),false);

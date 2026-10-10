@@ -1,12 +1,13 @@
-param()
+param([string]$TimerDirectory = '', [string]$OnlineAssembly = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo ('artifacts\clock-warning-ui-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 [IO.Directory]::CreateDirectory($out) | Out-Null
-$runtime = Join-Path $repo 'Pal98Timer\bin\x64\Release'
+$runtime = if ($TimerDirectory) { [IO.Path]::GetFullPath($TimerDirectory) } else { Join-Path $repo 'Pal98Timer\bin\x64\Release' }
 Get-ChildItem -LiteralPath $runtime -File -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Destination $out
-Copy-Item -LiteralPath (Join-Path $repo 'PalTimerOnline\bin\x64\Release\PalTimerOnline.dll') -Destination $out
+$online = if ($OnlineAssembly) { [IO.Path]::GetFullPath($OnlineAssembly) } else { Join-Path $repo 'PalTimerOnline\bin\x64\Release\PalTimerOnline.dll' }
+Copy-Item -LiteralPath $online -Destination $out
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
 if (!$csc) { throw 'VS2026 Roslyn not found' }

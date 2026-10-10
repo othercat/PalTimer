@@ -65,8 +65,8 @@ namespace Pal98Timer
             // A legacy lock lacking this signed setting cannot grant upload by
             // placing a different live file next to it. Do not rewrite old locks.
             if (locked.State == TournamentLockReadState.Locked) return Parse(locked.CommonToolsSnapshot, true);
-            string path = Path.Combine(root, PathInGame);
-            return Parse(File.Exists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
+            string path = Pal98.Storage.UserDataStore.ReadGamePath(root, PathInGame);
+            return Parse(Pal98.Storage.UserDataStore.FileExists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
         }
     }
 }

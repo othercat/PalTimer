@@ -21,10 +21,11 @@ internal static class LiveBehavior
     sealed class Auth : ICompetitionAuth, ICompetitionLiveAuth
     {
         internal int Proofs;
+        internal int ProofDelayMilliseconds;
         internal bool Available = true;
         public CompetitionAuthIdentity Identity() => !Available ? null : new CompetitionAuthIdentity { protocol = CompetitionAuthProtocol.Name,
             key_id = new string('a',32), timer_exe_sha256 = new string('b',64), timer_version = "3.37.7.11", component_sha256 = new string('c',64) };
-        public string ProveLive(string challenge) { Proofs++; return challenge; }
+        public string ProveLive(string challenge) { Proofs++; if (ProofDelayMilliseconds > 0) Thread.Sleep(ProofDelayMilliseconds); return challenge; }
         public string Seal(string origin, string scope, string payload) => null;
         public string Prove(string seal, string challenge) => null;
     }
@@ -139,16 +140,30 @@ internal static class LiveBehavior
             Check(clockClient.ClockWarning == null && clockAuth.Proofs == 1, "clock recovery clears warning after valid challenge: " + offset);
             await clockClient.CloseAsync();
         }
+        var wrongClockAuth = new Auth();
+        var wrongClockClient = Client(root, "clock-wrong-identity", new Transport { ServerClockOffset = 182, WrongChallenge = true }, wrongClockAuth);
+        await Until(() => wrongClockClient.LiveCaption == " [连接失败]", "untrusted challenge remains an identity failure");
+        Check(wrongClockClient.ClockWarning == null && wrongClockAuth.Proofs == 0, "untrusted challenge cannot trigger time diagnosis or proof");
+        await wrongClockClient.CloseAsync();
         foreach (var fault in new[] {
-            new Transport { ServerClockOffset = 182, WrongChallenge = true },
             new Transport { ServerClockOffset = 182, MissingDate = true },
             new Transport { ExpiryAdjustment = 182 },
+            new Transport { ExpiryAdjustment = -121 },
             new Transport { ServerClockOffset = 182, ExpiryAdjustment = 600 } }) {
             var faultAuth = new Auth(); var faultClient = Client(root,"clock-invalid-" + Guid.NewGuid().ToString("N"),fault,faultAuth);
-            await Until(() => faultClient.LiveCaption == " [连接失败]", "invalid or unverified challenge remains a handshake failure");
-            Check(faultClient.ClockWarning == null && faultAuth.Proofs == 0, "no invented clock diagnosis or proof without matching time evidence");
+            await Until(() => faultClient.LiveCaption == " [时间校验异常]", "invalid challenge time has an explicit warning even without Date");
+            Check(faultClient.ClockWarning != null && !faultClient.ClockWarning.ConfirmedClockSkew && faultAuth.Proofs == 0 &&
+                faultClient.ClockWarning.Message.Contains("暂时无法确认") && faultClient.ClockWarning.Message.Contains("本地计时继续"),
+                "generic time warning does not invent a local clock diagnosis or bypass expiry");
             await faultClient.CloseAsync();
         }
+
+        var boundaryWire = new Transport { ExpiryAdjustment = -119 };
+        var boundaryAuth = new Auth { ProofDelayMilliseconds = 1300 };
+        var boundaryClient = Client(root, "clock-proof-boundary", boundaryWire, boundaryAuth);
+        await Until(() => boundaryClient.ClockWarning != null, "challenge expiring during native proof has a visible time warning");
+        Check(boundaryAuth.Proofs == 1 && boundaryWire.Sessions == 0, "expired proof is not sent to the server");
+        await boundaryClient.CloseAsync();
 
         var wire = new Transport(); var auth = new Auth(); var client = Client(root,"normal",wire,auth);
         await Until(() => client.LiveCaption == " [已连接:1042]", "real background session and heartbeat acknowledged");

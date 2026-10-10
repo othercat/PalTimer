@@ -30,13 +30,13 @@ namespace Pal98Timer
         private protected override GameplaySnapshot DisplayGameplaySnapshot => selected;
         protected override int TimingModeMs => selected?.fade_ms ?? RecordedTimingMode?.FadeMilliseconds ?? 1200;
         protected override int TimingMapSpeedTicks => selected?.map_speed_ticks ?? RecordedTimingMode?.MapSpeedTicks ?? 10;
-        public override string ActiveBestPath => selected == null || identity == null ?
+        public override string ActiveBestPath => TimerUserSettings.TimelinePath(selected == null || identity == null ?
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Timelines", "Unclassified", unknown, "best.json") :
-            TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, selected.covered && validation.Length == 0, "best.json");
+            TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, selected.covered && validation.Length == 0, "best.json"));
         protected override string RelayFileName => Path.Combine(Path.GetDirectoryName(ActiveBestPath), "SRPG.bin");
         protected override string GetScoreSavePath(DateTime now) => identity != null &&
             (GameplayRestartPending || GameplayContinuationError.Length != 0 || requested && !CaptureHardcoreEvidence().run_verified) ?
-            TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, false, "best.json") : ActiveBestPath;
+            TimerUserSettings.TimelinePath(TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, false, "best.json")) : ActiveBestPath;
         protected override void InitCheckPoints()
         {
             base.InitCheckPoints();
@@ -79,6 +79,7 @@ namespace Pal98Timer
             string path = ActiveBestPath; long observed = ++epoch;
             lock (timelineSync) referenceJson = null;
             foreach (var point in CheckPoints) point.SetBestReference(new CheckPointNewer { Name = point.Name, NickName = "", BestTS = TimeSpan.Zero });
+            RefreshClearPrediction();
             Task.Run(() => {
                 string json = null;
                 try { if (File.Exists(path)) json = File.ReadAllText(path, GetFileEncodeType(path)); }

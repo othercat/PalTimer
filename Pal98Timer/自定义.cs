@@ -112,7 +112,7 @@ namespace Pal98Timer
 
         protected override void InitCheckPoints()
         {
-            string fn = "best" + CoreName + ".txt";
+            string fn = TimerUserSettings.BestPath("best" + CoreName + ".txt");
             if (!File.Exists(fn))
             {
                 using (FileStream fs = new FileStream(fn, FileMode.Create, FileAccess.ReadWrite))

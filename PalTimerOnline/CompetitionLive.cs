@@ -13,6 +13,8 @@ namespace Pal98Timer
     {
         internal long Id;
         internal string Message;
+        internal bool ConfirmedClockSkew;
+        internal string Caption { get { return ConfirmedClockSkew ? " [系统时间不同步]" : " [时间校验异常]"; } }
     }
 
     internal sealed class CompetitionLiveClock
@@ -115,13 +117,13 @@ namespace Pal98Timer
         private int liveFailures;
 
         internal CompetitionClockWarning ClockWarning { get { return enabled && settings.Enabled ? clockWarning : null; } }
-        internal string LiveCaption { get { return ClockWarning != null ? " [系统时间不同步]" : liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
+        internal string LiveCaption { get { var warning = ClockWarning; return warning != null ? warning.Caption : liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
         internal string LiveDetail
         {
             get {
                 if (!enabled || !settings.Enabled) return "联机未开启";
                 var warning = ClockWarning;
-                if (warning != null) return "[系统时间不同步] · " + warning.Message;
+                if (warning != null) return warning.Caption.Trim() + " · " + warning.Message;
                 var state = liveConnection;
                 string caption = state.Caption(true, Stopwatch.GetTimestamp()).Trim();
                 if (caption.StartsWith("[已连接:", StringComparison.Ordinal)) return caption + " · 实时进度已连接；通关成绩按原规则提交";
@@ -189,11 +191,24 @@ namespace Pal98Timer
             string amount = (duration.Days > 0 ? duration.Days + "天" : "") +
                 (duration.Hours > 0 ? duration.Hours + "小时" : "") +
                 (duration.Minutes > 0 ? duration.Minutes + "分" : "") + duration.Seconds + "秒";
+            SetLiveTimeWarning("本机时间比服务器" + (offset > 0 ? "慢" : "快") + "约 " + amount + "，实时联机认证无法通过。\r\n" +
+                "请打开 Windows“日期和时间”，开启“自动设置时间”，点击“立即同步”。校时后会自动重连；本地计时继续。", true);
+            return true;
+        }
+        private void SetLiveTimeWarning(string message, bool confirmedClockSkew)
+        {
             var previous = clockWarning;
             clockWarning = new CompetitionClockWarning { Id = previous == null ? ++clockWarningSequence : previous.Id,
-                Message = "本机时间比服务器" + (offset > 0 ? "慢" : "快") + "约 " + amount + "，实时联机认证无法通过。\r\n" +
-                    "请打开 Windows“日期和时间”，开启“自动设置时间”，点击“立即同步”。校时后会自动重连；本地计时继续。" };
-            return true;
+                Message = message, ConfirmedClockSkew = confirmedClockSkew };
+        }
+        private void ReportLiveTimeFailure(CompetitionHttpResult response, CompetitionLiveChallenge challenge)
+        {
+            bool explained = ExplainLiveClockFailure(response, challenge);
+            if (!explained) SetLiveTimeWarning("联机握手的有效时间校验未通过，认证已停止。暂时无法确认是本机时间、服务器时间还是响应延迟造成。\r\n" +
+                "请打开 Windows“日期和时间”，核对日期、时间和时区，然后点击“立即同步”。若校时后仍出现，请向管理员提供 network.log。\r\n" +
+                "计时器会自动重试；本地计时继续。", false);
+            storage.LogNetwork(explained ? "live-clock-skew" : "live-challenge-time-invalid", response.Status);
+            LiveRetry(response, clockWarning.Message);
         }
         private async Task<bool> OpenLiveSession(CompetitionSettings cfg, CompetitionAuthIdentity identity, long epoch)
         {
@@ -211,12 +226,15 @@ namespace Pal98Timer
                 challenge.instance_id != liveInstanceId || !LiveUuid(challenge.challenge_id) || !CompetitionProtocol.Digest(challenge.nonce))
             { LiveRetry(response, "实时联机握手失败，正在后台重试"); return false; }
             if (challenge.expires_at <= now || challenge.expires_at > now + 180) {
-                bool explained = ExplainLiveClockFailure(response, challenge);
-                LiveRetry(response, explained ? clockWarning.Message : "实时联机握手已过期或时间无效，正在后台重试");
+                ReportLiveTimeFailure(response, challenge);
                 return false;
             }
-            clockWarning = null;
             string proof = auth.ProveLive(response.Body);
+            now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (challenge.expires_at <= now || challenge.expires_at > now + 180) {
+                ReportLiveTimeFailure(response, challenge); return false;
+            }
+            clockWarning = null;
             if (proof == null) { LiveRetry(new CompetitionHttpResult(), "认证组件未通过实时联机校验，请确认配套文件完整"); return false; }
             body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, proof_base64 = CompetitionAuthProtocol.Encode(proof) });
             response = await transport.Send("POST", cfg.Endpoint + "/live/sessions", credential.Hwid, credential.Secret, body, 3000, stop.Token).ConfigureAwait(false);

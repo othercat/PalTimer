@@ -58,11 +58,15 @@ $overlayForm = $null
 try {
     [Environment]::CurrentDirectory = $tempDirectory
     $assembly = [Reflection.Assembly]::LoadFrom($ExePath)
+    $storeType = $assembly.GetType("Pal98Timer.TimerSettingsStore", $true)
+    $storeConstructor = $storeType.GetConstructor($binding, $null, [Type[]]@([string], [string]), $null)
+    $store = $storeConstructor.Invoke([object[]]@([string]$tempDirectory, [string](Join-Path $tempDirectory 'user')))
+    $assembly.GetType("Pal98Timer.TimerUserSettings", $true).GetField('store', $binding).SetValue($null, $store)
     $layoutType = $assembly.GetType("Pal98Timer.Dx9OverlayLayoutSettings", $true)
     $settingsType = $assembly.GetType("Pal98Timer.Dx9OverlaySettings", $true)
     $loadEnabled = $settingsType.GetMethod("LoadEnabled", $binding)
     $saveEnabled = $settingsType.GetMethod("SaveEnabled", $binding)
-    Assert-True ($loadEnabled.Invoke($null, @())) "missing overlay preference must default to enabled"
+    Assert-True (-not $loadEnabled.Invoke($null, @())) "missing overlay preference must default to disabled"
     $saveEnabled.Invoke($null, @($false))
     Assert-True (-not $loadEnabled.Invoke($null, @())) "saved disabled overlay preference must be preserved"
     $saveEnabled.Invoke($null, @($true))
@@ -134,7 +138,11 @@ try {
         Where-Object { $_ -ne $null } |
         Select-Object -First 1
     $providerType = $openProviderType.MakeGenericType($snapshotType)
-    $providerType.GetField("Value", $binding).SetValue($null, $snapshot)
+    $waitingSnapshot = $snapshotConstructor.Invoke(@(
+        [IntPtr]::Zero, "SimSun", "00:00:00", "0.00s", "00:00:00", "",
+        0, $entry1, $entry2, $entry3, "", $false, $false, "", "", "", "", 0, ""
+    ))
+    $providerType.GetField("Value", $binding).SetValue($null, $waitingSnapshot)
     $funcType = ([Func[int]]).GetGenericTypeDefinition().MakeGenericType($snapshotType)
     $provider = [Delegate]::CreateDelegate($funcType, $providerType.GetMethod("GetValue", $binding))
 
@@ -144,11 +152,36 @@ try {
     $overlayForm = $overlayConstructor.Invoke(@($provider, $defaultLayout))
     $overlayType.GetMethod("Start", $binding).Invoke($overlayForm, @()) | Out-Null
     [Windows.Forms.Application]::DoEvents()
+    Assert-True (-not $overlayForm.Visible) "before the first game window, the default overlay must wait instead of choosing a desktop corner"
+    $providerType.GetField("Value", $binding).SetValue($null, $snapshot)
+    $refresh = $overlayType.GetMethod("RefreshOverlay", $binding)
+    $refresh.Invoke($overlayForm, @()) | Out-Null
+    [Windows.Forms.Application]::DoEvents()
 
     Assert-True $overlayForm.Visible "overlay must show over a valid foreground host"
     $hostOrigin = $hostForm.PointToScreen([Drawing.Point]::Empty)
     Assert-True ($overlayForm.Right -eq $hostOrigin.X + $hostForm.ClientSize.Width) "default overlay must remain right-aligned"
     Assert-True ($overlayForm.Bottom -eq $hostOrigin.Y + $hostForm.ClientSize.Height) "default overlay must remain bottom-aligned"
+    $hostForm.Location = New-Object Drawing.Point(110, 95)
+    $hostForm.ClientSize = New-Object Drawing.Size(720, 510)
+    $refresh.Invoke($overlayForm, @()) | Out-Null
+    $hostOrigin = $hostForm.PointToScreen([Drawing.Point]::Empty)
+    Assert-True ($overlayForm.Right -eq $hostOrigin.X + $hostForm.ClientSize.Width -and $overlayForm.Bottom -eq $hostOrigin.Y + $hostForm.ClientSize.Height) "automatic anchor must follow client movement and resizing"
+    $anchoredBounds = $overlayForm.Bounds
+    $hostForm.WindowState = [Windows.Forms.FormWindowState]::Minimized
+    [Windows.Forms.Application]::DoEvents()
+    $refresh.Invoke($overlayForm, @()) | Out-Null
+    Assert-True ($overlayForm.Visible -and $overlayForm.Bounds -eq $anchoredBounds) "minimized host retains the last game anchor for OBS"
+    $providerType.GetField("Value", $binding).SetValue($null, $waitingSnapshot)
+    $refresh.Invoke($overlayForm, @()) | Out-Null
+    Assert-True ($overlayForm.Bounds -eq $anchoredBounds) "temporary game disconnect must not move to a desktop corner"
+    $hostForm.WindowState = [Windows.Forms.FormWindowState]::Normal
+    $hostForm.Location = New-Object Drawing.Point(140, 120)
+    $providerType.GetField("Value", $binding).SetValue($null, $snapshot)
+    [Windows.Forms.Application]::DoEvents()
+    $refresh.Invoke($overlayForm, @()) | Out-Null
+    $hostOrigin = $hostForm.PointToScreen([Drawing.Point]::Empty)
+    Assert-True ($overlayForm.Right -eq $hostOrigin.X + $hostForm.ClientSize.Width) "game anchor must recover after reconnect"
     $normalStyle = [Dx9OverlayNativeTest]::GetWindowLong($overlayForm.Handle, -20)
     Assert-True (($normalStyle -band 0x20) -ne 0) "normal overlay must retain WS_EX_TRANSPARENT"
 
