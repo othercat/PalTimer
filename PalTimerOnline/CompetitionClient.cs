@@ -41,6 +41,8 @@ namespace Pal98Timer
         private DateTimeOffset started;
         private DateTime nextRegister, nextQuery;
         private bool registrationRejected, beganHere;
+        private string registrationFailure = "无法连接联机服务器，正在后台重试";
+        private int registrationStatus;
         private bool serverSupportsV2;
         private DateTime capabilityExpires;
         private long generation, querySerial;
@@ -212,7 +214,10 @@ namespace Pal98Timer
                 List<CompetitionPending> preparedPending;
                 try
                 {
-                    preparedCredential = networkChanged ? (copy.Enabled ? storage.Credential(copy.Server, replacementSecret) : null) : credential;
+                    // An explicitly entered replacement must survive saving
+                    // before PAL is detected, when game-owned upload is off.
+                    // Persist it only for this endpoint; saving grants no upload.
+                    preparedCredential = networkChanged ? (copy.Enabled || replacementSecret != null ? storage.Credential(copy.Server, replacementSecret) : null) : credential;
                     preparedPending = networkChanged ? storage.LoadPending(copy).ToList() : null;
                     var stored = copy.Copy();
                     if (gameManaged) { stored.Enabled = false; stored.Server = new CompetitionSettings().Server; stored.Event = "wuqiang"; stored.Ruleset = "wuqiang-2026-v1"; stored.CustomCompetitionId = null; stored.ConfigurationId = null; }
@@ -241,6 +246,8 @@ namespace Pal98Timer
                 if (!networkChanged) return;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
+                registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
+                if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
                 ResetLiveConnection();
                 contextToken = ""; current = null; contextSettings = null; route = null; contextRunId = null; nextQuery = DateTime.MinValue;
@@ -250,6 +257,7 @@ namespace Pal98Timer
         {
             commands.Enqueue(() => {
                 registrationRejected = false; nextRegister = DateTime.MinValue; registeredKey = ""; nextQuery = DateTime.MinValue;
+                registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 approvals.Clear();
                 candidates.Clear();
                 RetryLiveConnection();
@@ -314,7 +322,7 @@ namespace Pal98Timer
                                 await UploadOne().ConfigureAwait(false);
                                 await QueryLatest().ConfigureAwait(false);
                             }
-                            else LiveFailure("无法连接联机服务器，正在后台重试", 0);
+                            else LiveFailure(registrationFailure, registrationStatus, registrationRejected);
                         }
                     }
                     catch (OperationCanceledException) { }
@@ -420,6 +428,11 @@ namespace Pal98Timer
             if (reply != null)
             { registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply); return true; }
             registrationRejected = !response.Retryable && !response.Success;
+            registrationStatus = response.Status;
+            registrationFailure = response.Status == 401
+                ? "设备凭据被服务器拒绝（HTTP 401）；请保存主办方重置后的凭据，再点后台重试。"
+                : response.Status == 403 ? "服务器拒绝设备注册（HTTP 403）；请联系主办方检查设备权限。"
+                : "无法连接联机服务器，正在后台重试";
             nextRegister = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             storage.LogNetwork("device-register-retry", response.Status);
             return false;

@@ -205,6 +205,7 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            if (size == 2233344 && string.Equals(hash, "e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d", StringComparison.OrdinalIgnoreCase)) return "1.7.2.1";
             if (size == 2233344 && string.Equals(hash, "9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7", StringComparison.OrdinalIgnoreCase)) return "1.7.3.0";
             if (size == 2183168 && string.Equals(hash, "58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39", StringComparison.OrdinalIgnoreCase)) return "1.7.2.0";
             // v1.71 native repair: Anu dying dialogue in the scripted automatic Stone Elder battle.

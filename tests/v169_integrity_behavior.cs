@@ -959,6 +959,10 @@ internal static class V169IntegrityBehavior
         var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
         var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
         var v171Anu=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.1.2");
+        var v172r1=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.1");
+        var v172r1Dll=((IEnumerable)Property(v172r1,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(v172r1Dll,"size")==2233344 && (string)Property(v172r1Dll,"sha256")=="e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d","v1.72 revision 1 catalog pins the actual competition release");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172r1Dll,"size"),(string)Property(v172r1Dll,"sha256")) as string == "1.7.2.1","v1.72 revision 1 exact bytes select their own embedded catalog");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v173Dll,"size")==2233344 && (string)Property(v173Dll,"sha256")=="9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7","v1.7.3 catalog pins the final configuration-fallback DLL");

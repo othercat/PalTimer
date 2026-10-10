@@ -91,7 +91,7 @@ namespace Pal98Timer
             hwid.Name = "lblOnlineDeviceId";
             secret = new TextBox { Dock = DockStyle.Fill, MaxLength = 64, UseSystemPasswordChar = true };
             layout.Controls.Add(new Label { Text = "更换设备凭据", AutoSize = true }, 0, 10); layout.Controls.Add(secret, 1, 10);
-            AddNote(layout, 11, "通常留空；仅主办方重置凭据后填写。凭据保存在本机，不随游戏包分发。", 645);
+            AddNote(layout, 11, "通常留空；仅主办方重置后填写并保存。未启动游戏也可保存到当前服务器，凭据仅保存在本机。", 645);
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var save = new Button { Text = "保存显示设置", AutoSize = true }; var retry = new Button { Text = "后台重试", AutoSize = true };
             var copy = copyDeviceId = new Button { Name = "btnCopyOnlineDeviceId", Text = "复制设备标识", AutoSize = true, Enabled = false }; var folder = new Button { Text = "打开本机记录", AutoSize = true };
@@ -137,7 +137,7 @@ namespace Pal98Timer
         {
             var cfg = client.Settings; var value = client.View;
             source.Text = "联机设置由游戏配置工具的“服务器上传配置”页面管理。\n" + (client.GameSettingsError.Length != 0 ? client.GameSettingsError : cfg.Enabled
-                ? cfg.Server + "  " + (cfg.CustomCompetitionId == null ? "日常排名" : "自定义比赛：" + cfg.CustomCompetitionId) : "当前游戏未开启联机，或尚未连接游戏。");
+                ? cfg.Server + "  " + (cfg.CustomCompetitionId == null ? "日常排名" : "自定义比赛：" + cfg.CustomCompetitionId) : "当前游戏未开启联机，或尚未连接游戏。凭据保存目标：" + cfg.Server);
             hwid.Text = value.Hwid.Length != 0 ? "设备标识：" + value.Hwid : client.DeviceIdentityReady
                 ? "设备标识：本机身份暂不可读取，请重开计时器后重试。" : "设备标识：正在本机读取…";
             copyDeviceId.Enabled = value.Hwid.Length != 0;

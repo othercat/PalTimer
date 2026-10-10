@@ -68,6 +68,8 @@ internal static class CompetitionBehavior
         internal TaskCompletionSource<bool> CandidateGate;
         internal TaskCompletionSource<bool> GetGate;
         internal int UploadStatus = 201;
+        internal string ExpectedRegistrationSecret;
+        internal int RejectedRegistrations;
         internal readonly ConcurrentQueue<string> Payloads = new ConcurrentQueue<string>();
         internal readonly ConcurrentQueue<string> Urls = new ConcurrentQueue<string>();
         public async Task<CompetitionHttpResult> Send(string method, string url, string hwid, string secret, string body, int timeout, CancellationToken stop)
@@ -76,7 +78,13 @@ internal static class CompetitionBehavior
             try
             {
                 Urls.Enqueue(url);
-                if (url.EndsWith("/devices")) { Registers++; return Response(null, null); }
+                if (url.EndsWith("/devices")) {
+                    Registers++;
+                    if (ExpectedRegistrationSecret != null && secret != ExpectedRegistrationSecret) {
+                        RejectedRegistrations++; return new CompetitionHttpResult { Status = 401 };
+                    }
+                    return Response(null, null);
+                }
                 if (url.Contains("/auth/status?"))
                 {
                     AuthChecks++; var authQuery = HttpUtility.ParseQueryString(new Uri(url).Query);
@@ -628,6 +636,36 @@ internal static class CompetitionBehavior
         Check(fake.Candidates == 0 && auth.RegistrationReads == 0 && fake.Registers == 0, "online disabled does not load or send candidate");
         await client.CloseAsync();
     }
+    static async Task CredentialRecoveryCases()
+    {
+        var store = Store("credential-before-game");
+        var cfg = new CompetitionSettings { Enabled = true };
+        var fake = new Fake { ExpectedRegistrationSecret = new string('a', 64) };
+        var client = new CompetitionClient(store, fake, new FakeAuth(), true, p => cfg.Copy());
+        await Until(() => client.DeviceIdentityReady, "offline credential editor is ready");
+        var appearance = client.Settings; appearance.OverlayColor = "#123456";
+        client.ConfigureAppearance(appearance, fake.ExpectedRegistrationSecret);
+        await Until(() => client.Settings.OverlayColor == "#123456", "credential save command finished without game");
+        Check(store.Credential(cfg.Server).Secret == fake.ExpectedRegistrationSecret, "replacement credential persists before game recognition");
+        Check(fake.Registers == 0 && !client.Enabled, "saving credential offline grants no network permission");
+        await client.CloseAsync();
+        client = new CompetitionClient(store, fake, new FakeAuth(), true, p => cfg.Copy());
+        using (var game = new Process()) {
+            client.ObserveGame(game);
+            await Until(() => fake.AuthChecks > 0, "restart uses saved credential for authorized game registration");
+            Check(fake.RejectedRegistrations == 0, "offline replacement does not revert to old credential");
+        }
+        await client.CloseAsync();
+
+        store = Store("credential-401"); fake = new Fake { ExpectedRegistrationSecret = new string('b', 64) };
+        client = new CompetitionClient(store, fake, new FakeAuth()); client.Configure(cfg);
+        await Until(() => fake.RejectedRegistrations == 1, "server rejects obsolete device credential with 401");
+        await Until(() => client.LiveDetail.Contains("HTTP 401") && client.LiveDetail.Contains("设备凭据"), "401 has an actionable device-credential diagnosis");
+        client.ConfigureAppearance(client.Settings, fake.ExpectedRegistrationSecret);
+        await Until(() => fake.AuthChecks > 0, "replacement clears registration rejection and reconnects");
+        Check(fake.RejectedRegistrations == 1 && client.ClockWarning == null, "device 401 recovery does not infer a clock failure");
+        await client.CloseAsync();
+    }
     static async Task Integration(string server)
     {
         var store = Store("http"); var cfg = Config(); cfg.Server = server;
@@ -645,7 +683,7 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
-        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
+        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

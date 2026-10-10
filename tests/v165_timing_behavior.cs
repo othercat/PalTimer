@@ -99,6 +99,14 @@ internal static class V165TimingBehavior
     static void Scenario(string name, Action action)
     {
         string directory = Path.Combine(Root, name); Directory.CreateDirectory(directory); Directory.SetCurrentDirectory(directory);
+        // Product settings now follow the executable installation, not CWD.
+        // Bind each offline scenario to its own installation so earlier saved
+        // best lines cannot leak into another prediction/storage scenario.
+        var settingsType = Product.GetType("Pal98Timer.TimerUserSettings", true);
+        var store = Activator.CreateInstance(Product.GetType("Pal98Timer.TimerSettingsStore", true), Static | Instance,
+            null, new object[] { directory, Path.Combine(directory, "isolated-user"), null }, null);
+        settingsType.GetField("store", Static).SetValue(null, store);
+        settingsType.GetMethod("ClearPathCache", Static).Invoke(null, null);
         int before = Assertions;
         try { action(); ++Passed; Console.WriteLine("PASS " + name + " (" + (Assertions - before) + " assertions)"); }
         catch (Exception ex) { ex = Unwrap(ex); ++Failed; Failures.Add(name + ": " + ex.Message); Console.WriteLine("FAIL " + name + ": " + ex.Message + "\n" + ex.StackTrace); }
