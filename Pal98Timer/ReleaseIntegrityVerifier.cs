@@ -25,6 +25,7 @@ namespace Pal98Timer
         internal const int BackgroundByteBudget = 256 * 1024;
         internal const int SliceMilliseconds = 2;
         private readonly string root;
+        private readonly string localAppData;
         private ReleaseIntegrityManifest manifest;
         private ReleaseIntegrityProfile profile;
         private Queue<string> pending;
@@ -68,13 +69,17 @@ namespace Pal98Timer
         internal string PalDllVersion { get; private set; }
 
         internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest manifest, RuntimeTimingMode mode)
+            : this(root, manifest, mode, null) { }
+        internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest manifest, RuntimeTimingMode mode, string localAppData)
         {
-            this.root = Path.GetFullPath(root); this.mode = mode; identityResolved = true;
+            this.root = Path.GetFullPath(root); this.localAppData = localAppData; this.mode = mode; identityResolved = true;
             Configure(manifest);
         }
         internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest[] catalog, RuntimeTimingMode mode)
+            : this(root, catalog, mode, null) { }
+        internal ReleaseIntegrityVerifier(string root, ReleaseIntegrityManifest[] catalog, RuntimeTimingMode mode, string localAppData)
         {
-            this.root = Path.GetFullPath(root); this.catalog = catalog; this.mode = mode;
+            this.root = Path.GetFullPath(root); this.localAppData = localAppData; this.catalog = catalog; this.mode = mode;
             pending = new Queue<string>(new[] { "PAL.dll" });
             fileRules = new Dictionary<string, ReleaseIntegrityFile>(StringComparer.OrdinalIgnoreCase) { ["PAL.dll"] = new ReleaseIntegrityFile { path = "PAL.dll" } };
             pendingSettings = new Queue<ReleaseIntegritySetting>(); directoryComplete = settingsComplete = true;
@@ -235,7 +240,7 @@ namespace Pal98Timer
         private string Resolve(string path)
         {
             if (!ReleaseIntegrityManifest.SafePath(path)) throw new IOException("无效的相对路径");
-            string full = Path.GetFullPath(Path.Combine(root, path));
+            string full = Pal98.Storage.UserDataStore.ReadGamePath(root, path, localAppData);
             for (string current = full; current != null && !current.Equals(root, StringComparison.OrdinalIgnoreCase); current = Path.GetDirectoryName(current))
                 if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
                     throw new IOException("资源路径包含链接，尚未核验：" + path);

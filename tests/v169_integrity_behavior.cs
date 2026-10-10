@@ -83,13 +83,40 @@ internal static class V169IntegrityBehavior
             "\"memory_regions\":[{\"id\":\"rng\",\"module\":\"PAL.EXE\",\"rva\":16,\"expected\":\"e80000000090909090\",\"fixups\":[{\"offset\":1,\"module\":\"PAL.dll\",\"rva\":32,\"kind\":\"rel32\"}]}]}";
     }
     static object Manifest(string json) { return Static("ReleaseIntegrityManifest","Parse",json); }
-    static object RunVerifier(object manifest, object mode=null)
+    static object RunVerifier(object manifest, object mode=null, string localAppData=null)
     {
-        var verifier=New("ReleaseIntegrityVerifier",Directory.GetCurrentDirectory(),manifest,mode??Mode());
+        var verifier=New("ReleaseIntegrityVerifier",Directory.GetCurrentDirectory(),manifest,mode??Mode(),localAppData);
         int turns=0; TimeSpan cpu=Process.GetCurrentProcess().TotalProcessorTime;
         while(!(bool)Property(verifier,"Complete")) { var watch=Stopwatch.StartNew(); int bytes=(int)Call(verifier,"Advance"); MaxHashSliceMs=Math.Max(MaxHashSliceMs,watch.Elapsed.TotalMilliseconds); Check(bytes<=512*1024,"per-slice byte budget"); if(++turns>500)throw new Exception("hash never completes"); }
         HashCpuMs += (Process.GetCurrentProcess().TotalProcessorTime-cpu).TotalMilliseconds;
         Call(verifier,"Advance"); Check(turns>=4,"large file must yield"); return verifier;
+    }
+    static void MigratedVerifierReadsEffectiveSettings()
+    {
+        string json=Fixture(), root=Directory.GetCurrentDirectory(), local=Path.Combine(root,"isolated-user");
+        byte[] descriptor={11,12}, script={21,22};
+        const string stage="palmod/Profiles/p/fixture/manifest/game-profile.json", rule="copymen_scripts/test.rule";
+        json=json.Replace(FileJson("DATA.MKF",new byte[]{1,2,3}),FileJson("DATA.MKF",new byte[]{1,2,3})+","+FileJson(stage,descriptor)+","+FileJson(rule,script));
+        json=json.Replace("\"memory_regions\":","\"exact_directories\":[{\"path\":\"copymen_scripts\",\"extensions\":[\".json\",\".txt\",\".rule\"],\"entries\":[\"test.rule\"]}],\"memory_regions\":");
+        var manifest=Manifest(json);
+        var storage=new Pal98.Storage.UserDataStore(root,local);string game=storage.ComponentDirectory("game");
+        foreach(var pair in new[]{Tuple.Create(stage,descriptor),Tuple.Create(rule,script)}) {
+            string target=Path.Combine(game,pair.Item1);Directory.CreateDirectory(Path.GetDirectoryName(target));File.WriteAllBytes(target,pair.Item2);
+        }
+        File.WriteAllText(Path.Combine(game,"config.ini"),"[extra]\nMapSpeedTicks=10\n");
+        File.WriteAllText("config.ini","[extra]\nMapSpeedTicks=999\n");
+        File.WriteAllBytes(Path.Combine(game,"DATA.MKF"),new byte[]{99});
+        Directory.CreateDirectory("copymen_scripts");File.WriteAllText(rule,"stale package rule");
+        using(var verifier=(IDisposable)RunVerifier(manifest,null,local))
+            Check(Property(verifier,"State").ToString()=="Match","integrity uses migrated settings, scripts and derived cache while ignoring resource shadows");
+        Check(File.ReadAllText("config.ini").Contains("999") && File.ReadAllText(rule)=="stale package rule","verification never migrates or edits package settings");
+        File.WriteAllBytes(Path.Combine(game,"DATA.MKF"),new byte[]{1,2,3});File.WriteAllBytes("DATA.MKF",new byte[]{99});
+        using(var verifier=(IDisposable)RunVerifier(manifest,null,local))
+            Check(Property(verifier,"State").ToString()=="Mismatch","user copy cannot conceal modified original resources");
+        File.WriteAllBytes("DATA.MKF",new byte[]{1,2,3});
+        File.WriteAllText(Path.Combine(game,"copymen_scripts/extra.rule"),"unexpected");
+        using(var verifier=(IDisposable)RunVerifier(manifest,null,local))
+            Check(Property(verifier,"State").ToString()=="Mismatch","exact-directory audit checks the effective user script directory");
     }
     static void Contract()
     {
@@ -932,6 +959,11 @@ internal static class V169IntegrityBehavior
         var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
         var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
         var v171Anu=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.1.2");
+        var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
+        var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(v173Dll,"size")==2233344 && (string)Property(v173Dll,"sha256")=="9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7","v1.7.3 catalog pins the final configuration-fallback DLL");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v173Dll,"size"),(string)Property(v173Dll,"sha256")) as string == "1.7.3.0","final v1.7.3 bytes select the matching embedded catalog");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2186240L,"fbfff524849dbaab4cfdf73593fbc90ad24b0b339a3fde77302de153dec399bd")==null,"superseded v1.7.3 candidate is not silently treated as this release");
         var v172=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.0");
         var v172Dll=((IEnumerable)Property(v172,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         var v172Helper=((IEnumerable)Property(v172,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="Pal98ProcessHelper.exe");
@@ -998,6 +1030,7 @@ internal static class V169IntegrityBehavior
         {
             Birth=Host.StartTime.ToUniversalTime().ToFileTimeUtc();
             Scenario("contract",Contract);Scenario("manifest_files",ManifestsAndFiles);Scenario("readonly_fixups",ReadOnlyAndFixups);
+            Scenario("migrated_verification",MigratedVerifierReadsEffectiveSettings);
             Scenario("live_diagnostics",LiveDiagnosticsAndNoTimingGate);Scenario("legacy_versions",VersionCompatibility);Scenario("signed_locks",SignedLocks);
             Scenario("heartbeat_loss",HeartbeatLossCannotSuppressCode);Scenario("target_switch",TargetSwitchPublication);
             Scenario("indirect_trampoline",IndirectTrampoline);Scenario("settings_comments",SettingsValuesAndComments);Scenario("exact_scripts",ExactScriptDirectory);Scenario("settings_budget",SettingsBudgetAndCache);Scenario("module_duplicates",DuplicateModuleIdentity);Scenario("real_proxy_paths",RealProxyModulePaths);
