@@ -12,6 +12,12 @@ namespace Pal98Timer
     public class Pal98Dx9Automatic : 仙剑98柔情DX9
     {
         private readonly GameplayModeReader gameplayReader = new GameplayModeReader();
+        private readonly LocalConfigurationObserver configurationReader = new LocalConfigurationObserver();
+        private readonly object configurationSync = new object();
+        private LocalTimelineConfiguration localConfiguration;
+        private bool configurationFrozen, manualConfiguration;
+        private Task<LocalTimelineConfiguration> startConfiguration;
+        private string configurationDiagnostic = "";
         private readonly object timelineSync = new object();
         private GameplaySnapshot selected;
         private string route, identity, frozen, validation = "", referenceJson;
@@ -30,13 +36,14 @@ namespace Pal98Timer
         private protected override GameplaySnapshot DisplayGameplaySnapshot => selected;
         protected override int TimingModeMs => selected?.fade_ms ?? RecordedTimingMode?.FadeMilliseconds ?? 1200;
         protected override int TimingMapSpeedTicks => selected?.map_speed_ticks ?? RecordedTimingMode?.MapSpeedTicks ?? 10;
-        public override string ActiveBestPath => TimerUserSettings.TimelinePath(selected == null || identity == null ?
+        public override string ActiveBestPath => localConfiguration?.BestPath ?? LegacyBestPath;
+        private string LegacyBestPath => TimerUserSettings.TimelinePath(selected == null || identity == null ?
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Timelines", "Unclassified", unknown, "best.json") :
             TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, selected.covered && validation.Length == 0, "best.json"));
         protected override string RelayFileName => Path.Combine(Path.GetDirectoryName(ActiveBestPath), "SRPG.bin");
-        protected override string GetScoreSavePath(DateTime now) => identity != null &&
+        protected override string GetScoreSavePath(DateTime now) => localConfiguration?.BestPath ?? (identity != null &&
             (GameplayRestartPending || GameplayContinuationError.Length != 0 || requested && !CaptureHardcoreEvidence().run_verified) ?
-            TimerUserSettings.TimelinePath(TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, false, "best.json")) : ActiveBestPath;
+            TimerUserSettings.TimelinePath(TimelineIdentity.PathFor(AppDomain.CurrentDomain.BaseDirectory, identity, false, "best.json")) : ActiveBestPath);
         protected override void InitCheckPoints()
         {
             base.InitCheckPoints();
@@ -60,13 +67,144 @@ namespace Pal98Timer
         public override void RefreshBestReference()
         {
             // Explicit save/edit happens outside the timing loop.
-            string path = ActiveBestPath; long observed = epoch;
-            string json = File.Exists(path) ? File.ReadAllText(path, GetFileEncodeType(path)) : null;
-            lock (timelineSync) { if (observed != epoch) return; referenceJson = json; }
-            base.RefreshBestReference();
+            string path, legacy; long observed;
+            lock (configurationSync) lock (timelineSync) {
+                path = ActiveBestPath; legacy = localConfiguration != null && identity != null ? LegacyBestPath : null;
+                observed = ++epoch;
+            }
+            string json = ReadReference(path, legacy);
+            lock (timelineSync) {
+                if (observed != epoch) return;
+                referenceJson = json; referenceReady = false;
+                base.RefreshBestReference();
+            }
+        }
+        private static string ReadReference(string path, string legacy)
+        {
+            path = BestTimelineStorage.IoPath(path);
+            if (legacy != null) legacy = BestTimelineStorage.IoPath(legacy);
+            if (File.Exists(path)) return File.ReadAllText(path, GetFileEncodeType(path));
+            return legacy != null && File.Exists(legacy) ? File.ReadAllText(legacy, GetFileEncodeType(legacy)) : null;
+        }
+        private void QueueReference()
+        {
+            string path, legacy; long observed;
+            lock (configurationSync) lock (timelineSync) {
+                path = ActiveBestPath; legacy = localConfiguration != null && identity != null ? LegacyBestPath : null;
+                observed = ++epoch;
+                referenceJson = null; referenceReady = false;
+                foreach (var point in CheckPoints) point.SetBestReference(new CheckPointNewer { Name = point.Name, NickName = "", BestTS = TimeSpan.Zero });
+                RefreshClearPrediction();
+            }
+            Task.Run(() => {
+                string json = null;
+                try { json = ReadReference(path, legacy); }
+                catch (Exception e) when (LocalConfigurationReader.ReadError(e)) { }
+                lock (timelineSync) { if (epoch == observed) { referenceJson = json; referenceReady = true; } }
+            });
+        }
+        private void ApplyQueuedReference()
+        {
+            lock (timelineSync) {
+                if (!referenceReady) return;
+                referenceReady = false;
+                try { base.RefreshBestReference(); }
+                catch (Exception e) when (LocalConfigurationReader.ReadError(e)) { referenceJson = null; }
+            }
+        }
+        internal void SelectLocalConfiguration(LocalTimelineConfiguration value, bool manuallySelected)
+        {
+            lock (configurationSync) {
+            if (value?.Valid != true || value.route_sha256 != route) throw new InvalidDataException("所选配置与当前节点路线不一致。");
+            if (configurationFrozen && localConfiguration != null && localConfiguration.key != value.key)
+                throw new InvalidOperationException("本局配置已经固定。请保存本局后重置，再选择其他配置。");
+            bool changed = localConfiguration?.key != value.key;
+            if (manuallySelected) value.Remember();
+            localConfiguration = value;
+            manualConfiguration = manuallySelected;
+            if (manuallySelected) configurationDiagnostic = "本局参考线归属由玩家明确选择。";
+            if (changed) QueueReference();
+            }
+        }
+        private void ObserveLocalConfiguration()
+        {
+            lock (configurationSync) {
+            if (configurationFrozen) { CompleteStartConfiguration(); return; }
+            if (manualConfiguration) return;
+            if (GameplayRunStarted) { FreezeLocalConfiguration(); return; }
+            configurationReader.Observe(CompetitionGameProcess, route);
+            var value = configurationReader.Current;
+            configurationDiagnostic = configurationReader.Error;
+            if (value != null) SelectLocalConfiguration(value, false);
+            }
+        }
+        private void FreezeLocalConfiguration()
+        {
+            lock (configurationSync) {
+            if (configurationFrozen) return;
+            if (!manualConfiguration) {
+                startConfiguration = configurationReader.CaptureStart(CompetitionGameProcess, route);
+                bool hadReference = localConfiguration != null;
+                localConfiguration = null;
+                if (hadReference) QueueReference();
+            }
+            configurationFrozen = true;
+            CompleteStartConfiguration();
+            }
+        }
+        private void CompleteStartConfiguration()
+        {
+            lock (configurationSync) {
+            if (manualConfiguration || startConfiguration == null) return;
+            if (!startConfiguration.IsCompleted) { configurationDiagnostic = "正在读取开局配置，计时继续。"; return; }
+            var captured = startConfiguration.GetAwaiter().GetResult();
+            startConfiguration = null;
+            if (captured != null) { SelectLocalConfiguration(captured, false); configurationDiagnostic = "本局配置已固定。"; }
+            else configurationDiagnostic = "开局时未能读取配置；保存前请选择本局配置归属。";
+            }
+        }
+        private bool ChooseLocalConfiguration()
+        {
+            if (form == null) return false;
+            using (var picker = new LocalTimelineConfigurationForm(route, configurationReader.Current ?? localConfiguration)) {
+                if (picker.ShowDialog(form) != DialogResult.OK) return false;
+                SelectLocalConfiguration(picker.Selected, true);
+                RefreshBestReference();
+                return true;
+            }
+        }
+        protected override void ValidateBestSave()
+        {
+            CompleteStartConfiguration();
+            if (localConfiguration != null) return;
+            if (identity != null && GetScoreValidationError().Length == 0) { base.ValidateBestSave(); return; }
+            if (!ChooseLocalConfiguration()) throw new OperationCanceledException("请先选择本局本地配置归属；当前成绩已保留。");
+        }
+        private void SetLocalReferenceIdentity(HObj data)
+        {
+            data["LocalReferenceConfiguration"] = new HObj(LocalTimelineConfiguration.Json().Serialize(localConfiguration));
+            data["LocalReferenceBinding"] = manualConfiguration ? "manual" : "captured-at-start";
+            data["ReferenceTimeline"] = true;
+            data["GameplayVerified"] = false;
+            data["TimingRulesVerified"] = false;
+            data["HardcoreRunVerified"] = false;
+        }
+        protected override string PrepareBestSave(string contents)
+        {
+            if (localConfiguration == null) return contents;
+            localConfiguration.Remember();
+            var data = new HObj(contents); SetLocalReferenceIdentity(data);
+            return data.ToJson();
+        }
+        public override void CreateBestReferenceIfMissing()
+        {
+            if (localConfiguration == null && identity == null && !ChooseLocalConfiguration())
+                throw new OperationCanceledException("请先选择本地配置归属。");
+            base.CreateBestReferenceIfMissing();
         }
         private void SelectIdentity(GameplaySnapshot snapshot, bool hardcore)
         {
+            lock (configurationSync) {
             string candidate = hardcore ? snapshot.HardcoreTimelineId : snapshot.OrdinaryTimelineId;
             if (candidate == null || startedWithoutIdentity) return;
             if (identity == candidate) {
@@ -76,26 +214,20 @@ namespace Pal98Timer
             }
             if (frozen != null) { validation = "本局玩法规则或硬核分类已改变，保留本地记录；请重置后开始新时间线。"; return; }
             selected = snapshot; identity = candidate; requested = hardcore;
-            string path = ActiveBestPath; long observed = ++epoch;
-            lock (timelineSync) referenceJson = null;
-            foreach (var point in CheckPoints) point.SetBestReference(new CheckPointNewer { Name = point.Name, NickName = "", BestTS = TimeSpan.Zero });
-            RefreshClearPrediction();
-            Task.Run(() => {
-                string json = null;
-                try { if (File.Exists(path)) json = File.ReadAllText(path, GetFileEncodeType(path)); }
-                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException) { }
-                lock (timelineSync) { if (epoch == observed) { referenceJson = json; referenceReady = true; } }
-            });
+            QueueReference();
+            }
         }
         private bool referenceReady;
         protected override void OnGameplayStarting()
         {
+            FreezeLocalConfiguration();
             startProcess = CompetitionGameProcess;
             startHardcore = CaptureHardcoreEvidence().requested;
             startObservation = gameplayReader.CaptureStart(startProcess);
         }
         private void FreezeStartIdentity()
         {
+            if (GameplayRunStarted && !configurationFrozen) FreezeLocalConfiguration();
             if (frozen != null || !GameplayRunStarted || startObservation?.Pending == true) return;
             if (startObservation != null) {
                 var origin = startObservation.Snapshot;
@@ -112,14 +244,12 @@ namespace Pal98Timer
         }
         protected override void OnTick()
         {
+            ObserveLocalConfiguration();
             RefreshHardcoreRuntime();
             ObserveGameplay();
-            bool ready; lock (timelineSync) { ready = referenceReady; referenceReady = false; }
-            if (ready) {
-                try { base.RefreshBestReference(); }
-                catch (Exception e) when (e is IOException || e is ArgumentException || e is InvalidOperationException) { lock (timelineSync) referenceJson = null; }
-            }
+            ApplyQueuedReference();
             base.OnTick();
+            ObserveLocalConfiguration();
             FreezeStartIdentity();
             ArchiveCompletedResult();
         }
@@ -166,12 +296,21 @@ namespace Pal98Timer
         }
         protected override void ValidateBestReference(HObj data)
         {
+            if (data.HasValue("LocalReferenceConfiguration")) {
+                var saved = LocalTimelineConfiguration.Json().Deserialize<LocalTimelineConfiguration>(data.GetValue<HObj>("LocalReferenceConfiguration").ToJson());
+                if (saved?.Valid != true || localConfiguration == null || saved.key != localConfiguration.key || saved.route_sha256 != route ||
+                    !data.HasValue("ReferenceTimeline") || !data.GetValue<bool>("ReferenceTimeline")) throw new InvalidDataException("本地参考线不属于当前配置或节点路线。");
+                var names = data.GetValue<HObj>("CheckPoints").ToList().Cast<HObj>().Select(p => CompetitionProtocol.CheckpointId(p.GetValue<string>("name")));
+                if (CompetitionProtocol.RouteHash(names) != route) throw new InvalidDataException("本地参考线节点或顺序不同。");
+                return;
+            }
             if (!data.HasValue("TimelineIdentity") || data.GetValue<string>("TimelineIdentity") != identity)
                 throw new InvalidDataException("最佳线不属于当前玩法组合。旧成绩请使用“导入参考线”。");
         }
         protected override void ValidateTimerImport(string json)
         {
             var data = new HObj(json);
+            if (data.HasValue("LocalReferenceConfiguration")) throw new InvalidDataException("本地配置最佳线仅供比较，不能恢复游戏或已验证计时状态。");
             ValidateBestReference(data);
             if (selected == null || !selected.covered || validation.Length != 0 || GameplayRestartPending || GameplayContinuationError.Length != 0 || !data.HasValue("GameplayVerified") ||
                 !data.GetValue<bool>("GameplayVerified") || data.HasValue("ReferenceTimeline") && data.GetValue<bool>("ReferenceTimeline"))
@@ -206,7 +345,10 @@ namespace Pal98Timer
             if (GameplayContinuationError.Length != 0) observation.ValidationError = GameplayContinuationError;
         }
         protected override string GetExportPath(DateTime now) => Path.Combine(Path.GetDirectoryName(GetScoreSavePath(now)), now.ToString("yyyyMMddHHmmssfff") + ".json");
-        protected override void FillReferenceIdentity(HObj data) { data["TimelineIdentity"] = identity ?? ""; data["GameplayVerified"] = false; }
+        protected override void FillReferenceIdentity(HObj data) {
+            data["TimelineIdentity"] = identity ?? ""; data["GameplayVerified"] = false;
+            if (localConfiguration != null) { localConfiguration.Remember(); SetLocalReferenceIdentity(data); }
+        }
         public override void Unload()
         {
             // Only shutdown may briefly wait for this local write; timing never waits.
@@ -215,19 +357,24 @@ namespace Pal98Timer
         }
         internal void ImportReference(string filename)
         {
-            if (identity == null) throw new InvalidDataException("请先连接游戏，确认当前玩法。");
+            if (identity == null && localConfiguration == null) throw new InvalidDataException("请先连接游戏或选择本地配置归属。");
             var data = new HObj(File.ReadAllText(filename, GetFileEncodeType(filename)));
             var names = data.GetValue<HObj>("CheckPoints").ToList().Cast<HObj>().Select(p => p.GetValue<string>("name"));
             if (CompetitionProtocol.RouteHash(names.Select(CompetitionProtocol.CheckpointId)) != route) throw new InvalidDataException("参考线节点或顺序不同。");
             data["TimelineIdentity"] = identity; data["ReferenceTimeline"] = true; data["GameplayVerified"] = false;
+            if (localConfiguration != null) { localConfiguration.Remember(); SetLocalReferenceIdentity(data); }
             BestTimelineStorage.Write(ActiveBestPath, data.ToJson()); RefreshBestReference();
         }
         public override void Reset()
         {
             base.Reset(); frozen = null; validation = ""; frozenHardcore = false; startedWithoutIdentity = false; archiveCompletedRun = false; completed = false;
-            identity = null; selected = null; ++epoch;
+            lock (configurationSync) {
+                identity = null; selected = null;
+                localConfiguration = null; configurationFrozen = manualConfiguration = false; configurationReader.Reset(); configurationDiagnostic = "";
+                startConfiguration = null;
+                lock (timelineSync) { ++epoch; referenceJson = null; referenceReady = false; }
+            }
             startObservation = null; startProcess = null; startHardcore = false;
-            lock (timelineSync) { referenceJson = null; referenceReady = false; }
         }
         protected override string FormatGameTitle(string version)
         {
@@ -243,14 +390,20 @@ namespace Pal98Timer
                 string summary = selected == null ? "尚未收到配套运行时的玩法快照。" : selected.Label(requested) + "\r\n规则：" + selected.rules_sha256;
                 using (var dialog = new Form { Text = "自动玩法时间线", Width = 760, Height = 560, StartPosition = FormStartPosition.CenterParent }) {
                     dialog.Controls.Add(new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both,
-                        Text = summary + "\r\n" + archiveError + "\r\n" + validation + "\r\n" + ActiveBestPath + "\r\n\r\n" +
+                        Text = summary + "\r\n" + (localConfiguration == null ? "未选择本地配置" : "本地参考配置：" + localConfiguration) +
+                        "\r\n" + configurationDiagnostic + "\r\n" + archiveError + "\r\n" + validation + "\r\n" + ActiveBestPath + "\r\n\r\n" +
                         string.Join("\r\n", selected?.rules.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + " = " + p.Value) ?? Enumerable.Empty<string>()) });
                     dialog.ShowDialog(form);
                 }
             };
+            var choose = form.NewMenuItem(); choose.Text = "选择本地最佳线配置…";
+            choose.Click += delegate {
+                try { ChooseLocalConfiguration(); }
+                catch (Exception error) when (LocalConfigurationReader.ReadError(error)) { form.Error(error.Message); }
+            };
             var import = form.NewMenuItem(); import.Text = "导入旧最佳线为当前玩法参考…";
             import.Click += delegate {
-                if (identity == null) { form.Error("请先连接游戏，确认当前玩法。"); return; }
+                if (identity == null && localConfiguration == null) { form.Error("请先连接游戏或选择本地配置归属。"); return; }
                 using (var picker = new OpenFileDialog { Filter = "时间线|*.txt;*.json" }) {
                     if (picker.ShowDialog(form) != DialogResult.OK) return;
                     try {

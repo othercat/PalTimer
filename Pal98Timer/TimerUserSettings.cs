@@ -95,7 +95,7 @@ namespace Pal98Timer
                         Pal98.Storage.UserDataStore.FileExists(old) ? old : source;
                 }
                 string path = shared.Resolve("timer", name, Source(name));
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                Directory.CreateDirectory(TimerUserSettings.IoPath(Path.GetDirectoryName(path)));
                 return path;
             });
         }
@@ -145,6 +145,12 @@ namespace Pal98Timer
         private static TimerSettingsStore store;
         private static readonly Dictionary<string, string> timelinePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         internal static void ClearPathCache() { lock (timelinePaths) timelinePaths.Clear(); }
+        internal static string IoPath(string path)
+        {
+            string full = Path.GetFullPath(path);
+            if (Path.DirectorySeparatorChar != '\\' || full.StartsWith(@"\\?\", StringComparison.Ordinal)) return full;
+            return full.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + full.Substring(2) : @"\\?\" + full;
+        }
         internal static TimerSettingsStore Store { get { return store ?? (store = new TimerSettingsStore(AppDomain.CurrentDomain.BaseDirectory,
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), message => ShowError(message, "计时器配置访问失败"))); } }
         internal static string GetPath(string name) { return Store.GetPath(name); }

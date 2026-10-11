@@ -62,6 +62,7 @@ if ($AuthDirectory) {
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $candidateRoot 'LICENSE')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination (Join-Path $candidateRoot 'README.md')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\PAL98DX9_PROFILE_CORES.md') -Destination (Join-Path $candidateRoot 'PAL98DX9_PROFILE_CORES.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\LOCAL_CONFIGURATION_TIMELINES.md') -Destination (Join-Path $candidateRoot 'LOCAL_CONFIGURATION_TIMELINES.md')
 
 $sourceStage = Join-Path $candidateRoot '_source-stage'
 New-Item -ItemType Directory -Path $sourceStage | Out-Null

@@ -387,6 +387,7 @@ namespace Pal98Timer
                     form._ResetAll();
                 }
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 form.Error("保存失败：" + ex.Message);
@@ -395,9 +396,14 @@ namespace Pal98Timer
 
         public void SaveBest()
         {
-            EnsureScoreValid();
             SaveBestValue(GetRStr());
         }
+
+        // Local references and certified scores have different admission rules.
+        // Existing cores keep the score gate; automatic configuration references
+        // may override only this save operation, never export/relay/upload gates.
+        protected virtual void ValidateBestSave() { EnsureScoreValid(); }
+        protected virtual string PrepareBestSave(string contents) { return contents; }
 
         private bool IsActiveBestPath(string filename)
         {
@@ -407,7 +413,8 @@ namespace Pal98Timer
 
         private string SaveBestValue(string contents)
         {
-            EnsureScoreValid();
+            ValidateBestSave();
+            contents = PrepareBestSave(contents);
             string filename = GetScoreSavePath(DateTime.Now);
             // Validate reference identity before replacing the active file.
             if (IsActiveBestPath(filename)) ValidateBestReference(new HObj(contents));
@@ -433,7 +440,7 @@ namespace Pal98Timer
 
         // Reference editing must work offline and must never turn the current
         // unverified run into a claimed score merely to create an editor file.
-        public void CreateBestReferenceIfMissing()
+        public virtual void CreateBestReferenceIfMissing()
         {
             string path = ActiveBestPath;
             if (File.Exists(path)) return;

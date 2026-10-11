@@ -1244,7 +1244,7 @@ namespace Pal98Timer
             var btnSetCurrentToBest = form.NewMenuItem();
             btnSetCurrentToBest.Text = "设置本次成绩为最佳";
             btnSetCurrentToBest.Click += delegate (object sender, EventArgs e) {
-                try { ValidateScoreForSave(); SaveBest(GetRStr()); }
+                try { SaveBest(GetRStr()); }
                 catch (Exception ex) { form.Error(ex.Message); }
             };
 

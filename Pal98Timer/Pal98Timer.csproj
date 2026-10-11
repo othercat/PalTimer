@@ -173,6 +173,8 @@
     <Compile Include="RankingConfiguration.cs" />
     <Compile Include="GameplayIdentity.cs" />
     <Compile Include="Pal98Dx9Automatic.cs" />
+    <Compile Include="LocalTimelineConfiguration.cs" />
+    <Compile Include="LocalTimelineConfigurationForm.cs" />
     <Compile Include="CompetitionIntegration.cs" />
     <Compile Include="GameplayContractUtilities.cs" />
     <Compile Include="OnlineHostContract.cs" />
