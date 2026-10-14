@@ -17,11 +17,13 @@ namespace Pal98Timer
         internal const string Online = "PAL98.TimerOnline.v1";
         internal const string OnlineV2 = "PAL98.TimerOnline.v2";
         internal const string Scope = "timer-online";
-        internal static string SerializeRun(CompetitionRun run) {
+        internal const string RestartTimeFeature = "restart-time.v1";
+        internal static string SerializeRun(CompetitionRun run, bool includeRestartTime = true) {
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
             if (run.protocol != OnlineV2) fields.Remove("observations");
+            if (run.protocol != OnlineV2 || !includeRestartTime) fields.Remove("restart_ms");
             if (run.protocol == Online || run.protocol == OnlineV2) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
             else { fields.Remove("ranking"); fields.Remove("custom_competition_id"); }
             return run.protocol == Online || run.protocol == OnlineV2 ? CanonicalJson(fields) : serializer.Serialize(fields);
@@ -104,7 +106,7 @@ namespace Pal98Timer
                 !Version.TryParse(run.timer_version, out version) || version.Revision < 0 ||
                 run.game_version != null && (!Version.TryParse(run.game_version, out version) || version.Revision < 0) ||
                 run.pal_dll_sha256 != null && !Digest(run.pal_dll_sha256) || run.timeline_id != null && !Digest(run.timeline_id) ||
-                run.total_ms < 0 || run.total_ms > MaxMilliseconds ||
+                run.total_ms < 0 || run.total_ms > MaxMilliseconds || run.restart_ms < 0 || run.restart_ms > MaxMilliseconds ||
                 !DateTimeOffset.TryParse(run.started_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
                 !DateTimeOffset.TryParse(run.finished_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
                 run.custom_competition_id != null && !Regex.IsMatch(run.custom_competition_id, "\\A[a-z0-9-]{1,60}\\z")) return "成绩格式无效，仅本地保存。";
@@ -196,6 +198,7 @@ namespace Pal98Timer
         public string started_at { get; set; }
         public string finished_at { get; set; }
         public long total_ms { get; set; }
+        public long? restart_ms { get; set; }
         public string timer_version { get; set; }
         public string game_version { get; set; }
         public string pal_dll_sha256 { get; set; }
@@ -225,6 +228,7 @@ namespace Pal98Timer
         internal CompetitionHardcore Hardcore;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
+        internal long? RestartMilliseconds;
         internal DateTimeOffset ObservedAt;
         internal bool Finished, BeganHere;
         internal CompetitionSplit[] Splits;
@@ -247,7 +251,7 @@ namespace Pal98Timer
     internal sealed class CompetitionPlayer { public string id { get; set; } public string display_name { get; set; } public bool bound { get; set; } }
     internal sealed class CompetitionComparison { public int? rank { get; set; } public int comparison_players { get; set; } public long? own_reference_ms { get; set; } public long? delta_ms { get; set; } }
     internal sealed class CompetitionNode { public string checkpoint_id { get; set; } public long? elapsed_ms { get; set; } public CompetitionComparison best_complete_line { get; set; } public CompetitionComparison personal_checkpoint_best { get; set; } }
-    internal sealed class CompetitionBest { public string run_id { get; set; } public long total_ms { get; set; } public int? rank { get; set; } public string phase { get; set; } public bool ranked { get; set; } }
+    internal sealed class CompetitionBest { public string run_id { get; set; } public long total_ms { get; set; } public long? restart_ms { get; set; } public long? ranking_ms { get; set; } public int? rank { get; set; } public string phase { get; set; } public bool ranked { get; set; } }
     internal sealed class CompetitionOverall { public CompetitionBest personal_best { get; set; } public CompetitionBest submitted_run { get; set; } }
     internal sealed class CompetitionReceipt {
         public long id { get; set; }
@@ -261,9 +265,11 @@ namespace Pal98Timer
         public string custom_reason { get; set; }
         public int? custom_rules_revision { get; set; }
     }
-    internal sealed class CompetitionHardcoreRank { public int rank { get; set; } public string display_name { get; set; } public long total_ms { get; set; } }
+    internal sealed class CompetitionHardcoreRank { public int rank { get; set; } public string display_name { get; set; } public long total_ms { get; set; } public long? restart_ms { get; set; } public long? ranking_ms { get; set; } }
     internal sealed class CompetitionReply
     {
+        public bool include_restart_time { get; set; }
+        public string daily_board_id { get; set; }
         public string protocol { get; set; }
         public string @event { get; set; }
         public string scope { get; set; }
@@ -274,6 +280,7 @@ namespace Pal98Timer
         public string event_title { get; set; }
         public string board { get; set; }
         public string[] supported_run_protocols { get; set; }
+        public string[] supported_features { get; set; }
         public CompetitionHardcoreRank[] hardcore_top { get; set; }
         public string track_id { get; set; }
         public string ruleset_id { get; set; }

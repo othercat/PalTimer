@@ -45,6 +45,7 @@ namespace Pal98Timer
         private string attachedExecutablePath;
 
         private PTimer ST = new PTimer();
+        internal override long? RestartMilliseconds => ReadPalRestartMilliseconds(ST);
         private PTimer LT = new PTimer();
         private DateTime InBattleTime;
         private DateTime OutBattleTime;
@@ -734,9 +735,10 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                ValidateRelayTimerState(so.TimerStr);
                 if (so.Pal98SaveBundle != null)
                 {
-                    if (!GetPalHandle()) throw new Exception("请先启动相同内容包的 PAL.exe，再导入完整接力存档。");
+                    if (!GetPalHandle()) throw new Exception("请先启动目标 PAL.exe，以确定接力存档的恢复目录。");
                     SRPGSaveBundleTransport.Import(GetPalFolder(), "1.RPG", so);
                     SetTimerFromString(so.TimerStr);
                     LoadedSrpgRequiresGameRestart = true;
@@ -800,7 +802,9 @@ namespace Pal98Timer
 
         public void SetTimerFromString(string json)
         {
+            ValidateRelayTimerState(json);
             HObj ho = new HObj(json);
+            AdvanceScoreRunSequence(imported: true);
             try
             {
                 MaxFC = ho.GetValue<short>("BeeHouse");
@@ -816,7 +820,7 @@ namespace Pal98Timer
                     TotalMonsterCount = ho.GetValue<int>("TotalMonsterCount");
                 }
                 MT.SetTS(ConvertTimeSpan(ho.GetValue<string>("Current")));
-                ST.SetTS(ConvertTimeSpan(ho.GetValue<string>("Idle")));
+                RestorePalRestartIdle(ST, ho);
                 HObj cps = ho.GetValue<HObj>("CheckPoints");
                 for (int i = 0; i < cps.Count; ++i)
                 {
@@ -1967,6 +1971,7 @@ namespace Pal98Timer
         protected override void FillMoreTimerData(HObj exdata)
         {
             exdata["Idle"] = ST.ToFullString();
+            exdata["RestartMilliseconds"] = RestartMilliseconds;
             exdata["Lite"] = LT.ToFullString();
             exdata["BeeHouse"] = MaxFC;
             exdata["BeeSheet"] = MaxFM;

@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.38.0";
+        public const string CurrentVersion = "3.38.2";
         public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -189,16 +189,13 @@ namespace Pal98Timer
             if (core == null) { StopCloudWithInvalidScore(cloud); return; }
             TimerCore boundCore = core;
             long boundRun = boundCore.ScoreRunSequence;
-            string validation = boundCore.GetScoreValidationError();
-            if (showValidationError && !string.IsNullOrEmpty(validation)) Error(validation);
             cloudBoundCore = boundCore;
             cloudBoundRun = boundRun;
             btnCloud.Text = "等待云验证";
-            cloudStatusItem.Text = string.IsNullOrEmpty(validation) ? "等待云初始化" : validation;
+            cloudStatusItem.Text = "等待云初始化";
             btnCloudInit.Enabled = true;
             cloud = cloudRunner.Start(boundCore.CoreName,
-                () => ReferenceEquals(core, boundCore) && boundRun == boundCore.ScoreRunSequence &&
-                    string.IsNullOrEmpty(boundCore.GetScoreValidationError()),
+                () => ReferenceEquals(core, boundCore) && boundRun == boundCore.ScoreRunSequence,
                 nextDo => CaptureCloudPayload(boundCore, boundRun, nextDo),
                 (session, status) => SyncContext.Post(delegate(object ignored) {
                     if (IsDisposed || !ReferenceEquals(cloud, session) || session.Cancelled ||
@@ -224,10 +221,16 @@ namespace Pal98Timer
             // Capture on the UI thread, so reset/core selection cannot split one
             // payload. No UI thread is held while performing a network request.
             SyncContext.Send(delegate(object ignored) {
-                if (IsDisposed || !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence ||
-                    !string.IsNullOrEmpty(boundCore.GetScoreValidationError())) return;
+                if (IsDisposed || !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence) return;
                 try {
                     payload = new CloudPayload { IsC = rr.IsC };
+                    // The personal file session remains usable for any local
+                    // configuration; the old score stream retains its gate.
+                    if (!string.IsNullOrEmpty(boundCore.GetScoreValidationError())) {
+                        payload.SuppressScores = true;
+                        payload.Lite = payload.Big = "";
+                        return;
+                    }
                     foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
                         TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
                         if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = boundCore.GetPluginResult(position);
@@ -261,15 +264,13 @@ namespace Pal98Timer
         public void PutLiteData(string data)
         {
             if (cloud == null) return;
-            if (!string.IsNullOrEmpty(core.GetScoreValidationError()))
-            { StopCloudWithInvalidScore(cloud); return; }
+            if (!string.IsNullOrEmpty(core.GetScoreValidationError())) { cloud.PutLiteData(null); return; }
             cloud.PutLiteData(data);
         }
         public void PutBigData(string data)
         {
             if (cloud == null) return;
-            if (!string.IsNullOrEmpty(core.GetScoreValidationError()))
-            { StopCloudWithInvalidScore(cloud); return; }
+            if (!string.IsNullOrEmpty(core.GetScoreValidationError())) { cloud.PutBigData(null); return; }
             cloud.PutBigData(data);
         }
 
@@ -282,7 +283,6 @@ namespace Pal98Timer
         }
         public void OUpload(string LocalFileName, string RemoteFileName = "")
         {
-            core.EnsureScoreValid();
             if (cloud == null || cloud.CloudID < 0) throw new Exception("版本不匹配");
             cloudRunner.TransferFile(cloud, true, LocalFileName, RemoteFileName);
         }
@@ -794,8 +794,8 @@ namespace Pal98Timer
 
         public void CallCloudFinishOne()
         {
-            if (core == null || !string.IsNullOrEmpty(core.GetScoreValidationError()))
-            { StopCloudWithInvalidScore(cloud); return; }
+            if (core == null) { StopCloudWithInvalidScore(cloud); return; }
+            if (!string.IsNullOrEmpty(core.GetScoreValidationError())) return;
             try
             {
                 cloudRunner?.FinishOne(cloud);

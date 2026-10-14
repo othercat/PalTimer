@@ -139,13 +139,32 @@ internal static class CloudSessionBehavior
         release.Set(); Check(caller.Join(2000) && error != null, "stale transfer reported success");
         Close(transferRunner);
     }
+    private static void UnverifiedProgressStillTransfers()
+    {
+        bool suppress=false;
+        var fake=new Fake();var runner=Runner(name=>fake);
+        var session=runner.Start("PAL98DX9_AUTO",()=>true,
+            next=>new CloudPayload { Lite="verified-lite", Big="verified-big", SuppressScores=Volatile.Read(ref suppress) },
+            (s,status)=>{});
+        Until(()=>session.CloudID==42,"unverified-capable file session initializes");
+        session.PutLiteData("old-score-override");session.PutBigData("old-big-override");
+        Until(()=>fake.LastPayload?.Lite=="old-score-override","score override initially used");
+        Volatile.Write(ref suppress,true);
+        Until(()=>fake.LastPayload?.Lite=="" && fake.LastPayload?.Big=="","invalid score clears old library payload and overrides");
+        runner.TransferFile(session,true,"progress.bin","cloud.bin");
+        runner.TransferFile(session,false,"received.bin","cloud.bin");
+        Check(session.CloudID==42 && fake.Uploads==1 && fake.Downloads==1,"file upload and download survive invalid score");
+        Volatile.Write(ref suppress,false);
+        Until(()=>fake.LastPayload?.Lite=="verified-lite" && fake.LastPayload?.Big=="verified-big","stale overrides cannot return with valid score");
+        Close(runner);
+    }
     public static int Main()
     {
         try
         {
             // Hash/signatures only. Never construct/start the network library.
             LegacyCloudStepClient.ValidateContract(); Check(true, "bundled binary contract");
-            IdentityAndPayload(); RetryBoundaries(); BlockedReplacement(); FinishAndTransfers();
+            IdentityAndPayload(); RetryBoundaries(); BlockedReplacement(); FinishAndTransfers();UnverifiedProgressStillTransfers();
             Console.WriteLine("PASS: " + checks + " cloud scheduling / identity / retry / transfer checks; network=none");
             return 0;
         }

@@ -9,6 +9,7 @@ namespace Pal98Timer
     {
         internal string Lite, Big;
         internal bool IsC;
+        internal bool SuppressScores;
         internal readonly Dictionary<string, string> Plugins = new Dictionary<string, string>();
     }
     internal sealed class CloudStepResult
@@ -191,6 +192,11 @@ namespace Pal98Timer
                         {
                             lock (active.DataLock)
                             {
+                                if (payload.SuppressScores)
+                                {
+                                    active.LiteOverride = active.BigOverride = null;
+                                    payload.Lite = payload.Big = "";
+                                }
                                 if (active.LiteOverride != null) payload.Lite = active.LiteOverride;
                                 if (active.BigOverride != null) payload.Big = active.BigOverride;
                             }

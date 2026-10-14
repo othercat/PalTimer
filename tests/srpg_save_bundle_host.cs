@@ -70,10 +70,12 @@ internal static class SrpgSaveBundleHost
             byte[] importedCustom = File.ReadAllBytes(customTarget);
 
             File.WriteAllText(libraryPath, Encoding.UTF8.GetString(library) + " ");
-            Reject(() => invoke("Import", new object[] { root, "1.RPG", package, null }), "different fixed library");
+            invoke("Import", new object[] { root, "1.RPG", package, null });
+            Equal(rpg, File.ReadAllBytes(target), "different target library cannot gate restoration");
             File.WriteAllBytes(libraryPath, library);
             File.WriteAllText(pointerPath, "{}");
-            Reject(() => invoke("Import", new object[] { root, "1.RPG", package, null }), "invalid target profile");
+            invoke("Import", new object[] { root, "1.RPG", package, null });
+            Equal(importedCustom, File.ReadAllBytes(customTarget), "target profile does not change transported role state");
             File.WriteAllBytes(pointerPath, pointer);
             byte[] badRpg = (byte[])rpg.Clone(); badRpg[508] ^= 1;
             packageType.GetField("RPG").SetValue(package, badRpg);
@@ -82,16 +84,18 @@ internal static class SrpgSaveBundleHost
             var bad = Json.Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(bundle));
             bad["custom_roles"] = null;
             packageType.GetField("Pal98SaveBundle").SetValue(package, Encoding.UTF8.GetBytes(Json.Serialize(bad)));
-            Reject(() => invoke("Import", new object[] { root, "1.RPG", package, null }), "missing custom snapshot");
+            invoke("Import", new object[] { root, "1.RPG", package, null });
+            Assert(!File.Exists(customTarget), "explicitly absent roles do not inherit destination role state");
             packageType.GetField("Pal98SaveBundle").SetValue(package, bundle);
+            invoke("Import", new object[] { root, "1.RPG", package, null });
             Reject(() => invoke("Import", new object[] { root, "../1.RPG", package, null }), "slot path traversal");
-            Reject(() => invoke("ValidateLegacyTarget", new object[] { root }), "old incomplete SRPG on v1.62");
+            invoke("ValidateLegacyTarget", new object[] { root });
             Equal(rpg, File.ReadAllBytes(target), "rejected imports leave RPG intact");
             Equal(importedCustom, File.ReadAllBytes(customTarget), "rejected imports leave custom roles intact");
             // An old non-PALDLL target keeps the legacy import path.
             string oldRoot = Path.Combine(root, "legacy-target"); Directory.CreateDirectory(oldRoot);
             invoke("ValidateLegacyTarget", new object[] { oldRoot });
-            Console.WriteLine("PASS: exact RPG export; 2-to-1 rebind; all roles 6..15; serialization; identity refusal; transactional rollback; legacy target boundary");
+            Console.WriteLine("PASS: exact RPG export; 2-to-1 rebind; all roles 6..15; configuration-independent restore; integrity refusal; transactional rollback; legacy restore");
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }

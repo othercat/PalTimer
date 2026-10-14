@@ -39,6 +39,9 @@ internal static class LiveBehavior
     sealed class Transport : ICompetitionTransport
     {
         internal bool Supported = true, Approved = true, WrongAck, WrongRank, WrongChallenge, MissingDate;
+        internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature };
+        internal bool LastHasRestart;
+        internal int UnsupportedFields;
         internal int ServerClockOffset, ExpiryAdjustment;
         internal int Active, MaxActive, Updates, Gets, Sessions, Challenges, UpdateStatus = 200;
         internal volatile Request Last;
@@ -58,7 +61,7 @@ internal static class LiveBehavior
             int active = Interlocked.Increment(ref Active); MaxActive = Math.Max(MaxActive, active);
             try {
                 var json = CompetitionProtocol.Json(); string origin = new Uri(url).GetLeftPart(UriPartial.Authority);
-                if (url.EndsWith("/devices")) return Reply(Board());
+                if (url.EndsWith("/devices")) { var device = Board(); device.supported_features = Features; return Reply(device); }
                 if (url.Contains("/auth/status?")) return Reply(new { protocol = CompetitionAuthProtocol.Name, scope = CompetitionProtocol.Scope,
                     server_origin = origin, key_id = new string('a',32), timer_exe_sha256 = new string('b',64), approved = Approved,
                     live_protocol = Supported ? CompetitionClient.LiveProtocol : null });
@@ -79,6 +82,10 @@ internal static class LiveBehavior
                         server_origin = origin, public_id = "1042", session_id = Session, session_token = new string('e',64), heartbeat_seconds = 5, offline_seconds = 20 });
                 }
                 if (url.EndsWith("/live/updates")) {
+                    var fields = json.Deserialize<Dictionary<string, object>>(body);
+                    LastHasRestart = ((Dictionary<string, object>)fields["observation"]).ContainsKey("restart_ms");
+                    if (Features?.Contains(CompetitionProtocol.RestartTimeFeature) != true && LastHasRestart)
+                    { UnsupportedFields++; return new CompetitionHttpResult { Status = 422 }; }
                     var request = json.Deserialize<Request>(body); Last = request; Interlocked.Increment(ref Updates);
                     var gate = Gate; if (gate != null) await gate.Task;
                     if (UpdateStatus != 200) return new CompetitionHttpResult { Status = UpdateStatus };
@@ -122,6 +129,31 @@ internal static class LiveBehavior
         status = new CompetitionLiveConnection { Id = "1042", AckTick = now };
         Check(status.Caption(true,now) == " [已连接:1042]", "short ID in title only after ACK");
         Check(status.Caption(true,now+20*Stopwatch.Frequency) == " [连接失败]", "lease expires without worker/UI intervention");
+        status.CompatibilityMode = true;
+        Check(status.Caption(true,now) == " [不完全连接:1042]" && status.Caption(true,now+20*Stopwatch.Frequency) == " [连接失败]",
+            "compatible ACK has its own caption but still expires");
+
+        foreach (var features in new[] { null, new string[0], new[] { "future-unknown.v9" } }) {
+            var compatibleWire = new Transport { Features = features };
+            var compatible = Client(root, "compatible-" + Guid.NewGuid().ToString("N"), compatibleWire, new Auth());
+            await Until(() => compatible.LiveCaption == " [不完全连接:1042]", "old or unknown capabilities establish partial connection");
+            Check(!compatibleWire.LastHasRestart && compatibleWire.UnsupportedFields == 0, "old server never receives even null restart field");
+            Check(compatible.LiveDetail.Contains(CompetitionClient.LiveProtocol) && compatible.LiveDetail.Contains("基础兼容"), "partial detail names real protocol and missing capability");
+            var data = Observe("compatible", 0); data.RestartMilliseconds = 5432; compatible.Publish(data); compatible.Retry();
+            await Until(() => compatibleWire.Last.observation.run_id != null, "compatible gameplay still streams");
+            Check(!compatibleWire.LastHasRestart && data.RestartMilliseconds == 5432, "wire fallback does not erase local restart fact");
+            compatibleWire.Features = new[] { CompetitionProtocol.RestartTimeFeature };
+            compatibleWire.Gate = new TaskCompletionSource<bool>(); compatible.Retry();
+            await Until(() => compatibleWire.LastHasRestart, "capability refresh prepares full heartbeat without reopening session");
+            Check(compatible.LiveCaption == " [不完全连接:1042]", "capability advertisement alone cannot upgrade acknowledged status");
+            compatibleWire.Gate.SetResult(true);
+            await Until(() => compatible.LiveCaption == " [已连接:1042]", "full ACK upgrades connection with same ID");
+            Check(compatibleWire.Last.observation.restart_ms == 5432 && compatible.LiveDetail.Contains(CompetitionProtocol.RestartTimeFeature), "upgraded peer receives retained restart and exposes extension version");
+            compatibleWire.Features = null; compatible.Retry();
+            await Until(() => compatible.LiveCaption == " [不完全连接:1042]", "server rollback returns to compatible protocol");
+            Check(!compatibleWire.LastHasRestart && compatibleWire.Sessions == 1, "rollback preserves live session and omits new field");
+            await compatible.CloseAsync();
+        }
 
         foreach (int offset in new[] { 182, -182 }) {
             var clockWire = new Transport { ServerClockOffset = offset };
@@ -167,19 +199,28 @@ internal static class LiveBehavior
 
         var wire = new Transport(); var auth = new Auth(); var client = Client(root,"normal",wire,auth);
         await Until(() => client.LiveCaption == " [已连接:1042]", "real background session and heartbeat acknowledged");
-        Check(wire.Last.observation.state == "waiting" && wire.Last.observation.run_id == null, "connected idle is not an invented run");
+        Check(wire.Last.observation.state == "waiting" && wire.Last.observation.run_id == null && wire.Last.observation.restart_ms == null, "connected idle is not an invented run or restart measurement");
         int gets = wire.Gets;
-        client.Invalidate("first"); client.Publish(Observe("first",0));
+        client.Invalidate("first"); var first = Observe("first",0); first.RestartMilliseconds = 0; client.Publish(first);
         client.PublishClock("first",1200,true,Stopwatch.GetTimestamp());
         await Until(() => wire.Last.observation.state == "running" && wire.Last.observation.elapsed_ms == 1200, "live elapsed advances between nodes");
         string firstRun = wire.Last.observation.run_id; long firstGeneration = wire.Last.observation.run_generation;
-        client.Publish(Observe("first",1)); client.PublishClock("first",4500,true,Stopwatch.GetTimestamp());
+        Check(wire.Last.observation.restart_ms == 0, "live preserves measured zero restart");
+        var node = Observe("first",1); node.RestartMilliseconds = 5432; client.Publish(node); client.PublishClock("first",4500,true,Stopwatch.GetTimestamp());
         await Until(() => client.View.Reply?.node?.best_complete_line?.rank == 2, "node POST returns best-line and node ranks");
         Check(wire.Gets == gets && client.View.Reply.overall.personal_best.rank == 5, "same response refreshes overall PB without redundant GET");
         int proofs = auth.Proofs; long sequence = wire.Last.sequence;
         client.PublishClock("first",4500,false,Stopwatch.GetTimestamp()); client.Retry();
         await Until(() => wire.Last.sequence > sequence && wire.Last.observation.state == "paused", "pause reflected with frozen local time");
         Check(auth.Proofs == proofs && wire.Last.observation.run_id == firstRun, "heartbeat does not hash/sign host or create a new run");
+        Check(wire.Last.observation.restart_ms == 5432, "paused heartbeat carries observed restart without adding main elapsed");
+        var atLimit = Observe("first",1); atLimit.RestartMilliseconds = CompetitionProtocol.MaxMilliseconds; client.Publish(atLimit); client.Retry();
+        await Until(() => wire.Last.observation.restart_ms == CompetitionProtocol.MaxMilliseconds, "live accepts exact restart capacity");
+        var overLimit = Observe("first",1); overLimit.RestartMilliseconds = CompetitionProtocol.MaxMilliseconds + 1; client.Publish(overLimit); client.Retry();
+        await Until(() => wire.Last.observation.state == "invalid" && wire.Last.observation.restart_ms == null, "out-of-range restart keeps live lease while marking observation invalid");
+        Check(overLimit.RestartMilliseconds == CompetitionProtocol.MaxMilliseconds + 1 && client.LiveCaption == " [已连接:1042]", "invalid live restart never clamps or rewrites original evidence");
+        client.Publish(node); client.Retry();
+        await Until(() => wire.Last.observation.restart_ms == 5432, "valid restart resumes normal telemetry");
         sequence = wire.Last.sequence;
         client.PublishClock("first",4600,true,Stopwatch.GetTimestamp()-5*Stopwatch.Frequency); client.Retry();
         await Until(() => wire.Last.sequence > sequence && wire.Last.observation.state == "invalid", "stale local observation is not advertised as running");
@@ -248,9 +289,10 @@ internal static class LiveBehavior
         await Until(() => wire.Last.observation.state=="no_game", "PAL exit stops current gameplay display");
         client.ObserveGame(Process.GetCurrentProcess());
         await Until(() => client.Enabled,"PAL restart rereads settings");
-        client.Publish(Observe("restart",0));client.PublishClock("restart",2500,true,Stopwatch.GetTimestamp());
+        var afterRestart = Observe("restart",0); afterRestart.RestartMilliseconds = 237; client.Publish(afterRestart);client.PublishClock("restart",2500,true,Stopwatch.GetTimestamp());
         await Until(() => wire.Last.observation.state=="running", "PAL restart resumes live state");
         Check(wire.Last.observation.run_id==restartRun,"PAL reconnect preserves this run until an explicit Reset");
+        Check(wire.Last.observation.restart_ms==237,"PAL reconnect publishes recovered restart duration");
         Check(wire.Sessions==sessionCount&&client.LiveCaption==" [已连接:1042]","PAL restart keeps timer connection and short ID");
         await client.CloseAsync();
 

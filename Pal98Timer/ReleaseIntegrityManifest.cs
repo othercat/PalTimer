@@ -205,6 +205,12 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            // Same-version relay/content recognition update; exact local build only.
+            if (size == 2236416 && string.Equals(hash, "2ce7c6817456bf1b5ad6dc5114bcbffb38cc1f9bc16ecd8e70140be65f371c1a", StringComparison.OrdinalIgnoreCase)) return "1.7.2.2";
+            // Owner-requested v1.72 / 1.7.2.2 Wine God and relay release.
+            if (size == 2233856 && string.Equals(hash, "ac725edce8c2a0c817ffb4029c8eb9ecb4b0ff41220818aa2a1d4cae06b7cf75", StringComparison.OrdinalIgnoreCase)) return "1.7.2.2";
+            // General v1.72 package: owner-designated 2026-10-13 display revision.
+            if (size == 2233344 && string.Equals(hash, "01d8b88fef06232b857be88aba9de6d8d00577d3496fb3032381de4a55a20afa", StringComparison.OrdinalIgnoreCase)) return "1.7.2.1";
             if (size == 2233344 && string.Equals(hash, "e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d", StringComparison.OrdinalIgnoreCase)) return "1.7.2.1";
             if (size == 2233344 && string.Equals(hash, "9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7", StringComparison.OrdinalIgnoreCase)) return "1.7.3.0";
             if (size == 2183168 && string.Equals(hash, "58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39", StringComparison.OrdinalIgnoreCase)) return "1.7.2.0";

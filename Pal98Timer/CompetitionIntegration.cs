@@ -51,14 +51,20 @@ namespace Pal98Timer
         {
             var module = competition;
             if (!ReferenceEquals(core, source) || module == null) return;
+            try { module.Publish(CreateCompetitionSnapshot(o)); }
+            catch { competition = null; }
+        }
+        internal static OnlineSnapshotV1 CreateCompetitionSnapshot(CompetitionObservation o)
+        {
             var g = o.Gameplay; var r = o.Ranking; var h = o.Hardcore;
-            try { module.Publish(new OnlineSnapshotV1(o.Token, o.Core, o.DllHash, o.GameVersion, o.ValidationError, o.TimelineId, o.GameTitle,
+            var extensions = new System.Collections.Generic.Dictionary<string, string>();
+            if (o.RestartMilliseconds.HasValue) extensions["restart_ms"] = o.RestartMilliseconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return new OnlineSnapshotV1(o.Token, o.Core, o.DllHash, o.GameVersion, o.ValidationError, o.TimelineId, o.GameTitle,
                 g == null ? null : new OnlineGameplayV1(g.schema, g.rules_sha256, g.content_id, g.content_sha256, g.family, g.fade_ms, g.map_speed_ticks),
                 r == null ? null : new OnlineRankingV1(r.schema, r.configuration_id, r.covered, r.rules),
                 h == null ? null : new OnlineHardcoreV1(h.requested, h.run_verified, h.rules_version, h.evidence_status),
                 o.Step, o.FadeMilliseconds, o.MapSpeedTicks, o.TotalMilliseconds, o.ObservedAt, o.Finished, o.BeganHere,
-                o.Splits.Select(s => new OnlineSplitV1(s.checkpoint_id, s.elapsed_ms, s.status)))); }
-            catch { competition = null; }
+                o.Splits.Select(s => new OnlineSplitV1(s.checkpoint_id, s.elapsed_ms, s.status)), extensions);
         }
         internal void PublishCompetitionClock(TimerCore source, string token, long elapsed, bool running, long observedTick)
         { if (ReferenceEquals(core, source)) try { competition?.PublishClock(token, elapsed, running, observedTick); } catch { competition = null; } }

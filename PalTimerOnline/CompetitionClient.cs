@@ -44,6 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
+        private bool serverSupportsRestartTime;
         private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
@@ -246,6 +247,7 @@ namespace Pal98Timer
                 if (!networkChanged) return;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
+                serverSupportsV2 = serverSupportsRestartTime = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
@@ -375,7 +377,7 @@ namespace Pal98Timer
                     TimelineIdentity.Create(observation.Gameplay.rules_sha256, route, observation.Hardcore.requested) : null,
                 run_id = contextRunId, hwid = boundCredential.Hwid, track_id = contextSettings.Track, ruleset_id = contextSettings.Ruleset,
                 route_sha256 = route, started_at = started.ToString("o"), finished_at = bound.FinishedAt.ToString("o"),
-                total_ms = observation.TotalMilliseconds, timer_version = timerVersion,
+                total_ms = observation.TotalMilliseconds, restart_ms = observation.RestartMilliseconds, timer_version = timerVersion,
                 game_version = string.IsNullOrEmpty(observation.GameVersion) ? null : observation.GameVersion,
                 pal_dll_sha256 = CompetitionProtocol.Digest(observation.DllHash) ? observation.DllHash : null,
                 observations = new CompetitionRunObservations { began_here = beganHere, finished = observation.Finished, issues = issues.Distinct(StringComparer.Ordinal).Take(32).ToArray(),
@@ -398,6 +400,22 @@ namespace Pal98Timer
                     catch { item.SealedRun = null; }
                 }
                 if (item.SealedRun == null) storage.LogNetwork("run-local-no-seal", 0);
+                else
+                {
+                    // Prepare the additive-field compatibility variant now, never
+                    // re-sign or rewrite a historical run during upload/retry.
+                    string legacyPayload = CompetitionProtocol.SerializeRun(run, false);
+                    string legacySeal = authentication.Seal(item.Settings.Server, CompetitionProtocol.Scope, legacyPayload);
+                    if (legacySeal != null)
+                    {
+                        try {
+                            string encoded = CompetitionAuthProtocol.Encode(legacySeal);
+                            CompetitionAuthProtocol.ReadSeal(encoded, item.Settings, run, legacyPayload);
+                            item.LegacyPayload = legacyPayload; item.LegacySealedRun = encoded;
+                            item.UploadFormat = CompetitionPending.Unselected;
+                        } catch { storage.LogNetwork("run-local-no-compatible-seal", 0); }
+                    }
+                }
             }
             storage.SavePending(item); // Commit the original bytes/run_id before first POST.
             pending.RemoveAll(p => p.Run.run_id == item.Run.run_id); pending.Add(item);
@@ -426,7 +444,13 @@ namespace Pal98Timer
             if (epoch != Interlocked.Read(ref generation)) return false;
             var reply = Parse(response, cfg);
             if (reply != null)
-            { registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5); serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true; PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply); return true; }
+            {
+                registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5);
+                serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true;
+                serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
+                PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply);
+                return true;
+            }
             registrationRejected = !response.Retryable && !response.Success;
             registrationStatus = response.Status;
             registrationFailure = response.Status == 401
@@ -542,8 +566,21 @@ namespace Pal98Timer
             }
             string validation = CompetitionProtocol.Validate(item.Run);
             if (validation.Length != 0) { item.Rejected = true; item.LastStatus = validation; storage.SavePending(item); return; }
+            if (!item.ValidUploadVariants())
+            { item.LocalRejected = item.Rejected = true; item.LastStatus = "兼容签封与原始事实不一致，仅保留本地"; storage.SavePending(item); return; }
+            string format = item.UploadFormat == CompetitionPending.Unselected
+                ? serverSupportsRestartTime ? CompetitionPending.Original : CompetitionPending.Legacy
+                : item.UploadFormat;
+            string uploadPayload = format == CompetitionPending.Legacy ? item.LegacyPayload : item.Payload;
+            string uploadSeal = format == CompetitionPending.Legacy ? item.LegacySealedRun : item.SealedRun;
+            if (!serverSupportsRestartTime && CompetitionProtocol.Json().Deserialize<Dictionary<string, object>>(uploadPayload).ContainsKey("restart_ms"))
+            {
+                item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
+                item.LastStatus = "服务器暂不支持这份原始记录的重启耗时扩展；签封保留，等待服务器升级";
+                storage.SavePending(item); storage.LogNetwork("awaiting-restart-time-server", 0); return;
+            }
             CompetitionAuthSeal producer;
-            try { producer = CompetitionAuthProtocol.ReadSeal(item.SealedRun, item.Settings, item.Run, item.Payload); }
+            try { producer = CompetitionAuthProtocol.ReadSeal(uploadSeal, item.Settings, item.Run, uploadPayload); }
             catch { item.LocalRejected = item.Rejected = true; item.LastStatus = "原始签封损坏，仅保留本地"; storage.SavePending(item); return; }
             var uploader = authentication.Identity();
             if (uploader == null) return;
@@ -554,8 +591,16 @@ namespace Pal98Timer
                 // an approved build. No score body is sent while awaiting approval.
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5); storage.SavePending(item); return;
             }
+            if (item.UploadFormat == CompetitionPending.Unselected)
+            {
+                item.UploadFormat = format;
+                // Wait for approval, then persist BEFORE requesting a challenge.
+                // A lost response or restart must never change this run's body.
+                try { storage.SavePending(item); }
+                catch { item.UploadFormat = CompetitionPending.Unselected; throw; }
+            }
             long epoch = Interlocked.Read(ref generation), serial = Interlocked.Read(ref querySerial);
-            string sealedJson = CompetitionAuthProtocol.Decode(item.SealedRun);
+            string sealedJson = CompetitionAuthProtocol.Decode(uploadSeal);
             var challenge = await transport.Send("POST", item.Settings.Endpoint + "/auth/challenges", credential.Hwid, credential.Secret,
                 CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name, hwid = credential.Hwid, key_id = uploader.key_id,
                     timer_exe_sha256 = uploader.timer_exe_sha256, request_sha256 = CompetitionProtocol.Hash(sealedJson) }), 5000, stop.Token).ConfigureAwait(false);
@@ -568,7 +613,7 @@ namespace Pal98Timer
                 {
                     item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5); storage.SavePending(item); storage.LogNetwork("upload-proof-unavailable", 0); return;
                 }
-                string envelope = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name, sealed_run = item.SealedRun, proof = CompetitionAuthProtocol.Encode(proof) });
+                string envelope = CompetitionProtocol.Json().Serialize(new { protocol = CompetitionAuthProtocol.Name, sealed_run = uploadSeal, proof = CompetitionAuthProtocol.Encode(proof) });
                 if (System.Text.Encoding.UTF8.GetByteCount(envelope) > 131072)
                 { item.LocalRejected = item.Rejected = true; item.LastStatus = "签封成绩超过服务器容量，仅保留本地"; storage.SavePending(item); return; }
                 response = await transport.Send("POST", item.Settings.Endpoint + "/runs", credential.Hwid, credential.Secret, envelope, 5000, stop.Token).ConfigureAwait(false);

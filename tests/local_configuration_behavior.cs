@@ -13,6 +13,12 @@ using System.Windows.Forms;
 
 internal static class LocalConfigurationBehavior
 {
+    sealed class FailingReferenceCore : Pal98Dx9Automatic
+    {
+        internal bool Fail;
+        internal FailingReferenceCore() : base(null) { }
+        protected override void LoadBest() { if(Fail)throw new NullReferenceException("malformed reference fixture");base.LoadBest(); }
+    }
     static int checks;
     static readonly string root = AppDomain.CurrentDomain.BaseDirectory;
     static readonly string local = Path.Combine(root, "isolated-localappdata");
@@ -90,6 +96,25 @@ internal static class LocalConfigurationBehavior
         File.Move(Path.Combine(fallback,"config.ini.missing"),Path.Combine(fallback,"config.ini"));
         Put(fallback,"hardcore-transaction.pending","unfinished");Throws<InvalidDataException>(()=>Read(game),"unfinished configuration transaction cannot become frozen identity");
     }
+    static void ConfigToolChecksum()
+    {
+        // Use the actual Framework serializer used by ConfigTool as the oracle,
+        // rather than generating the expected checksum with the timer's helper.
+        var type=Assembly.Load("System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35")
+            .GetType("System.Web.Script.Serialization.JavaScriptSerializer",true);
+        object writer=Activator.CreateInstance(type);
+        var serialize=type.GetMethod("Serialize",new[]{typeof(object)});
+        foreach(string text in new[]{"物品&技能","换行\u0085标记","分隔\u2028标记","分段\u2029标记","literal \\u0026 & < > ' \" \\"}) {
+            var p=Preset();p.tournament["$TournamentCompetitionName"]=text;
+            string json=(string)serialize.Invoke(writer,new object[]{new {p.schema,p.id,p.name,p.producer_version,p.settings_contract,
+                p.minimum_runtime,p.minimum_timer,p.files,p.tournament,p.dependencies}});
+            p.content_sha256=CompetitionProtocol.Hash(json);
+            Check(LocalConfigurationReader.Parse(LocalTimelineConfiguration.Json().Serialize(p)).content_sha256==p.content_sha256,
+                "ConfigTool checksum accepted for escaped metadata: "+CompetitionProtocol.Hash(text).Substring(0,8));
+            p.tournament["$TournamentCompetitionName"]+=" changed";
+            Throws<InvalidDataException>(()=>LocalConfigurationReader.Parse(LocalTimelineConfiguration.Json().Serialize(p)),"changed metadata still fails checksum");
+        }
+    }
     static void ProfileResources()
     {
         string game=Path.Combine(root,"profile-fixture");var p=Preset();Publish(game,p);Put(game,"PAL.exe","fixture identity only - never executed");
@@ -127,7 +152,7 @@ internal static class LocalConfigurationBehavior
         Check(core.GetScoreValidationError()==error&&((PTimer)Get(core,"MT")).CurrentTSOnly==TimeSpan.FromSeconds(73)&&core.CurrentStep==1&&core.CheckPoints[0].Current==TimeSpan.FromSeconds(12),"save preserves current timer, node, step and validation");
         var saved=new HObj(File.ReadAllText(a.BestPath));Check(saved.GetValue<bool>("ReferenceTimeline")&&!saved.GetValue<bool>("GameplayVerified")&&!saved.GetValue<bool>("TimingRulesVerified")&&!saved.GetValue<bool>("HardcoreRunVerified"),"local reference carries no certified result flags");
         var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);Check(observation.ValidationError.Length>0&&observation.Gameplay==null,"local save cannot create online gameplay evidence");
-        saved["ReferenceTimeline"]=false;saved["GameplayVerified"]=true;Throws<InvalidDataException>(()=>Call(core,"ValidateTimerImport",saved.ToJson()),"local reference cannot restore relay even with forged verified marker");
+        saved["ReferenceTimeline"]=false;saved["GameplayVerified"]=true;Call(core,"ValidateTimerImport",saved.ToJson());Check(core.GetScoreValidationError()==error,"local reference can relay without creating score evidence, regardless of verified marker");
         var reopened=Core();reopened.SelectLocalConfiguration(a,false);reopened.RefreshBestReference();Check(reopened.CheckPoints[0].Best==TimeSpan.FromSeconds(12),"reopening unknown same configuration loads best");
         var other=LocalConfigurationReader.FromPreset(Preset(),route);Throws<InvalidOperationException>(()=>core.SelectLocalConfiguration(other,true),"running configuration cannot switch after freeze");
         string path=core.ActiveBestPath;Call(core,"FreezeLocalConfiguration");core.SaveBest();Check(core.ActiveBestPath==path,"save after process exit keeps frozen config path");
@@ -210,25 +235,112 @@ internal static class LocalConfigurationBehavior
         string game=Directory.GetParent(directory).Parent.FullName;
         Check(LocalConfigurationReader.ReadCurrent(game,routeA,local).Valid,"real complete package current configuration and effective profile are readable");
     }
+    static void FailedStartConfiguration()
+    {
+        Check(LocalConfigurationReader.ReadError(new InvalidDataException()),"invalid configuration is a recoverable local read failure");
+        foreach(string failure in new[]{"invalid-data","io","unexpected","canceled"}) {
+            var core=Core();string route=(string)Get(core,"route");
+            var failed=new TaskCompletionSource<LocalTimelineConfiguration>();
+            if(failure=="canceled")failed.SetCanceled();
+            else failed.SetException(failure=="invalid-data"?(Exception)new InvalidDataException("invalid fixture"):
+                failure=="unexpected"?new InvalidCastException("unknown schema fixture"):(Exception)new IOException("unreadable fixture"));
+            using(var process=Process.GetCurrentProcess()) {
+                Set(core,"PalProcess",process);
+                var observer=(LocalConfigurationObserver)Get(core,"configurationReader");
+                Set(observer,"target",process);Set(observer,"reading",failed.Task);Set(observer,"next",long.MaxValue);
+                Call(core,"OnGameplayStarting");
+                Check((bool)Get(core,"configurationFrozen")&&Get(core,"startConfiguration")==null&&Get(core,"localConfiguration")==null,
+                    "failed start snapshot consumed once without adopting a configuration: "+failure);
+                Check(((string)Get(core,"configurationDiagnostic")).Contains("未能读取配置"),"failed start offers local configuration selection: "+failure);
+                var watch=(PTimer)Get(core,"MT");watch.Start();var before=watch.CurrentTSOnly;
+                Call(core,"ObserveLocalConfiguration");Thread.Sleep(25);Call(core,"ObserveLocalConfiguration");
+                Check(watch.CurrentTSOnly>before,"later configuration observations leave local timing running: "+failure);
+                watch.Stop();Set(core,"PalProcess",null);
+            }
+            core.Unload();
+        }
+        using(var process=Process.GetCurrentProcess()) {
+            bool fail=true;var value=LocalConfigurationReader.FromPreset(Preset(),routeA);
+            var observer=new LocalConfigurationObserver((p,r)=>{if(fail)throw new InvalidDataException("invalid fixture");return value;});
+            observer.Observe(process,routeA);
+            Check(SpinWait.SpinUntil(()=>observer.Error.Contains("暂不可读"),3000)&&observer.Current==null,"failed background read publishes unavailable diagnostic");
+            fail=false;Set(observer,"next",0L);observer.Observe(process,routeA);
+            Check(SpinWait.SpinUntil(()=>observer.Current!=null,3000)&&observer.Current.key==value.key,"background observation can recover after a failed read");
+        }
+    }
+    static void OptionalMetadataFailures()
+    {
+        // Inject an invalid completed snapshot at the real start callback. This
+        // used to throw after the task finished, before the first MT.Start.
+        var core=Core();var invalid=LocalTimelineConfiguration.Manual("wrong route",routeB,false);
+        using(var process=Process.GetCurrentProcess()) {
+            Set(core,"PalProcess",process);var observer=(LocalConfigurationObserver)Get(core,"configurationReader");
+            Set(observer,"target",process);Set(observer,"reading",Task.FromResult(invalid));Set(observer,"next",long.MaxValue);
+            Call(core,"OnGameplayStarting");
+            Check((bool)Get(core,"configurationFrozen")&&Get(core,"localConfiguration")==null&&Get(core,"startConfiguration")==null,
+                "invalid completed start snapshot cannot throw out of gameplay start or acquire an identity");
+            Check(((string)Get(core,"metadataDiagnostic")).Contains("计时继续"),"unexpected metadata failure has a nonblocking diagnostic");
+            var form=(GForm)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(GForm));Set(core,"form",form);
+            core.CheckPoints=new List<CheckPoint>{new CheckPoint(0,new CheckPointNewer{Name="clock"}){Check=()=>false}};
+            Call(core,"StartAndCheckMainTimer");Thread.Sleep(5);Call(core,"StartAndCheckMainTimer");
+            Check(((PTimer)Get(core,"MT")).IsRunning&&core.CheckPoints[0].Current>TimeSpan.Zero,"start metadata failure still permits clock and checkpoints");
+            ((PTimer)Get(core,"MT")).Stop();Set(core,"PalProcess",null);
+        }
+        core.Unload();
+        var reference=new FailingReferenceCore();Call(reference,"InitCheckPoints");reference.SetTS(TimeSpan.FromSeconds(15));
+        reference.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(7));Set(reference,"_CurrentStep",1);
+        var watch=(PTimer)Get(reference,"MT");watch.Start();var before=watch.CurrentTSOnly;
+        reference.Fail=true;Set(reference,"referenceReady",true);Call(reference,"ApplyQueuedReference");Thread.Sleep(5);
+        Check(watch.IsRunning&&watch.CurrentTSOnly>before&&reference.CheckPoints[0].Current==TimeSpan.FromSeconds(7)&&reference.CurrentStep==1,
+            "unexpected reference parser exception preserves running clock and completed nodes");
+        Check(Get(reference,"referenceJson")==null&&((string)Get(reference,"metadataDiagnostic")).Contains("参考线无法应用"),"bad reference is discarded with a diagnostic");
+        reference.Fail=false;Set(reference,"referenceReady",true);Call(reference,"ApplyQueuedReference");Check(watch.IsRunning,"reference recovery does not reset clock");watch.Stop();reference.Unload();
+    }
     static void ObserverProcess()
     {
         var preset=Preset();Publish(root,preset);
         string stub=Path.Combine(root,"PAL.exe");File.Copy(Assembly.GetExecutingAssembly().Location,stub);
         File.Copy(Assembly.GetExecutingAssembly().Location+".config",stub+".config");
-        using(var process=Process.Start(new ProcessStartInfo(stub,"--fixture-process") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true})) {
+        using(var process=Process.Start(new ProcessStartInfo(stub,"--fixture-process") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true})) {
             try {
+                Check(process.StandardOutput.ReadLine()=="ready","synthetic process initializes before module observation");
                 var observer=new LocalConfigurationObserver();var capture=observer.CaptureStart(process,routeA);
                 Check(capture.Wait(5000)&&capture.Result?.configuration_id==preset.id,"production observer reads configuration from synthetic PAL process directory");
+                var invalid=Clone(preset);invalid.name="changed without checksum";
+                Put(root,"palmod/Configurations/selected.pal98config",LocalTimelineConfiguration.Json().Serialize(invalid));
+                var unavailable=new LocalConfigurationObserver().CaptureStart(process,routeA);
+                Check(unavailable.Wait(5000)&&unavailable.Result==null,"production invalid configuration completes unavailable instead of faulting the start task");
                 string original=capture.Result.key;process.StandardInput.WriteLine("exit");Check(process.WaitForExit(3000),"synthetic PAL process exits cleanly");
                 Publish(root,Preset("[Patch]\nDefaultPatch=ChangedAfterExit\n"));Check(capture.Result.key==original,"completed start snapshot never rereads configuration changed after exit");
                 var exited=new LocalConfigurationObserver().CaptureStart(process,routeA);Check(exited.Wait(5000)&&exited.Result==null,"exited process cannot contribute a late configuration snapshot");
             } finally { if(!process.HasExited)process.Kill(); }
         }
     }
+    static void RestartGapEvidence()
+    {
+        var core=Core();var facts=Snapshot((string)Get(core,"route"));
+        var rules=new Dictionary<string,string>{{"family","standard"}};
+        facts.ranking=new RankingConfiguration {schema="PAL98.RankingConfiguration.v1",covered=true,rules=rules,configuration_id=RankingConfiguration.Digest(rules)};
+        var continuity=(GameplayContinuation)Get(core,"gameplayContinuation");
+        using(var process=Process.GetCurrentProcess()) {
+            continuity.Observe(process,facts,new string('a',64),"1.7.2.1",true,false);
+            Check(continuity.Snapshot!=null,"restart fixture has accepted gameplay continuity");
+            var watch=(PTimer)Get(core,"MT");watch.Start();
+            // Use the production validation method, not the restart host's
+            // eligibility override. This represents the tick just before the
+            // ordinary process-gap path stops MT and starts the idle watch.
+            Check((bool)Call(core,"get_GameplayRestartPending"),"ordinary process gap is pending continuity verification");
+            Check(!(bool)Call(core,"ApplyTimingValidationPause")&&!(bool)Get(core,"timingEvidenceMissingDuringRun"),
+                "normal restart pending does not latch missing active timing evidence");
+            continuity.Reset();Call(core,"ApplyTimingValidationPause");
+            Check((bool)Get(core,"timingEvidenceMissingDuringRun"),"unknown active timing outside a restart still latches missing evidence");watch.Stop();
+        }
+        core.Unload();
+    }
     [STAThread] static int Main(string[] args)
     {
-        if(args.Length>0&&args[0]=="--fixture-process") {Console.ReadLine();return 0;}
-        try { BindStorage(false);Normalization();EffectiveConfiguration();ProfileResources();SaveAndReopen(false);StartAndReset();SaveAndReopen(true);LegacyReference();if(args.Length>0)RealPresets(args[0]);ObserverProcess();Console.WriteLine("PASS total="+checks+" realGameUsed=false networkUsed=false syntheticProcessUsed=true");return 0; }
+        if(args.Length>0&&args[0]=="--fixture-process") {Console.WriteLine("ready");Console.ReadLine();return 0;}
+        try { BindStorage(false);Normalization();ConfigToolChecksum();EffectiveConfiguration();ProfileResources();SaveAndReopen(false);StartAndReset();FailedStartConfiguration();OptionalMetadataFailures();RestartGapEvidence();SaveAndReopen(true);LegacyReference();if(args.Length>0)RealPresets(args[0]);ObserverProcess();Console.WriteLine("PASS total="+checks+" realGameUsed=false networkUsed=false syntheticProcessUsed=true");return 0; }
         catch(Exception error) { Console.Error.WriteLine(error);return 1; }
     }
 }

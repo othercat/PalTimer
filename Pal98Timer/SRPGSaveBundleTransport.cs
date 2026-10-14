@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -15,8 +16,11 @@ namespace Pal98Timer
     // rebuild that layout by truncating the expanded in-process role arrays.
     internal static class SRPGSaveBundleTransport
     {
-        private const string Schema = "PalTimer.PAL98SaveBundle.v1";
+        private const string LegacySchema = "PalTimer.PAL98SaveBundle.v1";
+        private const string Schema = "PalTimer.PAL98SaveBundle.v2";
         private const string CustomSuffix = ".pal98-custom-roles.json";
+        private const string RandomSkillsSuffix = ".pal98-random-skills.json";
+        private const int MaximumRandomSkillsBytes = 128 * 1024;
         private const int MaximumBytes = 4 * 1024 * 1024;
 
         private sealed class Context
@@ -24,6 +28,7 @@ namespace Pal98Timer
             internal string RuntimeHash, ProfileIdentity, LibraryHash;
             internal Dictionary<string, object> Library;
             internal int RoleCount, SaveLength;
+            internal bool RandomSkillsRequired;
         }
 
         internal static bool IsRequired(string gameFolder)
@@ -53,9 +58,15 @@ namespace Pal98Timer
                     ValidateRpg(rpg, context);
                     byte[] custom = File.Exists(path + CustomSuffix) ? Read(path + CustomSuffix) : null;
                     ValidateCustom(custom, name, rpg, context);
+                    // The running game may still use its startup configuration.
+                    // Always preserve a valid receipt, even if the disk flag is off.
+                    byte[] randomSkills = ReadRandomSkillsSnapshot(gameFolder, name, rpg, context.RandomSkillsRequired);
                     // PALDLL writes the sidecar after the RPG. Retry only this
                     // explicit export, and require a stable complete snapshot.
+                    byte[] confirmedRandomSkills = ReadRandomSkillsSnapshot(gameFolder, name, rpg, context.RandomSkillsRequired);
                     if (Hash(Read(path)) != Hash(rpg) ||
+                        (randomSkills == null ? confirmedRandomSkills != null :
+                            confirmedRandomSkills == null || Hash(confirmedRandomSkills) != Hash(randomSkills)) ||
                         ContextKey(ReadContext(gameFolder)) != ContextKey(context))
                         throw new IOException("游戏仍在保存，请稍后重试。");
                     var bundle = new Dictionary<string, object>
@@ -65,7 +76,9 @@ namespace Pal98Timer
                         { "runtime_sha256", context.RuntimeHash },
                         { "profile_identity", context.ProfileIdentity },
                         { "role_library_sha256", context.LibraryHash },
-                        { "custom_roles", custom == null ? null : Convert.ToBase64String(custom) }
+                        { "custom_roles", custom == null ? null : Convert.ToBase64String(custom) },
+                        { "random_skills", randomSkills == null ? null : Convert.ToBase64String(randomSkills) },
+                        { "random_skills_sha256", randomSkills == null ? null : Hash(randomSkills) }
                     };
                     package.RPG = rpg;
                     package.Pal98SaveBundle = Encode(bundle);
@@ -74,13 +87,14 @@ namespace Pal98Timer
                 catch (Exception error) when (error is IOException || error is InvalidDataException) { last = error; }
                 if (attempt != 19) Thread.Sleep(100);
             }
-            throw new IOException("未取得完整的 RPG 与扩展角色存档；没有导出不完整进度。", last);
+            throw new IOException("未取得完整的 RPG、扩展角色或随机技能状态；请等待游戏存档完成后重试，没有导出不完整进度。", last);
         }
 
         internal static void ValidateLegacyTarget(string gameFolder)
         {
-            if (IsRequired(gameFolder))
-                throw new InvalidDataException("旧接力包没有新版存档身份和扩展角色快照。请用新版计时器从原游戏进度重新导出。");
+            // A legacy package may be restored without consulting target
+            // configuration. It cannot recreate sidecars it never contained.
+            Within(gameFolder, "1.RPG");
         }
 
         internal static void Import(string gameFolder, string saveName, SRPGobj package,
@@ -88,22 +102,19 @@ namespace Pal98Timer
         {
             ValidateSlot(saveName);
             Dictionary<string, object> bundle = Json(package.Pal98SaveBundle);
-            if (Text(bundle, "schema") != Schema) throw new InvalidDataException("接力存档版本不受支持。");
+            string schema = Text(bundle, "schema");
+            if (schema != Schema && schema != LegacySchema) throw new InvalidDataException("接力存档版本不受支持，请双方更新计时器。");
             string originalName = Text(bundle, "source_save_file");
             ValidateSlot(originalName);
-            Context context = ReadContext(gameFolder);
-            if (Text(bundle, "runtime_sha256") != context.RuntimeHash ||
-                Text(bundle, "profile_identity") != context.ProfileIdentity ||
-                Text(bundle, "role_library_sha256") != context.LibraryHash)
-                throw new InvalidDataException("接力包与目标 PALDLL、内容包或固定角色库不同；请先使用相同版本，计时器不会替换这些文件。");
-            ValidateRpg(package.RPG, context);
-            if (Number(bundle["rpg_size"]) != package.RPG.Length ||
+            if (package.RPG == null || Number(bundle["rpg_size"]) != package.RPG.Length ||
                 Text(bundle, "rpg_sha256") != Hash(package.RPG))
                 throw new InvalidDataException("接力 RPG 的长度或 SHA-256 不符。");
             object rawCustom;
             if (!bundle.TryGetValue("custom_roles", out rawCustom))
                 throw new InvalidDataException("接力包缺少扩展角色快照标记。");
             byte[] custom = rawCustom == null ? null : Convert.FromBase64String((string)rawCustom);
+            Context context = ReadRestoreContext(package.RPG, custom);
+            ValidateRpg(package.RPG, context);
             ValidateCustom(custom, originalName, package.RPG, context);
             if (custom != null)
             {
@@ -111,6 +122,31 @@ namespace Pal98Timer
                 state["save_file"] = saveName;
                 custom = Encode(state);
                 ValidateCustom(custom, saveName, package.RPG, context);
+            }
+            byte[] randomSkills = null;
+            if (schema == Schema)
+            {
+                object payload, digest;
+                if (!bundle.TryGetValue("random_skills", out payload) ||
+                    !bundle.TryGetValue("random_skills_sha256", out digest))
+                    throw new InvalidDataException("接力包缺少随机技能完整快照标记。");
+                if (payload == null)
+                {
+                    if (digest != null) throw new InvalidDataException("随机技能空快照格式无效。");
+                }
+                else
+                {
+                    if (!(payload is string) || !(digest is string))
+                        throw new InvalidDataException("随机技能快照格式无效。");
+                    try { randomSkills = Convert.FromBase64String((string)payload); }
+                    catch (FormatException error) { throw new InvalidDataException("随机技能快照编码无效。", error); }
+                    if (!SameHash(Hash(randomSkills), (string)digest))
+                        throw new InvalidDataException("随机技能快照 SHA-256 校验失败。");
+                    var state = ValidateRandomSkills(randomSkills, originalName, package.RPG);
+                    state["save_file"] = saveName;
+                    randomSkills = Encode(state);
+                    ValidateRandomSkills(randomSkills, saveName, package.RPG);
+                }
             }
             SRPGFlyingFlagSidecarSnapshot flag = SRPGSidecarTransport.ReadFlyingFlagSnapshot(package);
             if (flag == null) throw new InvalidDataException("新版接力包缺少飞行旗快照标记。");
@@ -122,12 +158,37 @@ namespace Pal98Timer
                 { saveName + ".pal98-ext-magics.json", null },
                 { SRPGSidecarTransport.FlyingFlagSidecarFileName, flag.Present ? flag.Payload : null }
             };
+            // Old bundles have unknown state. Only v2 declares presence/absence
+            // and may replace or back up/clear the destination receipt.
+            if (schema == Schema) files.Add(saveName + RandomSkillsSuffix, randomSkills);
             Publish(gameFolder, files, afterPublish);
+        }
+
+        // Validate the transported Win95 layout and its own sidecar bindings.
+        // Target configuration, DLL hash and profile selection are provenance,
+        // not permission to restore bytes. They are never rewritten here.
+        private static Context ReadRestoreContext(byte[] rpg, byte[] custom)
+        {
+            if (rpg == null || rpg.Length < 14064 || rpg.Length > MaximumBytes || (rpg.Length - 14064) % 32 != 0)
+                throw new InvalidDataException("接力 RPG 的 Win95 存档结构无效。");
+            var context = new Context { SaveLength = rpg.Length };
+            if (custom != null)
+            {
+                var state = Json(custom);
+                context.RoleCount = Array(state["roles"]).Length;
+                if (context.RoleCount > 10) throw new InvalidDataException("扩展角色快照超过 6–15 范围。");
+                context.Library = new Dictionary<string, object> {
+                    { "library_id", Text(state, "library_id") },
+                    { "library_version", Text(state, "library_version") }
+                };
+            }
+            return context;
         }
 
         private static Context ReadContext(string gameFolder)
         {
             var result = new Context();
+            result.RandomSkillsRequired = RequiresRandomSkills(gameFolder);
             result.RuntimeHash = Hash(Read(Within(gameFolder, "PAL.dll")));
             string pointerPath = Pal98.Storage.UserDataStore.ReadGamePath(gameFolder, "palmod/Profiles/current.json");
             byte[] sss;
@@ -233,6 +294,81 @@ namespace Pal98Timer
             }
         }
 
+        private static byte[] ReadRandomSkillsSnapshot(string gameFolder, string name, byte[] rpg, bool required)
+        {
+            string path = Within(gameFolder, name + RandomSkillsSuffix);
+            if (!required && !File.Exists(path)) return null;
+            byte[] bytes = Read(path);
+            try { ValidateRandomSkills(bytes, name, rpg); }
+            catch (InvalidDataException) when (!required)
+            {
+                // A disabled feature can leave an invalid or old-RPG receipt.
+                // Read failures are retried, never mistaken for explicit absence.
+                return null;
+            }
+            return bytes;
+        }
+
+        private static Dictionary<string, object> ValidateRandomSkills(byte[] bytes, string name, byte[] rpg)
+        {
+            // Match PALDLL's PAL98.RandomSkillRun.v1 decoder, including exact
+            // slot/hash binding and all 16 queues. Never infer lost history.
+            if (bytes == null || bytes.Length == 0 || bytes.Length > MaximumRandomSkillsBytes)
+                throw new InvalidDataException("随机技能状态长度无效。");
+            var state = Json(bytes);
+            string[] keys = { "schema", "save_file", "rpg_sha256", "seed", "victory", "initialized", "queues" };
+            if (state.Count != keys.Length || keys.Any(key => !state.ContainsKey(key)) ||
+                Text(state, "schema") != "PAL98.RandomSkillRun.v1" ||
+                Text(state, "save_file") != name || Text(state, "rpg_sha256") != Hash(rpg))
+                throw new InvalidDataException("随机技能状态与 RPG 或存档槽号不一致。");
+            long seed = Number(state["seed"]), victory = Number(state["victory"]), initialized = Number(state["initialized"]);
+            if (seed < 1 || seed > uint.MaxValue || victory < 0 || victory > uint.MaxValue ||
+                initialized < 0 || initialized > ushort.MaxValue)
+                throw new InvalidDataException("随机技能种子、抽取次数或角色标记越界。");
+            object[] queues = Array(state["queues"]);
+            if (queues.Length != 16) throw new InvalidDataException("随机技能遗忘队列数量无效。");
+            foreach (object queue in queues)
+            {
+                object[] skills = Array(queue);
+                var seen = new HashSet<long>();
+                if (skills.Length > 999) throw new InvalidDataException("随机技能遗忘队列过长。");
+                foreach (object skill in skills)
+                {
+                    long id = Number(skill);
+                    if (id < 1 || id > short.MaxValue || !seen.Add(id))
+                        throw new InvalidDataException("随机技能遗忘队列包含越界或重复技能。");
+                }
+            }
+            return state;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint GetPrivateProfileInt(string section, string key, int fallback, string file);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint GetPrivateProfileString(string section, string key, string fallback,
+            StringBuilder value, uint capacity, string file);
+
+        private static bool RequiresRandomSkills(string gameFolder)
+        {
+            string config = Pal98.Storage.UserDataStore.ReadGamePath(gameFolder, "config.ini");
+            // Win32 profile APIs silently return defaults for an unreadable file.
+            // Confirm readability and prevent replacement while reading the flags.
+            using (var stream = new FileStream(config, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                if (GetPrivateProfileInt("extra", "RandomLevelUpSkills", 0, config) == 0) return false;
+                Func<string, bool> present = key =>
+                {
+                    const string missing = "__PALDLL_MISSING__";
+                    var value = new StringBuilder(32);
+                    GetPrivateProfileString("extra", key, missing, value, (uint)value.Capacity, config);
+                    return value.ToString() != missing;
+                };
+                bool add = present("RandomSkillVictoryAdd"), forget = present("RandomSkillVictoryForgetPrevious");
+                return (add && GetPrivateProfileInt("extra", "RandomSkillVictoryAdd", 0, config) != 0) ||
+                    (!add && !forget && GetPrivateProfileInt("extra", "RandomSkillVictoryLearnAndForget", 0, config) != 0);
+            }
+        }
+
         private static void Publish(string root, Dictionary<string, byte[]> files, Action<int> afterPublish)
         {
             string stamp = ".paltimer-backup-" + DateTime.Now.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N");
@@ -290,7 +426,7 @@ namespace Pal98Timer
             finally { foreach (string path in staged.Values) if (File.Exists(path)) File.Delete(path); }
         }
 
-        private static string ContextKey(Context c) { return c.RuntimeHash + c.ProfileIdentity + c.LibraryHash; }
+        private static string ContextKey(Context c) { return c.RuntimeHash + c.ProfileIdentity + c.LibraryHash + c.RandomSkillsRequired; }
         private static bool SameHash(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
         private static void ValidateSlot(string name)
         {

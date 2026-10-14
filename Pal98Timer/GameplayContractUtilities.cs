@@ -43,6 +43,7 @@ namespace Pal98Timer
         internal CompetitionHardcore Hardcore;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
+        internal long? RestartMilliseconds;
         internal DateTimeOffset ObservedAt;
         internal bool Finished, BeganHere;
         internal CompetitionSplit[] Splits;

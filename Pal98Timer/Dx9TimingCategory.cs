@@ -30,6 +30,7 @@ namespace Pal98Timer
             // the caption without changing the runtime/recorded identity.
             string version = System.Text.RegularExpressions.Regex.Replace(
                 (patchVersion ?? "").Trim(), @"^(\d+\.\d+)\s+[rR][0-9]+$", "$1");
+            version = System.Text.RegularExpressions.Regex.Replace(version, @"\A(\d+)\.(\d+)\.(\d+)(?:\.\d+)?\z", "$1.$2$3");
             return "98柔情原版 " + version;
         }
 
@@ -62,8 +63,8 @@ namespace Pal98Timer
                     "，與所選配置不一致，計時暫停。請切換配置或修改設定後重啟遊戲。");
         }
 
-        // Run before any RPG/sidecar write, and at the direct timer-restore entry.
-        // Legacy untagged records belong only to the existing Classic 1.2s line.
+        // Historical category compatibility validator; local cloud relay intentionally
+        // uses structural validation instead. This does not grant score eligibility.
         internal static void ValidateImport(string core, int expected, HObj record, RuntimeTimingMode current = null, int? expectedMapSpeedTicks = null)
         {
             int requestedSpeed = expectedMapSpeedTicks ?? (core == SpeedCore ? 9 : 10);

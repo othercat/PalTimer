@@ -19,6 +19,22 @@ namespace Pal98Timer
         public CompetitionRun Run { get; set; }
         public string Payload { get; set; }
         public string SealedRun { get; set; }
+        // Both variants are sealed only by the original producer at completion.
+        // Null selection denotes a historical record and always means original.
+        public string LegacyPayload { get; set; }
+        public string LegacySealedRun { get; set; }
+        public string UploadFormat { get; set; }
+        internal const string Unselected = "unselected";
+        internal const string Original = "original";
+        internal const string Legacy = "without-restart-time";
+        internal bool ValidUploadVariants()
+        {
+            if (UploadFormat != null && UploadFormat != Unselected && UploadFormat != Original && UploadFormat != Legacy) return false;
+            bool hasLegacy = LegacyPayload != null || LegacySealedRun != null;
+            if (hasLegacy && (Run.protocol != CompetitionProtocol.OnlineV2 || string.IsNullOrEmpty(LegacySealedRun) ||
+                LegacyPayload != CompetitionProtocol.SerializeRun(Run, false))) return false;
+            return UploadFormat != Unselected && UploadFormat != Legacy || hasLegacy;
+        }
         public bool SealAttempted { get; set; }
         public int Attempts { get; set; }
         public DateTime NextAttemptUtc { get; set; }
@@ -122,12 +138,14 @@ namespace Pal98Timer
                 CompetitionPending pending = null;
                 try
                 {
-                    pending = CompetitionProtocol.Json().Deserialize<CompetitionPending>(ReadBounded(path, 262144));
+                    // Two bounded original-producer seals plus the retained raw facts.
+                    pending = CompetitionProtocol.Json().Deserialize<CompetitionPending>(ReadBounded(path, 1048576));
                     if (pending == null || pending.Settings == null || pending.Settings.Validate().Length != 0 ||
                         pending.Settings.Server != settings.Server || pending.Run == null ||
                         (pending.Run.protocol != CompetitionProtocol.Online && pending.Run.protocol != CompetitionProtocol.OnlineV2) ||
                         pending.Run.run_id + ".json" != System.IO.Path.GetFileName(path) ||
-                        CompetitionProtocol.SerializeRun(CompetitionProtocol.Json().Deserialize<CompetitionRun>(pending.Payload)) != CompetitionProtocol.SerializeRun(pending.Run)) pending = null;
+                        CompetitionProtocol.SerializeRun(CompetitionProtocol.Json().Deserialize<CompetitionRun>(pending.Payload)) != CompetitionProtocol.SerializeRun(pending.Run) ||
+                        !pending.ValidUploadVariants()) pending = null;
                     if (pending != null) pending.Path = path;
                 }
                 catch (Exception ex) when (ex is IOException || ex is ArgumentException || ex is InvalidOperationException) { }

@@ -120,9 +120,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.37.9.0","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.37.9.0","file version");
-        Check(GForm.CurrentVersion=="3.37.9","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.38.2.0","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.2.0","file version");
+        Check(GForm.CurrentVersion=="3.38.2","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -959,10 +959,35 @@ internal static class V169IntegrityBehavior
         var restart=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.16");
         var integrated=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.6.8.17");
         var v171Anu=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.1.2");
-        var v172r1=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.1");
+        var v172r1=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.1" &&
+            ((IEnumerable)Property(m,"files")).Cast<object>().Any(f=>(string)Property(f,"path")=="PAL.dll" &&
+                (string)Property(f,"sha256")=="e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d"));
         var v172r1Dll=((IEnumerable)Property(v172r1,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v172r1Dll,"size")==2233344 && (string)Property(v172r1Dll,"sha256")=="e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d","v1.72 revision 1 catalog pins the actual competition release");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172r1Dll,"size"),(string)Property(v172r1Dll,"sha256")) as string == "1.7.2.1","v1.72 revision 1 exact bytes select their own embedded catalog");
+        var displayCandidate=embedded.Cast<object>().Single(m=>((string)Property(m,"release_id")).EndsWith("01d8b88fef06232b857be88aba9de6d8d00577d3496fb3032381de4a55a20afa"));
+        var displayDll=((IEnumerable)Property(displayCandidate,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((string)Property(displayCandidate,"build")=="1.7.2.1" && (string)Property(displayDll,"sha256")=="01d8b88fef06232b857be88aba9de6d8d00577d3496fb3032381de4a55a20afa",
+            "same-version display candidate has its own exact DLL/MAP baseline");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(displayDll,"size"),(string)Property(displayDll,"sha256")) as string == "1.7.2.1",
+            "general v1.72 package display revision is locally approved by exact bytes");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(displayDll,"size"),new string('f',64))==null &&
+            Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(displayDll,"size")+1,(string)Property(displayDll,"sha256"))==null,
+            "general package approval cannot promote other hashes or sizes");
+        var v172r2=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.2" && ((string)Property(m,"release_id")).EndsWith("ac725edce8c2a0c8"));
+        var v172r2Dll=((IEnumerable)Property(v172r2,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(v172r2Dll,"size")==2233856 && (string)Property(v172r2Dll,"sha256")=="ac725edce8c2a0c817ffb4029c8eb9ecb4b0ff41220818aa2a1d4cae06b7cf75",
+            "v1.72 revision 2 pins the actual Wine God release and matched MAP");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172r2Dll,"size"),(string)Property(v172r2Dll,"sha256")) as string == "1.7.2.2",
+            "v1.72 revision 2 is an official DLL by exact identity");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172r2Dll,"size"),new string('e',64))==null &&
+            Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172r2Dll,"size")+1,(string)Property(v172r2Dll,"sha256"))==null,
+            "v1.72 revision 2 rejects unknown hashes and wrong sizes");
+        var relay=embedded.Cast<object>().Single(m=>((string)Property(m,"release_id")).EndsWith("2ce7c6817456bf1b"));
+        var relayDll=((IEnumerable)Property(relay,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(relayDll,"size")==2236416 && (string)Property(relayDll,"sha256")=="2ce7c6817456bf1b5ad6dc5114bcbffb38cc1f9bc16ecd8e70140be65f371c1a","relay build pins exact native bytes while retaining old release");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2236416L,(string)Property(relayDll,"sha256")) as string=="1.7.2.2","relay exact build recognized locally");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2236416L,new string('e',64))==null,"relay same-size unknown bytes remain unrecognized");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v173Dll,"size")==2233344 && (string)Property(v173Dll,"sha256")=="9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7","v1.7.3 catalog pins the final configuration-fallback DLL");

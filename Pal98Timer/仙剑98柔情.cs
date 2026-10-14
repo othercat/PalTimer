@@ -40,6 +40,7 @@ namespace Pal98Timer
         private string attachedExecutablePath;
 
         private PTimer ST = new PTimer();
+        internal override long? RestartMilliseconds => ReadPalRestartMilliseconds(ST);
         private PTimer LT = new PTimer();
         private DateTime InBattleTime;
         private DateTime OutBattleTime;
@@ -607,7 +608,7 @@ namespace Pal98Timer
                 {
                     isw.Dispose();
                 });
-                isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
+                isw.lblInfo.Text = RelayRestoreMessage;
                 isw.btnOK.Text = "我已读档";
                 isw.ShowDialog(form);
             };
@@ -1305,6 +1306,7 @@ namespace Pal98Timer
         protected override void FillMoreTimerData(HObj exdata)
         {
             exdata["Idle"] = ST.ToFullString();
+            exdata["RestartMilliseconds"] = RestartMilliseconds;
             exdata["Lite"] = LT.ToFullString();
             exdata["BeeHouse"] = MaxFC;
             exdata["BeeSheet"] = MaxFM;
@@ -1505,7 +1507,11 @@ namespace Pal98Timer
                 }
 
                 SRPGobj so = new SRPGobj();
-                so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
+                if (SRPGSaveBundleTransport.IsRequired(palfolder))
+                    SRPGSaveBundleTransport.Capture(palfolder, ChangedFile, so);
+                else
+                    so.RPG = SaveObject.GetSaveBuffer(this.PalHandle);
+                SRPGSidecarTransport.CaptureFlyingFlagSnapshot(palfolder, so);
                 so.TimerStr = GetRStr();
                 /*try
                 {
@@ -1554,6 +1560,11 @@ namespace Pal98Timer
             });
         }
 
+        private bool loadedSrpgRequiresGameRestart;
+        private string RelayRestoreMessage => loadedSrpgRequiresGameRestart
+            ? "存档及附属状态已导入，计时器已自动暂停。请保持计时器开启，重启PAL.exe后读取游戏中的“进度一”；重启前不要保存游戏。"
+            : "存档导入成功，计时器已自动暂停，请读取游戏中“进度一”后关闭此窗口";
+
         private void LoadGame(string fn = "SRPG.bin", string rn = "1.RPG")
         {
             SRPGobj so = null;
@@ -1575,8 +1586,18 @@ namespace Pal98Timer
 
             if (so != null)
             {
+                ValidateRelayTimerState(so.TimerStr);
                 if (so.Pal98SaveBundle != null)
-                    throw new InvalidDataException("此接力包包含新版 PALDLL 扩展角色数据，请使用仙剑98 DX9 对应内核导入。");
+                {
+                    if (!GetPalHandle()) throw new Exception("请先启动目标 PAL.exe，以确定接力存档的恢复目录。");
+                    SRPGSaveBundleTransport.Import(GetPalFolder(), "1.RPG", so);
+                    SetTimerFromString(so.TimerStr);
+                    loadedSrpgRequiresGameRestart = true;
+                    WillCopyRPG = "";
+                    return;
+                }
+                var flyingFlag = SRPGSidecarTransport.ReadFlyingFlagSnapshot(so);
+                if (flyingFlag != null && !GetPalHandle()) throw new Exception("请先启动目标 PAL.exe，以确定附属存档的恢复目录。");
                 string tmppath = rn;
                 try
                 {
@@ -1599,14 +1620,17 @@ namespace Pal98Timer
                 }
 
                 SetTimerFromString(so.TimerStr);
-
+                if (flyingFlag != null) SRPGSidecarTransport.ApplyFlyingFlagSnapshot(GetPalFolder(), flyingFlag);
+                loadedSrpgRequiresGameRestart = flyingFlag != null;
                 WillCopyRPG = tmppath;
             }
         }
 
         public void SetTimerFromString(string json)
         {
+            ValidateRelayTimerState(json);
             HObj ho = new HObj(json);
+            AdvanceScoreRunSequence(imported: true);
             try
             {
                 //CurrentStep = ho.GetValue<int>("Step");
@@ -1623,7 +1647,7 @@ namespace Pal98Timer
                     TotalMonsterCount = ho.GetValue<int>("TotalMonsterCount");
                 }
                 MT.SetTS(ConvertTimeSpan(ho.GetValue<string>("Current")));
-                ST.SetTS(ConvertTimeSpan(ho.GetValue<string>("Idle")));
+                RestorePalRestartIdle(ST, ho);
                 HObj cps = ho.GetValue<HObj>("CheckPoints");
                 for (int i = 0; i < cps.Count; ++i)
                 {
@@ -1696,7 +1720,7 @@ namespace Pal98Timer
                             {
                                 isw.Dispose();
                             });
-                            isw.lblInfo.Text = "存档导入成功，计时器已自动暂停，请读取游戏中\"进度一\"后关闭此窗口";
+                            isw.lblInfo.Text = RelayRestoreMessage;
                             isw.btnOK.Text = "我已读档";
                             isw.ShowDialog(f);
                         }

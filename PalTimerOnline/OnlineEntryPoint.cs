@@ -41,10 +41,24 @@ namespace Pal98Timer
         public void Publish(OnlineSnapshotV1 value)
         {
             if (value == null) return;
-            client.Publish(new CompetitionObservation {
+            client.Publish(ReadSnapshot(value));
+        }
+        internal static CompetitionObservation ReadSnapshot(OnlineSnapshotV1 value)
+        {
+            string restart;
+            long milliseconds;
+            long? restartMilliseconds = null;
+            if (value.Extensions.TryGetValue("restart_ms", out restart) && restart != null)
+            {
+                if (!long.TryParse(restart, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out milliseconds))
+                    throw new ArgumentException("Invalid restart_ms extension.");
+                restartMilliseconds = milliseconds;
+            }
+            return new CompetitionObservation {
                 Token = value.Token, Core = value.Core, DllHash = value.DllHash, GameVersion = value.GameVersion,
                 ValidationError = value.ValidationError, TimelineId = value.TimelineId, GameTitle = value.GameTitle,
                 Step = value.Step, FadeMilliseconds = value.Fade, MapSpeedTicks = value.Speed, TotalMilliseconds = value.Total,
+                RestartMilliseconds = restartMilliseconds,
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
@@ -55,7 +69,7 @@ namespace Pal98Timer
                 Hardcore = value.Hardcore == null ? null : new CompetitionHardcore { requested = value.Hardcore.Requested,
                     run_verified = value.Hardcore.Verified, rules_version = value.Hardcore.RulesVersion, evidence_status = value.Hardcore.Status },
                 Splits = value.Splits.Select(s => new CompetitionSplit { checkpoint_id = s.Id, elapsed_ms = s.Elapsed, status = s.Status }).ToArray()
-            });
+            };
         }
         public void PublishClock(string token, long elapsed, bool running, long observedTick) => client.PublishClock(token, elapsed, running, observedTick);
         public void Invalidate(string token) => client.Invalidate(token);

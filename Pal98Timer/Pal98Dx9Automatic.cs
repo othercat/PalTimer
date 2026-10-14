@@ -18,6 +18,7 @@ namespace Pal98Timer
         private bool configurationFrozen, manualConfiguration;
         private Task<LocalTimelineConfiguration> startConfiguration;
         private string configurationDiagnostic = "";
+        private string metadataDiagnostic = "";
         private readonly object timelineSync = new object();
         private GameplaySnapshot selected;
         private string route, identity, frozen, validation = "", referenceJson;
@@ -36,6 +37,7 @@ namespace Pal98Timer
         private protected override GameplaySnapshot DisplayGameplaySnapshot => selected;
         protected override int TimingModeMs => selected?.fade_ms ?? RecordedTimingMode?.FadeMilliseconds ?? 1200;
         protected override int TimingMapSpeedTicks => selected?.map_speed_ticks ?? RecordedTimingMode?.MapSpeedTicks ?? 10;
+        protected override bool PauseOnTimingValidationError => false;
         public override string ActiveBestPath => localConfiguration?.BestPath ?? LegacyBestPath;
         private string LegacyBestPath => TimerUserSettings.TimelinePath(selected == null || identity == null ?
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Timelines", "Unclassified", unknown, "best.json") :
@@ -97,10 +99,10 @@ namespace Pal98Timer
                 RefreshClearPrediction();
             }
             Task.Run(() => {
-                string json = null;
+                string json = null, error = "";
                 try { json = ReadReference(path, legacy); }
-                catch (Exception e) when (LocalConfigurationReader.ReadError(e)) { }
-                lock (timelineSync) { if (epoch == observed) { referenceJson = json; referenceReady = true; } }
+                catch (Exception e) when (OptionalMetadataFailure(e)) { error = "参考线暂不可读（" + e.GetType().Name + "），计时继续。"; }
+                lock (timelineSync) { if (epoch == observed) { referenceJson = json; referenceReady = true; if (error.Length != 0) metadataDiagnostic = error; } }
             });
         }
         private void ApplyQueuedReference()
@@ -109,7 +111,12 @@ namespace Pal98Timer
                 if (!referenceReady) return;
                 referenceReady = false;
                 try { base.RefreshBestReference(); }
-                catch (Exception e) when (LocalConfigurationReader.ReadError(e)) { referenceJson = null; }
+                catch (Exception e) when (OptionalMetadataFailure(e)) {
+                    referenceJson = null; Best = null;
+                    foreach (var point in CheckPoints) point.SetBestReference(new CheckPointNewer { Name = point.Name, BestTS = TimeSpan.Zero });
+                    RefreshClearPrediction();
+                    metadataDiagnostic = "参考线无法应用（" + e.GetType().Name + "），计时继续。";
+                }
             }
         }
         internal void SelectLocalConfiguration(LocalTimelineConfiguration value, bool manuallySelected)
@@ -157,8 +164,9 @@ namespace Pal98Timer
             lock (configurationSync) {
             if (manualConfiguration || startConfiguration == null) return;
             if (!startConfiguration.IsCompleted) { configurationDiagnostic = "正在读取开局配置，计时继续。"; return; }
-            var captured = startConfiguration.GetAwaiter().GetResult();
+            var completed = startConfiguration;
             startConfiguration = null;
+            var captured = LocalConfigurationObserver.CompletedValue(completed);
             if (captured != null) { SelectLocalConfiguration(captured, false); configurationDiagnostic = "本局配置已固定。"; }
             else configurationDiagnostic = "开局时未能读取配置；保存前请选择本局配置归属。";
             }
@@ -220,10 +228,25 @@ namespace Pal98Timer
         private bool referenceReady;
         protected override void OnGameplayStarting()
         {
-            FreezeLocalConfiguration();
+            UpdateOptionalMetadata(FreezeLocalConfiguration);
             startProcess = CompetitionGameProcess;
             startHardcore = CaptureHardcoreEvidence().requested;
-            startObservation = gameplayReader.CaptureStart(startProcess);
+            UpdateOptionalMetadata(() => startObservation = gameplayReader.CaptureStart(startProcess), true);
+        }
+
+        private static bool OptionalMetadataFailure(Exception error) => !(error is OutOfMemoryException) &&
+            !(error is StackOverflowException) && !(error is AccessViolationException) && !(error is System.Threading.ThreadAbortException);
+
+        private void UpdateOptionalMetadata(Action update, bool gameplay = false)
+        {
+            // Configuration, classification and best-line parsing are optional
+            // inputs. An unexpected parser/schema failure must not skip the
+            // base tick, including its normal pause and checkpoint handling.
+            try { update(); }
+            catch (Exception error) when (OptionalMetadataFailure(error)) {
+                metadataDiagnostic = "配置或参考线暂不可用（" + error.GetType().Name + "），计时继续。";
+                if (gameplay) validation = "本局玩法识别异常，仅保留本地记录。";
+            }
         }
         private void FreezeStartIdentity()
         {
@@ -244,13 +267,12 @@ namespace Pal98Timer
         }
         protected override void OnTick()
         {
-            ObserveLocalConfiguration();
-            RefreshHardcoreRuntime();
-            ObserveGameplay();
-            ApplyQueuedReference();
+            UpdateOptionalMetadata(ObserveLocalConfiguration);
+            UpdateOptionalMetadata(() => { RefreshHardcoreRuntime(); ObserveGameplay(); }, true);
+            UpdateOptionalMetadata(ApplyQueuedReference);
             base.OnTick();
-            ObserveLocalConfiguration();
-            FreezeStartIdentity();
+            UpdateOptionalMetadata(ObserveLocalConfiguration);
+            UpdateOptionalMetadata(FreezeStartIdentity, true);
             ArchiveCompletedResult();
         }
         private void ArchiveCompletedResult()
@@ -309,19 +331,13 @@ namespace Pal98Timer
         }
         protected override void ValidateTimerImport(string json)
         {
-            var data = new HObj(json);
-            if (data.HasValue("LocalReferenceConfiguration")) throw new InvalidDataException("本地配置最佳线仅供比较，不能恢复游戏或已验证计时状态。");
-            ValidateBestReference(data);
-            if (selected == null || !selected.covered || validation.Length != 0 || GameplayRestartPending || GameplayContinuationError.Length != 0 || !data.HasValue("GameplayVerified") ||
-                !data.GetValue<bool>("GameplayVerified") || data.HasValue("ReferenceTimeline") && data.GetValue<bool>("ReferenceTimeline"))
-                throw new InvalidDataException("此记录不具备当前玩法的完整证据，未导入游戏或计时状态。");
             base.ValidateTimerImport(json);
         }
         protected override void FillMoreTimerData(HObj data)
         {
             base.FillMoreTimerData(data);
             data["TimelineIdentity"] = frozen ?? identity ?? "";
-            data["GameplayVerified"] = selected != null && selected.covered && validation.Length == 0 &&
+            data["GameplayVerified"] = !competitionImportedRun && selected != null && selected.covered && validation.Length == 0 &&
                 !startedWithoutIdentity && !GameplayRestartPending && GameplayContinuationError.Length == 0 && (!requested || CaptureHardcoreEvidence().run_verified);
             data["GameplayValidation"] = GameplayRestartPending ? "正在核对重启后的玩法证据。" :
                 GameplayContinuationError.Length != 0 ? GameplayContinuationError : validation;
@@ -370,7 +386,7 @@ namespace Pal98Timer
             base.Reset(); frozen = null; validation = ""; frozenHardcore = false; startedWithoutIdentity = false; archiveCompletedRun = false; completed = false;
             lock (configurationSync) {
                 identity = null; selected = null;
-                localConfiguration = null; configurationFrozen = manualConfiguration = false; configurationReader.Reset(); configurationDiagnostic = "";
+                localConfiguration = null; configurationFrozen = manualConfiguration = false; configurationReader.Reset(); configurationDiagnostic = metadataDiagnostic = "";
                 startConfiguration = null;
                 lock (timelineSync) { ++epoch; referenceJson = null; referenceReady = false; }
             }
@@ -379,6 +395,8 @@ namespace Pal98Timer
         protected override string FormatGameTitle(string version)
         {
             var snapshot = selected;
+            if (!HasTournamentGameTitle)
+                return version + "－" + GameplayPresentation.Label(snapshot, RecordedTimingMode, requested);
             return snapshot == null ? base.FormatGameTitle(version) + "&未归类" :
                 version + "－" + snapshot.Label(requested);
         }
@@ -391,7 +409,7 @@ namespace Pal98Timer
                 using (var dialog = new Form { Text = "自动玩法时间线", Width = 760, Height = 560, StartPosition = FormStartPosition.CenterParent }) {
                     dialog.Controls.Add(new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both,
                         Text = summary + "\r\n" + (localConfiguration == null ? "未选择本地配置" : "本地参考配置：" + localConfiguration) +
-                        "\r\n" + configurationDiagnostic + "\r\n" + archiveError + "\r\n" + validation + "\r\n" + ActiveBestPath + "\r\n\r\n" +
+                        "\r\n" + configurationDiagnostic + "\r\n" + metadataDiagnostic + "\r\n" + archiveError + "\r\n" + validation + "\r\n" + ActiveBestPath + "\r\n\r\n" +
                         string.Join("\r\n", selected?.rules.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + " = " + p.Value) ?? Enumerable.Empty<string>()) });
                     dialog.ShowDialog(form);
                 }

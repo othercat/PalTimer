@@ -301,23 +301,29 @@ internal static class V165TimingBehavior
         Check(TimerCore.GetAllCores().Any(n=>n.Contains("Hunqian")||n.Contains("魂牵")),"Hunqian core retained");
         Check(TimerCore.GetAllCores().Any(n=>n.Contains("Dream220")||n.Contains("梦幻")),"Dream core retained");
     }
-    static void RejectedRestore(TimerCore target,int category,object actual,HObj incoming,string name)
+    static void CrossConfigurationRestore(TimerCore target,int category,object actual,HObj incoming,string name)
     {
         Attach(target,actual);
-        // Prove rejection first, so no test can fall through to a live PAL probe.
-        Reject(()=>Validate(target.CoreName,Fade(category),incoming,actual),name+" policy");
-        var times=target.CheckPoints.Select(p=>p.Current).ToArray();long sequence=target.ScoreRunSequence;
+        Reject(()=>Validate(target.CoreName,Fade(category),incoming,actual),name+" score category remains distinct");
+        var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));Set(form,"core",target);Set(target,"form",form);
+        long sequence=target.ScoreRunSequence;
+        ((仙剑98柔情DX9)target).SetTimerFromString(incoming.ToJson());
+        Check(target.ScoreRunSequence>sequence && target.GetMainWatch()==TimerCore.ConvertTimeSpan(incoming.GetValue<string>("Current")),name+" restores donor clock");
+        Check(target.CurrentStep==incoming.GetValue<int>("Step") && (bool)Field(target,"competitionImportedRun"),name+" restores checkpoint without verified run");
+        Check(!new HObj(target.GetRStr()).GetValue<bool>("TimingRulesVerified"),name+" export remains unverified");
+        var malformed=Clone(incoming);malformed["Step"]=99;
+        var times=target.CheckPoints.Select(p=>p.Current).ToArray();sequence=target.ScoreRunSequence;
         TimeSpan watch=target.GetMainWatch();int step=target.CurrentStep;
-        Reject(()=>((仙剑98柔情DX9)target).SetTimerFromString(incoming.ToJson()),name+" public restore");
-        Check(sequence==target.ScoreRunSequence&&watch==target.GetMainWatch()&&step==target.CurrentStep&&target.CheckPoints.Select(p=>p.Current).SequenceEqual(times),name+" changed timer state");
+        Reject(()=>((仙剑98柔情DX9)target).SetTimerFromString(malformed.ToJson()),name+" malformed public restore");
+        Check(sequence==target.ScoreRunSequence&&watch==target.GetMainWatch()&&step==target.CurrentStep&&target.CheckPoints.Select(p=>p.Current).SequenceEqual(times),name+" malformed state preserved");
         string rpg=Path.GetFullPath("1.RPG"),sidecar=Path.GetFullPath("1.RPG.metadata.json");
         File.WriteAllText(rpg,"save-sentinel");File.WriteAllText(sidecar,"sidecar-sentinel");
         Set(target,"WillCopyRPG","copy-sentinel");Set(target,"LoadedSrpgRequiresGameRestart",true);
-        using(var file=File.Create("rejected.bin"))new BinaryFormatter().Serialize(file,new SRPGobj{TimerStr=incoming.ToJson(),RPG=new byte[]{9,8,7}});
-        Reject(()=>Call(target,"LoadGame","rejected.bin",rpg),name+" relay restore");
-        Check(File.ReadAllText(rpg)=="save-sentinel"&&File.ReadAllText(sidecar)=="sidecar-sentinel",name+" changed save/sidecar");
-        Check((string)Field(target,"WillCopyRPG")=="copy-sentinel"&&(bool)Field(target,"LoadedSrpgRequiresGameRestart"),name+" changed pending relay state");
-        Check(sequence==target.ScoreRunSequence&&target.CheckPoints.Select(p=>p.Current).SequenceEqual(times),name+" relay changed timer");
+        using(var file=File.Create("rejected.bin"))new BinaryFormatter().Serialize(file,new SRPGobj{TimerStr=malformed.ToJson(),RPG=new byte[]{9,8,7}});
+        Reject(()=>Call(target,"LoadGame","rejected.bin",rpg),name+" malformed relay restore");
+        Check(File.ReadAllText(rpg)=="save-sentinel"&&File.ReadAllText(sidecar)=="sidecar-sentinel",name+" save/sidecar preserved");
+        Check((string)Field(target,"WillCopyRPG")=="copy-sentinel"&&(bool)Field(target,"LoadedSrpgRequiresGameRestart"),name+" pending relay state preserved");
+        Check(sequence==target.ScoreRunSequence&&target.CheckPoints.Select(p=>p.Current).SequenceEqual(times),name+" malformed relay preserves timer");
     }
     static void CrossImports()
     {
@@ -326,7 +332,7 @@ internal static class V165TimingBehavior
         var records=Enumerable.Range(0,3).Select(i=>Record(cores[i],modes[i])).ToArray();
         for(int target=0;target<3;++target)for(int from=0;from<3;++from)
             if(target==from){Validate(cores[target].CoreName,Fade(target),records[from],modes[target]);Check(true,"Same category accepted");}
-            else RejectedRestore(cores[target],target,modes[target],records[from],"formal-"+from+"-to-"+target);
+            else CrossConfigurationRestore(cores[target],target,modes[target],records[from],"formal-"+from+"-to-"+target);
     }
     static void ContentImports()
     {
@@ -334,18 +340,18 @@ internal static class V165TimingBehavior
         var variants=new[]{Mode(1200,9,false,"pal98.package.random"),Mode(1200,9,false,"pal98.package.wuqiang"),
             Mode(1200,9,false,"pal98.package.random","2.0.0"),Mode(1200,9,false,"pal98.package.random",hash:new string('b',64))};
         var source=Record(core,variants[0]);
-        for(int i=1;i<variants.Length;++i)RejectedRestore(core,0,variants[i],source,"content-change-"+i);
+        for(int i=1;i<variants.Length;++i)CrossConfigurationRestore(core,0,variants[i],source,"content-change-"+i);
         var formal=Mode(1200,10,true);var formalRecord=Record(core,formal);
-        RejectedRestore(core,0,Mode(1200,10,true,"pal98fix-classic-v4"),formalRecord,"formal-content-change");
+        CrossConfigurationRestore(core,0,Mode(1200,10,true,"pal98fix-classic-v4"),formalRecord,"formal-content-change");
         var modes=new[]{Mode(1200,10,false,"pal98.package.random"),Mode(1200,9,false,"pal98.package.random"),Mode(800,10,false,"pal98.package.random"),Mode(800,9,false,"pal98.package.random")};
         var records=modes.Select(m=>Record(core,m)).ToArray();
         for(int target=0;target<4;++target)for(int from=0;from<4;++from)
-            if(target!=from)RejectedRestore(core,0,modes[target],records[from],"nonformal-mode-"+from+"-to-"+target);
+            if(target!=from)CrossConfigurationRestore(core,0,modes[target],records[from],"nonformal-mode-"+from+"-to-"+target);
         foreach(string key in new[]{"TimingRulesVerified","ReferenceTimeline","TimingValidationError","ContentHash","OfficialSpeedrun"})
         {
             var invalid=Clone(source);
             if(key=="TimingValidationError")invalid[key]="unconfirmed";else if(key=="ContentHash")invalid.Remove(key);else invalid[key]=key!="TimingRulesVerified";
-            RejectedRestore(core,0,variants[0],invalid,"invalid-"+key);
+            CrossConfigurationRestore(core,0,variants[0],invalid,"invalid-"+key);
         }
     }
     static void RunIdentity()
@@ -382,12 +388,61 @@ internal static class V165TimingBehavior
         Reject(()=>Validate("PAL98DX9_800_SPEED",800,oldFast,Mode(800,9,true)),"Old 0.8 line stays separate");
         var restore=new OfflineRestoreCore();Call(restore,"InitCheckPoints");Attach(restore,mode);
         restore.SetTimerFromString(legacy.ToJson());restore.Expected=1200;
-        Check(restore.GetScoreValidationError().Contains("仅供参考"),"Restored history is unverified");
+        Check(restore.GetScoreValidationError().Contains("本地参考"),"Restored history is unverified");
         Check(!new HObj(restore.GetRStr()).GetValue<bool>("TimingRulesVerified"),"Re-export cannot verify legacy proof");
         Reject(()=>restore.SaveBest(),"Restored history is not a new valid score");
         restore.Reset();Attach(restore,mode);Check(restore.GetScoreValidationError()=="","Reset allows new verified run");
         var oldEight=Record(Core(2),Mode(800,9,true));oldEight["TimingRulesVersion"]=1;oldEight["MapSpeedTicks"]=8;oldEight["TimingMapSpeedTicks"]=8;
         for(int i=0;i<3;++i)Reject(()=>Validate(Core(i).CoreName,Fade(i),oldEight,Mode(Fade(i),Speed(i),true)),"Old 8-tick records not converted");
+    }
+    static void AutomaticLocalTiming()
+    {
+        Func<Pal98Dx9Automatic> create=()=> {
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            var core=new Pal98Dx9Automatic(form);Call(core,"InitCheckPoints");Set(form,"core",core);
+            core.CheckPoints=new List<CheckPoint> { new CheckPoint(0,new CheckPointNewer{Name="local-clock",BestTS=TimeSpan.FromSeconds(60)}) {Check=()=>false} };
+            return core;
+        };
+        foreach(bool official in new[]{false,true}) foreach(int fade in new[]{1200,800}) foreach(int speed in new[]{10,9}) {
+            // 1.2s/fast is deliberately unsupported by the official contract:
+            // the resulting missing frame must still allow automatic timing.
+            var core=create();var mode=Mode(fade,speed,official);
+            if(mode!=null)Attach(core,mode);
+            Check(!(bool)Call(core,"ApplyTimingValidationPause"),"Automatic combinations do not gate the first local tick");
+            Call(core,"OnGameplayStarting");Call(core,"StartAndCheckMainTimer");
+            var before=Watch(core).CurrentTSOnly;Thread.Sleep(4);
+            Check(!(bool)Call(core,"ApplyTimingValidationPause")&&Watch(core).IsRunning&&Watch(core).CurrentTSOnly>before,
+                "Automatic clock advances regardless of classification "+official+"/"+fade+"/"+speed);
+            Call(core,"StartAndCheckMainTimer");Check(core.CurrentStep==0&&core.CheckPoints[0].Current>TimeSpan.Zero,"Unclassified local checkpoint time advances");
+            Watch(core).Stop();core.Unload();
+        }
+        foreach(bool missingAtStart in new[]{true,false}) {
+            var core=create();var mode=Mode(1200,10,true);
+            if(!missingAtStart)Attach(core,mode);
+            Call(core,"StartAndCheckMainTimer");
+            if(!missingAtStart) { Check(core.GetScoreValidationError()=="","Known run starts verified");Set(core,"PalProcess",null);Set(core,"lastConfirmedTimingMode",null); }
+            Check(!(bool)Call(core,"ApplyTimingValidationPause")&&Watch(core).IsRunning,"Missing evidence never stops the automatic clock");
+            Check(core.GetScoreValidationError().Contains("缺少时序证据"),"Missing timed interval is remembered");
+            Attach(core,mode);Check(!(bool)Call(core,"ApplyTimingValidationPause")&&core.GetScoreValidationError().Length>0,"Recovered frame cannot certify previous unknown time");
+            Check(!new HObj(core.GetRStr()).GetValue<bool>("TimingRulesVerified"),"Recovered export remains unverified");
+            var args=new object[]{null,null,0,0,null};Dx9.GetMethod("CaptureCompetitionIdentity",Instance).Invoke(core,args);
+            Check(!string.IsNullOrEmpty((string)args[4]),"Recovered online identity still carries validation failure");
+            Check(!core.GetGameVersion().Contains("计时暂停")&&core.GetGameVersion().Contains("本地计时可用"),"Automatic title does not claim a classification pause");
+            var overlay=Snapshot(core);Check(!(bool)Field(overlay,"IsPaused")&&!((string)Field(overlay,"State")).Contains("计时暂停"),"OBS separates missing identity from actual pause");
+            foreach(string field in new[]{"IsPause","IsUIPause","IsInUnCheat"}) {
+                Set(core,field,true);overlay=Snapshot(core);Check((bool)Field(overlay,"IsPaused"),"OBS retains real pause: "+field);Set(core,field,false);
+            }
+            Watch(core).Stop();core.Reset();Attach(core,mode);Check(core.GetScoreValidationError()=="","Explicit reset starts a new verifiable run");core.Unload();
+        }
+        var changed=create();Attach(changed,Mode(1200,10,false,"content-a"));Call(changed,"StartAndCheckMainTimer");changed.GetScoreValidationError();
+        Attach(changed,Mode(800,9,false,"content-b"));Check(!(bool)Call(changed,"ApplyTimingValidationPause")&&Watch(changed).IsRunning,"Content change invalidates classification without stopping local timing");
+        Attach(changed,Mode(1200,10,false,"content-a"));Check(changed.GetScoreValidationError().Length>0,"Switching back cannot restore run qualification");Watch(changed).Stop();changed.Unload();
+        for(int i=0;i<3;++i) {
+            var core=Core(i);Watch(core).Start();
+            Check((bool)Call(core,"ApplyTimingValidationPause")&&!Watch(core).IsRunning,"Manual core still pauses on missing identity: "+i);
+            core.Reset();Attach(core,Mode(i==0?800:1200,10,true));Watch(core).Start();
+            Check((bool)Call(core,"ApplyTimingValidationPause")&&!Watch(core).IsRunning,"Manual core still pauses on selected-category mismatch: "+i);core.Unload();
+        }
     }
     static void StorageTransactions()
     {
@@ -618,6 +673,28 @@ internal static class V165TimingBehavior
             declaring.GetField("_HasGameStart",Instance).SetValue(core,true);
             declaring.GetMethod("ClearGameState",Instance).Invoke(core,null);
             Check(!(bool)declaring.GetField("_HasGameStart",Instance).GetValue(core),"new process cannot reuse prior game-start state");
+            var kernelIdle = (PTimer)declaring.GetField("ST",Instance).GetValue(core);
+            var restartProperty = declaring.GetProperty("RestartMilliseconds",Instance);
+            kernelIdle.SetTS(TimeSpan.FromMilliseconds(1234)); kernelIdle.Stop();
+            Check((long?)restartProperty.GetValue(core) == 1234,"kernel publishes existing restart milliseconds: " + core.CoreName);
+            var record = new HObj(core.GetRStr());
+            Check(record.GetValue<long>("RestartMilliseconds") == 1234,"local record carries numeric restart");
+            var restore = typeof(TimerCore).GetMethod("RestorePalRestartIdle",Instance);
+            foreach (string json in new[]{"{}", "{\"RestartMilliseconds\":null,\"Idle\":\"00:00:00.000\"}", "{\"RestartMilliseconds\":-1}", "{\"Idle\":\"999999999999999999999:00:00\"}"}) {
+                restore.Invoke(core,new object[]{kernelIdle,new HObj(json)});
+                Check(restartProperty.GetValue(core)==null,"missing/null/invalid restart is not measured zero");
+            }
+            restore.Invoke(core,new object[]{kernelIdle,new HObj("{\"RestartMilliseconds\":null,\"Idle\":\"00:00:05.000\"}")});
+            Check(restartProperty.GetValue(core)==null && kernelIdle.CurrentTSOnly==TimeSpan.FromSeconds(5),"unknown total retains locally observed Idle on restore");
+            var partialRecord = new HObj(core.GetRStr());
+            Check(partialRecord.ToDic().ContainsKey("RestartMilliseconds") && partialRecord.ToDic()["RestartMilliseconds"]==null && partialRecord.GetValue<string>("Idle")=="00:00:05.000",
+                "partial restart exports unknown total and observed local duration separately");
+            restore.Invoke(core,new object[]{kernelIdle,new HObj("{\"Idle\":\"00:00:01.234\"}")});
+            Check((long?)restartProperty.GetValue(core)==1234,"legacy recorded Idle restores measured value");
+            restore.Invoke(core,new object[]{kernelIdle,new HObj("{\"RestartMilliseconds\":90000000,\"Idle\":\"01:00:00.000\"}")});
+            Check((long?)restartProperty.GetValue(core)==90000000,"numeric restart does not wrap at 24 hours");
+            core.Reset();
+            Check((long?)restartProperty.GetValue(core)==0,"real kernel reset restores known zero");
         }
     }
     static void PresentationAndCompletion()
@@ -646,13 +723,14 @@ internal static class V165TimingBehavior
                 Check(ended.GetValue<string>("GameVersion")==core.GetGameVersion()&&ended.GetValue<string>("TournamentDisplayName")=="秋季杯比赛专用","Completed export preserves tournament identity");
             }
             var nonformal=Core(0);Attach(nonformal,Mode(1200,9,false,"pal98.package.random",name:"完全隨機物品&快走速"));
-            Check(nonformal.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Nonformal caption retains only version and actual mode");
-            foreach (string patchVersion in new[]{"1.68", "1.68 r10", "1.68 r11", "1.68 r12", "1.69", "1.69 r12"})
+            Check(nonformal.GetGameVersion()=="98柔情原版 1.65－完全隨機物品&快走速&1.2秒&快走速&"+
+                (culture=="zh-TW"?"玩法資訊讀取中":"玩法信息读取中"),"Nonformal caption identifies its runtime content while gameplay facts are pending");
+            foreach (string patchVersion in new[]{"1.68", "1.68 r10", "1.68 r11", "1.68 r12", "1.69", "1.69 r12", "1.7.2", "1.7.2.1", "1.72"})
             foreach (int selected in new[]{0,1,2})
             {
                 var titleCore=Core(selected); Attach(titleCore,Mode(Fade(selected),Speed(selected),true));
                 Set(titleCore,"DX9Version",patchVersion);
-                string expected="98柔情原版 "+patchVersion.Split(' ')[0]+"-"+Label(Fade(selected),Speed(selected));
+                string expected="98柔情原版 "+(patchVersion.StartsWith("1.7.2") ? "1.72" : patchVersion.Split(' ')[0])+"-"+Label(Fade(selected),Speed(selected));
                 Check(titleCore.GetGameVersion()==expected,"Caption hides package revision and preserves release and timing mode");
                 var titleRecord=new HObj(titleCore.GetRStr());
                 Check(titleRecord.GetValue<string>("GameVersion")==expected,"Record uses the same player-facing caption");
@@ -663,11 +741,13 @@ internal static class V165TimingBehavior
             foreach(string contentName in new[]{"完全随机物品","完全隨機物品","全随机技能","全隨機技能","完全随机物品+全随机技能"})
             {
                 var random=Core(0);Attach(random,Mode(1200,9,false,"pal98.package.random",name:contentName));
-                Check(random.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Random labels do not lengthen caption");
+                string expectedRandom="98柔情原版 1.65－"+contentName+"&1.2秒&快走速&"+
+                    (culture=="zh-TW"?"玩法資訊讀取中":"玩法信息读取中");
+                Check(random.GetGameVersion()==expectedRandom,"Random content names remain visible in caption");
                 var randomRecord=new HObj(random.GetRStr());
                 Check(randomRecord.GetValue<string>("ContentDisplayName")==contentName&&randomRecord.GetValue<string>("ContentId")=="pal98.package.random","Compact caption preserves record identity");
                 Set(random,"PalProcess",null);Set(random,"PID",-1);
-                Check(random.GetGameVersion()=="98柔情原版 1.65-1.2秒&快走速","Completed random caption stays compact");
+                Check(random.GetGameVersion()==expectedRandom,"Completed random caption retains content identity");
             }
             Check((string)Field(Snapshot(nonformal),"TimingModeLabel")=="1.2秒&快走速","Fourth combination in overlay");
             string menu=TimerCore.GetCoreDisplayName("Pal98Dx9Fast800Speed");
@@ -745,6 +825,7 @@ internal static class V165TimingBehavior
             Scenario("snapshot_contract",SnapshotContract);Scenario("live_reader",LiveReader);Scenario("category_matrix",CategoryMatrix);
             Scenario("cross_imports",CrossImports);Scenario("content_imports",ContentImports);Scenario("run_identity",RunIdentity);
             Scenario("legacy_records",LegacyRecords);Scenario("storage_isolation",StorageIsolation);
+            Scenario("automatic_local_timing",AutomaticLocalTiming);
             Scenario("storage_transactions",StorageTransactions);
             Scenario("clear_prediction",ClearPrediction);
             Scenario("startup_dependencies",StartupDependencyWarnings);

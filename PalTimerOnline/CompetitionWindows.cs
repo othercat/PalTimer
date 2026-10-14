@@ -188,6 +188,15 @@ namespace Pal98Timer
             Invalidate();
         }
         private static string Rank(int? value) => value.HasValue && value.Value > 0 ? "第 " + value.Value + " 名" : "未知";
+        private static string Score(long total, long? ranking, long? restart, bool includeRestart)
+        {
+            long milliseconds = ranking ?? total;
+            var time = TimeSpan.FromMilliseconds(milliseconds);
+            string text = (milliseconds / 3600000).ToString(System.Globalization.CultureInfo.InvariantCulture) + time.ToString(@"\:mm\:ss\.fff");
+            return text + (includeRestart && !restart.HasValue ? "（未记录重启时间）" : "");
+        }
+        private static string BestScore(CompetitionBest best, bool includeRestart) => best == null ? "" :
+            " " + Score(best.total_ms, best.ranking_ms, best.restart_ms, includeRestart);
         internal static string TextFor(CompetitionView value)
         {
             var reply = value.Reply; var node = reply == null ? null : reply.node; var overall = reply == null ? null : reply.overall;
@@ -196,9 +205,12 @@ namespace Pal98Timer
                 "当前节点：" + (string.IsNullOrEmpty(value.NodeName) ? "尚未完成节点" : value.NodeName) + "\n" +
                 "完整最佳线：" + Rank(node == null || node.best_complete_line == null ? null : node.best_complete_line.rank) + "    单节点最佳：" + Rank(node == null || node.personal_checkpoint_best == null ? null : node.personal_checkpoint_best.rank) + "\n" +
                 (reply?.board == "hardcore" ? "硬核总榜：" : "综合总榜：") + Rank(overall == null || overall.personal_best == null ? null : overall.personal_best.rank) +
-                "    本次通关：" + Rank(overall == null || overall.submitted_run == null || !overall.submitted_run.ranked ? null : overall.submitted_run.rank) + "\n" +
+                BestScore(overall?.personal_best, reply?.include_restart_time == true) +
+                "    本次通关：" + Rank(overall == null || overall.submitted_run == null || !overall.submitted_run.ranked ? null : overall.submitted_run.rank) +
+                BestScore(overall?.submitted_run, reply?.include_restart_time == true) + "\n" +
                 (string.IsNullOrEmpty(reply?.custom_competition_id) ? "硬核领先：" : "硬核前三：") + (reply?.hardcore_top == null || reply.hardcore_top.Length == 0 ? "未知" :
-                    string.Join("；", reply.hardcore_top.Select(p => p.rank + ". " + p.display_name + " " + TimeSpan.FromMilliseconds(p.total_ms).ToString(@"hh\:mm\:ss\.fff")))) + "\n" +
+                    string.Join("；", reply.hardcore_top.Select(p => p.rank + ". " + p.display_name + " " + Score(p.total_ms, p.ranking_ms, p.restart_ms, reply.include_restart_time)))) + "\n" +
+                (reply?.include_restart_time == true ? "总成绩计入重启时间\n" : "") +
                 "排名以服务器最近返回的结果为准";
         }
         private void RefreshView()

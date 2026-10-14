@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Reflection;
@@ -409,7 +410,7 @@ internal static class GameplayBehavior
         string relay=(string)typeof(Pal98Dx9Automatic).GetProperty("RelayFileName",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(auto);
         Check(Path.GetDirectoryName(relay)==Path.GetDirectoryName(auto.ActiveBestPath),"relay and best use same identity directory");
         try { Call(auto,"ValidateTimerImport","{\"TimelineIdentity\":\"other\"}");throw new Exception("different relay accepted"); }
-        catch(TargetInvocationException error) { Check(error.InnerException is InvalidDataException,"different timeline relay rejected before restore"); }
+        catch(TargetInvocationException error) { Check(error.InnerException is InvalidDataException,"incomplete relay structure rejected before restore"); }
         auto.Reset();Set(auto,"startedWithoutIdentity",true);Call(auto,"SelectIdentity",a,false);Check(Get(auto,"identity")==null,"late facts cannot certify an unknown start");
         auto.Unload();legacy.Unload();
     }
@@ -424,8 +425,8 @@ internal static class GameplayBehavior
         Check(core.CheckPoints[0].Best==TimeSpan.FromSeconds(12),"imported reference round-trips times");
         var reference=new HObj(File.ReadAllText(core.ActiveBestPath));
         Check(reference.GetValue<bool>("ReferenceTimeline")&&!reference.GetValue<bool>("GameplayVerified"),"import is reference only, never certified result");
-        try {Call(core,"ValidateTimerImport",reference.ToJson());throw new Exception("reference accepted");}
-        catch(TargetInvocationException e){Check(e.InnerException is InvalidDataException,"reference cannot restore a certified relay");}
+        Call(core,"ValidateTimerImport",reference.ToJson());
+        Check(!reference.GetValue<bool>("GameplayVerified"),"local reference can relay without granting certification");
         core.SaveBest();string ordinaryPath=core.ActiveBestPath;string saved=File.ReadAllText(ordinaryPath);
         Check(!new HObj(saved).HasValue("ReferenceTimeline"),"saving actual run replaces reference marker");
         var reopened=new StorageAutomaticCore();Call(reopened,"InitCheckPoints");Call(reopened,"SelectIdentity",facts,false);Thread.Sleep(100);reopened.RefreshBestReference();
@@ -543,10 +544,11 @@ internal static class GameplayBehavior
         foreach (string label in new[] { "抽卡", "随机物品", "随机技能", "爱无限", "村村通" })
             Check(longTitle.Contains(label), "merged caption retains " + label);
         Set(core, "selected", null);
-        Check(core.GetGameVersion().EndsWith("&未归类"), "pending gameplay is not presented as ordinary mode");
+        Check(core.GetGameVersion().EndsWith("&玩法信息读取中"), "pending gameplay is not presented as ordinary mode");
         Set(core, "selected", facts); Set(core, "timingRunInvalidated", true);
-        Check(core.GetScoreValidationError().Length != 0 && core.GetGameVersion() == core.GetScoreValidationError(),
-            "existing timing warning takes priority over gameplay caption");
+        Check(core.GetScoreValidationError().Length != 0 && core.GetGameVersion().Contains("玩法未核验") &&
+            core.GetGameVersion().Contains("本地计时可用") && !core.GetGameVersion().Contains("计时暂停"),
+            "automatic timing qualification warning stays visible without claiming a local pause");
 
         foreach (var size in new[] { new Size(346, 916), new Size(270, 200), new Size(560, 916) })
         using (var panel = new Panel { Size = size })
@@ -614,9 +616,82 @@ internal static class GameplayBehavior
             bitmap.Save(filename, ImageFormat.Png);
         }
     }
+    static readonly HashSet<string> PackageCaptions = new HashSet<string>(StringComparer.Ordinal);
+    static Dictionary<string,object> PackageDescriptor(Stream stream)
+    {
+        using (var zip = new ZipArchive(stream, ZipArchiveMode.Read, true)) {
+            var descriptor = zip.GetEntry("palmod/profile/game-profile.json");
+            if (descriptor != null) using (var reader = new StreamReader(descriptor.Open(), Encoding.UTF8))
+                return CompetitionProtocol.Json().Deserialize<Dictionary<string,object>>(reader.ReadToEnd());
+            // The standalone Zhen-Wuqiang delivery contains the content ZIP.
+            var nested = zip.GetEntry("patches/pal98fix-classic-v5-wuqiangplus.zip");
+            if (nested == null) throw new InvalidDataException("Missing content descriptor: " + stream);
+            using (var source = nested.Open()) using (var bytes = new MemoryStream()) {
+                source.CopyTo(bytes); bytes.Position = 0; return PackageDescriptor(bytes);
+            }
+        }
+    }
+    static void PackagePresentation(string filename)
+    {
+        Dictionary<string,object> descriptor;
+        using (var stream = File.OpenRead(filename)) descriptor = PackageDescriptor(stream);
+        string id = (string)descriptor["profile_id"], name = (string)descriptor["display_name"],
+            version = (string)descriptor["profile_version"], leaf = Path.GetFileName(filename);
+        var expected = new Dictionary<string,string> {
+            {"5500cuncun-0.5.zip", "村村通"}, {"pal98fix-classic-v5.zip", "原版"},
+            {"pal98fix-classic-v5-wuqiang.zip", "吴强"}, {"suiji-v0.2.zip", "随机"},
+            {"suiji-wuqiang-v0.2.zip", "吴强+随机物品"},
+            {"pal98fix-classic-v5-wuqiangplus-story-items.zip", "甄吴强"},
+            {"甄吴强版本_新增内容包_20261001.zip", "甄吴强"}
+        };
+        if (!expected.ContainsKey(leaf)) throw new InvalidDataException("No independent expected caption for " + leaf);
+        var automatic = new Pal98Dx9Automatic(null);
+        var legacy = new 仙剑98柔情DX9(null);
+        string route = CompetitionProtocol.RouteHash(new[] { "鬼将军", "拜月" });
+        string first = null;
+        try {
+            foreach (var speed in new[] { new[] { 1200, 10 }, new[] { 800, 10 }, new[] { 800, 9 }, new[] { 1200, 9 } })
+            foreach (bool covered in new[] { false, true })
+            foreach (string modifier in new[] { "", "random_skills.enabled", "love.enabled", "future.extra_mode" }) {
+                var facts = Snapshot(route); facts.content_id = id; facts.covered = covered;
+                facts.fade_ms = speed[0]; facts.map_speed_ticks = speed[1];
+                if (modifier.Length != 0) facts.rules[modifier] = "1";
+                facts.rules_sha256 = Rules(facts.rules);
+                string before = CompetitionProtocol.Json().Serialize(facts);
+                var mode = new RuntimeTimingMode(speed[0], speed[1], leaf == "pal98fix-classic-v5.zip",
+                    id, version, new string('b', 64), name);
+                Set(automatic, "selected", facts);
+                Set(Get(legacy, "onlineGameplayReader"), "current", facts);
+                foreach (var core in new 仙剑98柔情DX9[] { automatic, legacy }) {
+                    Set(core, "DX9Version", "1.7.2.2"); Set(core, "lastConfirmedTimingMode", mode);
+                    string caption = core.GetGameVersion();
+                    if (first == null) first = caption;
+                    Check(caption.Contains(expected[leaf]) && !caption.Contains("未归类"),
+                        "package caption " + leaf + "/" + core.CoreName + "/" + speed[0] + "/" + speed[1] + "/" + covered + "/" + modifier);
+                    Check(caption.Contains(speed[0] == 800 ? "0.8秒" : "1.2秒") &&
+                        caption.Contains(speed[1] == 9 ? "快走速" : "普通走速"), "caption keeps actual fade and walk speed");
+                    if (modifier == "random_skills.enabled") Check(caption.Contains("随机技能"), "enabled random skills stay visible");
+                    if (modifier == "love.enabled") Check(caption.Contains("爱无限"), "other gameplay combination stays visible");
+                    Set(core, "lastConfirmedTournamentDisplayName", "测试赛事专用标题");
+                    string tournament = core.GetGameVersion();
+                    Check(tournament.StartsWith("测试赛事专用标题", StringComparison.Ordinal) &&
+                        (core != automatic || tournament == "测试赛事专用标题－" + facts.Label(false)),
+                        "competition caption retains its independent naming path");
+                    Set(core, "lastConfirmedTournamentDisplayName", "");
+                }
+                Check(before == CompetitionProtocol.Json().Serialize(facts), "display does not grant coverage or rewrite saved rules");
+                Set(automatic, "selected", null); Set(Get(legacy, "onlineGameplayReader"), "current", null);
+                foreach (var core in new 仙剑98柔情DX9[] { automatic, legacy })
+                    Check(core.GetGameVersion().Contains(expected[leaf]) && !core.GetGameVersion().Contains("未归类"),
+                        "runtime content is named before gameplay frame arrives");
+            }
+            Check(PackageCaptions.Add(first) || expected[leaf] == "甄吴强", "content captions stay distinct except the two named WuqiangPlus variants: " + leaf);
+        } finally { automatic.Unload(); legacy.Unload(); }
+    }
     [STAThread]
     static int Main(string[] args) { try { Decoder();Identity();Cores();Storage();LiveRanking();RestartTimelineAndOnline();OrdinaryRestart();ImmediateStart();ContinuousStealPresentation();Presentation();
         for(int i=0;i<args.Length;++i) {
+            if(args[i]=="--package") { PackagePresentation(args[++i]);continue; }
             if(args[i]=="--startup") { NativeStartupRestart(args[++i],args[++i]);continue; }
             var decoded=NativeFrame(args[i]);Check(decoded!=null&&decoded.covered,"actual native snapshot validates in managed reader: "+Path.GetDirectoryName(args[i]));Check(decoded.ranking!=null&&decoded.ranking.Valid(decoded.Identity),"actual native online ranking validates independently of local timeline");
         }

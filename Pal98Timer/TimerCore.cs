@@ -223,6 +223,36 @@ namespace Pal98Timer
                 return new TimeSpan(0, 0, 0, 0, 0);
             }
         }
+        // A relay carries local progress, not proof of a leaderboard category.
+        // Validate the complete timer state before publishing any save files.
+        protected void ValidateRelayTimerState(string json)
+        {
+            var data = new HObj(json);
+            Action<string> time = value => {
+                var match = System.Text.RegularExpressions.Regex.Match(value ?? "",
+                    @"\A([0-9]+):([0-5][0-9]):([0-5][0-9])(?:\.([0-9]{1,3}))?\z");
+                int hours;
+                if (!match.Success || !int.TryParse(match.Groups[1].Value, out hours))
+                    throw new InvalidDataException("接力计时记录的时间格式无效。");
+                try { new TimeSpan(0, hours, int.Parse(match.Groups[2].Value),
+                    int.Parse(match.Groups[3].Value), match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 0); }
+                catch (ArgumentException) { throw new InvalidDataException("接力计时记录的时间越界。"); }
+            };
+            foreach (string field in new[] { "Current", "CheckPoints", "Step" })
+                if (!data.HasValue(field)) throw new InvalidDataException("接力计时记录缺少必要字段：" + field);
+            time(data.GetValue<string>("Current"));
+            var points = data.GetValue<HObj>("CheckPoints");
+            if (points == null || CheckPoints == null || points.Count != CheckPoints.Count)
+                throw new InvalidDataException("接力计时记录的节点结构与当前游戏内核不兼容。");
+            int step = data.GetValue<int>("Step");
+            if (step < -1 || step > points.Count) throw new InvalidDataException("接力计时记录的当前节点越界。");
+            for (int i = 0; i < points.Count; ++i) time(points.GetValue<HObj>(i).GetValue<string>("time"));
+            foreach (string field in new[] { "BeeHouse", "BeeSheet", "FireWorm", "DragonSword", "BloodLink", "NightCloth", "EarthPaper", "CuArmor" })
+                data.GetValue<short>(field);
+            if (data.HasValue("TotalMonsterCount")) data.GetValue<int>("TotalMonsterCount");
+            if (data.GetValue<string>("NamedBattles") == null) throw new InvalidDataException("接力计时记录缺少战斗记录。");
+        }
+
         /// <summary>
         /// 跳转到第n个时间节点
         /// </summary>
@@ -615,6 +645,47 @@ namespace Pal98Timer
             else idle.Stop();
         }
 
+        protected bool restartTimeKnown = true;
+        internal virtual long? RestartMilliseconds => null;
+        protected long? ReadPalRestartMilliseconds(PTimer idle) => restartTimeKnown
+            ? (long?)(idle.CurrentTSOnly.Ticks / TimeSpan.TicksPerMillisecond) : null;
+
+        // Preserve unknown imported history even when a legacy Idle display is present.
+        // The integer field also avoids the old display string wrapping at 24 hours.
+        protected void RestorePalRestartIdle(PTimer idle, HObj record)
+        {
+            object value;
+            long milliseconds = 0;
+            restartTimeKnown = false;
+            if (record.ToDic().TryGetValue("RestartMilliseconds", out value))
+            {
+                if ((value is int || value is long) && Convert.ToInt64(value) >= 0 &&
+                    Convert.ToInt64(value) <= TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerMillisecond)
+                { milliseconds = Convert.ToInt64(value); restartTimeKnown = true; }
+            }
+            bool hasNumericField = record.ToDic().ContainsKey("RestartMilliseconds");
+            if (!restartTimeKnown && record.ToDic().TryGetValue("Idle", out value) && value is string)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match((string)value, @"\A([0-9]+):([0-5][0-9]):([0-5][0-9])(?:\.([0-9]{1,3}))?\z");
+                long hours;
+                if (match.Success && long.TryParse(match.Groups[1].Value, out hours) &&
+                    hours <= TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerMillisecond / 3600000)
+                {
+                    long parsed = hours * 3600000 + int.Parse(match.Groups[2].Value) * 60000 +
+                        int.Parse(match.Groups[3].Value) * 1000 + (match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 0);
+                    if (parsed <= TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerMillisecond)
+                    {
+                        milliseconds = parsed;
+                        // Unknown historical totals stay unknown, but retain any
+                        // locally observed portion for subsequent save/load.
+                        restartTimeKnown = !hasNumericField;
+                    }
+                }
+            }
+            idle.Stop();
+            idle.SetTS(TimeSpan.FromTicks(milliseconds * TimeSpan.TicksPerMillisecond));
+        }
+
         /// <summary>
         /// Resume timing and check the current route, without restarting a completed run.
         /// Keep the main watch independent of the final split (manual/imported values may differ).
@@ -927,7 +998,7 @@ namespace Pal98Timer
         /// </summary>
         private long scoreRunSequence;
         public long ScoreRunSequence { get { return System.Threading.Interlocked.Read(ref scoreRunSequence); } }
-        private bool competitionImportedRun;
+        protected bool competitionImportedRun;
         protected void AdvanceScoreRunSequence(bool imported = false)
         {
             competitionImportedRun = imported;
@@ -990,7 +1061,7 @@ namespace Pal98Timer
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
             competitionProcess = process; competitionMetadataPoll = now + 5 * Stopwatch.Frequency;
             form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
-                Step = step, TotalMilliseconds = totalMilliseconds, GameTitle = GetGameVersion(),
+                Step = step, TotalMilliseconds = totalMilliseconds, RestartMilliseconds = RestartMilliseconds, GameTitle = GetGameVersion(),
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
                 DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });
         }
@@ -999,6 +1070,7 @@ namespace Pal98Timer
         public virtual void Reset()
         {
             AdvanceScoreRunSequence();
+            restartTimeKnown = true;
             AAction = "";
             IsUIPause = false;
             MT.Reset();

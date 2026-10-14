@@ -80,7 +80,8 @@ internal static class OnlineModuleLoaderBehavior
             new[] { "1.7.1.1", "1.7.1.1", "3.37.7.17" },
             new[] { "1.7.2.0", "1.7.2.0", "3.37.8.0" },
             new[] { "1.7.3.0", "1.7.3.0", "3.37.9.0" },
-            new[] { "1.7.2.1", "1.7.2.1", "3.37.9.0" }
+            new[] { "1.7.2.1", "1.7.2.1", "3.37.9.0" },
+            new[] { "1.7.2.2", "1.7.2.2", "3.38.2.0" }
         };
         foreach (var v in versions) {
             foreach (var assembly in new[] { host, online })
@@ -120,6 +121,31 @@ internal static class OnlineModuleLoaderBehavior
         File.WriteAllText(path, "{}"); Rejected(online, unlocked, "Malformed live configuration accepted.");
         Console.WriteLine("PASS mixed/future/legacy/unlocked/disabled/malformed configuration boundaries");
     }
+    private static void RestartBridge(IPalTimerOnlineV1 module)
+    {
+        var host = typeof(IPalTimerOnlineV1).Assembly;
+        var observationType = host.GetType("Pal98Timer.CompetitionObservation", true);
+        var observation = Activator.CreateInstance(observationType, true);
+        var fields = BindingFlags.Instance | BindingFlags.NonPublic;
+        observationType.GetField("Splits", fields).SetValue(observation, Array.CreateInstance(host.GetType("Pal98Timer.CompetitionSplit", true), 0));
+        foreach (long? value in new long?[] { null, 0, 1234567, 86400000, 86400001 }) {
+            observationType.GetField("RestartMilliseconds", fields).SetValue(observation, value);
+            var snapshot = (OnlineSnapshotV1)Call(host, "GForm", "CreateCompetitionSnapshot", observation);
+            if (snapshot.Extensions.ContainsKey("restart_ms") != value.HasValue ||
+                value.HasValue && snapshot.Extensions["restart_ms"] != value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                throw new Exception("Host restart extension changed unknown/zero or culture.");
+            var decoded = Call(module.GetType().Assembly, "OnlineModule", "ReadSnapshot", snapshot);
+            if ((long?)Property(decoded, "RestartMilliseconds") != value) throw new Exception("API 1 restart bridge lost its value.");
+        }
+        var malformed = new OnlineSnapshotV1("fixture", "PAL98DX9", null, null, null, null, null,
+            null, null, null, 0, 1200, 10, 0, DateTimeOffset.UtcNow, false, true,
+            new OnlineSplitV1[0], new Dictionary<string,string> { ["restart_ms"] = "1.5" });
+        bool rejected = false;
+        try { Call(module.GetType().Assembly, "OnlineModule", "ReadSnapshot", malformed); }
+        catch (TargetInvocationException error) { if (error.InnerException is ArgumentException) rejected = true; else throw; }
+        if (!rejected) throw new Exception("Malformed restart extension became zero.");
+        Console.WriteLine("PASS actual host/API 1/module restart bridge: unknown, zero, measured, malformed");
+    }
     [STAThread]
     static int Main(string[] args)
     {
@@ -137,6 +163,7 @@ internal static class OnlineModuleLoaderBehavior
                 var module = (IPalTimerOnlineV1)lease.GetType().GetField("Module", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(lease);
                 if (module.ApiVersion != 1) throw new Exception("Wrong API.");
                 ConfigurationReaders(module);
+                RestartBridge(module);
                 bool writeRejected = false;
                 try { using (File.Open("PalTimerOnline.dll", FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { } }
                 catch (IOException) { writeRejected = true; }

@@ -57,17 +57,51 @@ namespace Pal98Timer
             policy == "battle-shared-continuous-70-exact-v4" ? "A" : "";
         internal string CompactTimingLabel => (fade_ms == 800 ? "0.8" : "1.2") +
             (map_speed_ticks == 9 ? "+快走速" : "+普通走速") + DisplayCodes;
-        internal string Label(bool hardcore)
+        internal string Label(bool hardcore, string contentName = null, bool showCoverage = true)
         {
             var parts = DisplayCodes.Length != 0 ? new List<string> { CompactTimingLabel } :
                 new List<string> { fade_ms == 800 ? "0.8秒" : "1.2秒", map_speed_ticks == 9 ? "快走速" : "普通走速" };
+            if (!string.IsNullOrEmpty(contentName)) parts.Insert(0, contentName);
             if (family == "drawcard") parts.Add("抽卡");
             foreach (var pair in new[] { new[] { "random_items", "随机物品" }, new[] { "wuqiang", "吴强" },
                 new[] { "random_skills.enabled", "随机技能" }, new[] { "love.enabled", "爱无限" }, new[] { "village", "村村通" } })
-                if (rules != null && rules.TryGetValue(pair[0], out string value) && value == "1") parts.Add(pair[1]);
+                if (rules != null && rules.TryGetValue(pair[0], out string value) && value == "1" &&
+                    (string.IsNullOrEmpty(contentName) || contentName.IndexOf(pair[1], StringComparison.Ordinal) < 0)) parts.Add(pair[1]);
             parts.Add(hardcore ? "硬核模式" : "普通模式");
-            if (!covered) parts.Add("未归类");
+            if (showCoverage && !covered) parts.Add("未归类");
             return string.Join("&", parts);
+        }
+    }
+    internal static class GameplayPresentation
+    {
+        // TimingMode's name belongs to the attached runtime's effective Profile.
+        // A package update need not be in the old ranking catalog to have a name.
+        // This presentation path must never change covered, rules or identities.
+        internal static string ContentName(RuntimeTimingMode mode)
+        {
+            if (mode?.HasContentIdentity != true) return "";
+            // The historical no-wall repack retained the original package's
+            // display_name. Its stable Profile ID distinguishes it even when
+            // an updated descriptor is absent from the old gameplay catalog.
+            if (mode.ContentId == "pal98.repack.271257f3ddd47e39bb7fa2f052f89f4d.content")
+                return Dx9TimingCategory.Text("吴强", "吳強");
+            if (mode.ContentId == "pal98.package.suiji-v0.1.single-wuqiang.global-skills")
+                return Dx9TimingCategory.Text("吴强+随机物品", "吳強+隨機物品");
+            if (mode.ContentId == "pal98.repack.2106279cd1e55b3ad9ed05fe2020ed6e.content" ||
+                mode.ContentId == "pal98.repack.38f85d4f4aba011695c7d8cea7f4c3f8.content")
+                return Dx9TimingCategory.Text("甄吴强", "甄吳強");
+            if (mode.OfficialSpeedrun) return "";
+            string name = string.IsNullOrWhiteSpace(mode.DisplayName) ? mode.ContentId : mode.DisplayName;
+            return new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        }
+        internal static string Label(GameplaySnapshot snapshot, RuntimeTimingMode mode, bool hardcore)
+        {
+            string name = ContentName(mode);
+            if (snapshot != null) return snapshot.Label(hardcore, name, false);
+            // Content/timing facts may arrive before the optional gameplay frame.
+            // Keep the known package visible without guessing its enabled rules.
+            return (name.Length == 0 ? "" : name + "&") + Dx9TimingCategory.ModeLabel(mode) +
+                "&" + Dx9TimingCategory.Text("玩法信息读取中", "玩法資訊讀取中");
         }
     }
     internal static class TimelineIdentity

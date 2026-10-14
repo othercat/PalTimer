@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [string[]]$NativeSnapshotFile, [string]$StartupSnapshotDirectory, [string]$PrematureStartupFrame)
+param([switch]$SkipBuild, [string[]]$NativeSnapshotFile, [string]$StartupSnapshotDirectory, [string]$PrematureStartupFrame, [string[]]$ContentPackageFile)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $repo ('artifacts\gameplay-behavior-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
@@ -22,6 +22,7 @@ $references = @($project.Project.ItemGroup.Reference | Where-Object { $_.Include
 })
 $runtime = Join-Path $repo 'Pal98Timer\bin\x64\Release'
 $references += '/reference:System.Core.dll'
+$references += '/reference:System.IO.Compression.dll'
 $references += '/reference:' + (Join-Path $runtime 'TimerPluginBase.dll')
 $exe = Join-Path $out 'GameplayBehavior.exe'
 & $csc /nologo /noconfig /target:exe /platform:x64 /main:GameplayBehavior "/out:$exe" $references $sources (Join-Path $PSScriptRoot 'gameplay_behavior.cs') *> (Join-Path $out 'host-build.log')
@@ -31,6 +32,7 @@ Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination
 Copy-Item -LiteralPath (Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe') -Destination $out
 $hostArgs = @()
 if ($NativeSnapshotFile) { $hostArgs += (Resolve-Path -LiteralPath $NativeSnapshotFile).Path }
+foreach ($package in $ContentPackageFile) { $hostArgs += '--package', (Resolve-Path -LiteralPath $package).Path }
 if ($StartupSnapshotDirectory) {
     if (!$PrematureStartupFrame) { throw 'A pre-fix startup frame is required for the negative control' }
     $hostArgs += '--startup', (Resolve-Path -LiteralPath $StartupSnapshotDirectory).Path, (Resolve-Path -LiteralPath $PrematureStartupFrame).Path
@@ -47,6 +49,7 @@ $receipt = [ordered]@{
     nativeSnapshotSha256=$(if ($NativeSnapshotFile) { (Get-FileHash -LiteralPath $NativeSnapshotFile).Hash } else { $null });
     nativeStartupDirectory=$StartupSnapshotDirectory;
     prematureStartupSha256=$(if ($PrematureStartupFrame) { (Get-FileHash -LiteralPath $PrematureStartupFrame).Hash } else { $null });
+    contentPackageHashes=@(if ($ContentPackageFile) { $ContentPackageFile | ForEach-Object { Get-FileHash -LiteralPath $_ | Select-Object Path,Hash } });
     sourceHashes=@($sources | ForEach-Object { [ordered]@{path=$_; sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash} });
     results=(Join-Path $out 'result.log')
 }

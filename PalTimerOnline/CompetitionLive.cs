@@ -28,12 +28,12 @@ namespace Pal98Timer
     {
         internal string Id = "", Detail = "正在连接联机服务器";
         internal long AckTick;
-        internal bool Failed;
+        internal bool Failed, CompatibilityMode;
         internal string Caption(bool enabled, long now)
         {
             if (!enabled) return "";
             if (AckTick > 0 && now >= AckTick && now - AckTick < Stopwatch.Frequency * 20)
-                return " [已连接:" + Id + "]";
+                return " [" + (CompatibilityMode ? "不完全连接:" : "已连接:") + Id + "]";
             return Failed || AckTick > 0 ? " [连接失败]" : " [连接中]";
         }
     }
@@ -74,6 +74,7 @@ namespace Pal98Timer
         public string route_sha256 { get; set; }
         public string game_title { get; set; }
         public long elapsed_ms { get; set; }
+        public long? restart_ms { get; set; }
         public string current_checkpoint { get; set; }
         public bool hardcore { get; set; }
         public CompetitionSplit[] splits { get; set; }
@@ -126,7 +127,11 @@ namespace Pal98Timer
                 if (warning != null) return warning.Caption.Trim() + " · " + warning.Message;
                 var state = liveConnection;
                 string caption = state.Caption(true, Stopwatch.GetTimestamp()).Trim();
-                if (caption.StartsWith("[已连接:", StringComparison.Ordinal)) return caption + " · 实时进度已连接；通关成绩按原规则提交";
+                if (caption.StartsWith("[已连接:", StringComparison.Ordinal) || caption.StartsWith("[不完全连接:", StringComparison.Ordinal))
+                    return caption + " · 实时协议 " + LiveProtocol +
+                        (state.CompatibilityMode ? "（基础兼容）" : " + " + CompetitionProtocol.RestartTimeFeature) +
+                        "；成绩协议 " + (serverSupportsV2 ? CompetitionProtocol.OnlineV2 : CompetitionProtocol.Online + "（新成绩保留本地待服务器升级）") +
+                        (state.CompatibilityMode ? "；服务器未声明重启耗时扩展，重启耗时仍保留本地，兼容上传不含此字段" : "；支持重启耗时上传，是否计入排名由服务器决定");
                 return caption + (state.Id.Length == 0 ? "" : " · 联机 ID：" + state.Id) + " · " +
                     (state.AckTick > 0 && !state.Failed ? "心跳已过期，正在后台重连" : state.Detail);
             }
@@ -154,7 +159,7 @@ namespace Pal98Timer
         private void LiveFailure(string detail, int status, bool force = false)
         {
             var old = liveConnection;
-            liveConnection = new CompetitionLiveConnection { Id = old.Id, AckTick = force ? 0 : old.AckTick, Failed = true, Detail = detail };
+            liveConnection = new CompetitionLiveConnection { Id = old.Id, AckTick = force ? 0 : old.AckTick, Failed = true, Detail = detail, CompatibilityMode = old.CompatibilityMode };
         }
         private void LiveRetry(CompetitionHttpResult response, string detail)
         {
@@ -263,7 +268,9 @@ namespace Pal98Timer
             bool hasClock = clock != null && observation != null && clock.Token == token;
             bool fresh = hasClock && Stopwatch.GetTimestamp() - clock.ObservedTick < Stopwatch.Frequency * 4;
             bool hasGame = !gameManaged || observedGame != null;
-            string state = !hasGame ? "no_game" : observation == null ? "waiting" : observation.Finished ? "finished" :
+            long? restart = observation?.RestartMilliseconds;
+            bool restartInRange = !restart.HasValue || restart >= 0 && restart <= CompetitionProtocol.MaxMilliseconds;
+            string state = !hasGame ? "no_game" : observation == null ? "waiting" : !restartInRange ? "invalid" : observation.Finished ? "finished" :
                 !string.IsNullOrEmpty(observation.ValidationError) || hasClock && !fresh ? "invalid" : fresh && clock.Running ? "running" :
                 (hasClock ? clock.Elapsed : observation.TotalMilliseconds) > 0 ? "paused" : "waiting";
             return new CompetitionLiveObservation {
@@ -273,6 +280,10 @@ namespace Pal98Timer
                 route_sha256 = observation == null ? null : route,
                 game_title = LiveText(observation?.GameTitle ?? observation?.GameVersion, 240),
                 elapsed_ms = Math.Max(0, Math.Min(86400000, hasClock ? clock.Elapsed : observation?.TotalMilliseconds ?? 0)),
+                // Do not turn an over-capacity observation into a valid finish or
+                // break the live lease with repeated 422s. Its original value is
+                // still retained in the locally rejected completed record.
+                restart_ms = restartInRange ? observation?.RestartMilliseconds : null,
                 current_checkpoint = observation == null || observation.Step < 0 || observation.Splits.Length == 0 ? "" :
                     CompetitionProtocol.CheckpointId(observation.Splits[Math.Min(observation.Step, observation.Splits.Length - 1)].checkpoint_id),
                 hardcore = observation?.Hardcore?.requested == true,
@@ -317,8 +328,11 @@ namespace Pal98Timer
             string token = Volatile.Read(ref activeToken);
             var snapshot = CaptureLiveObservation(); var compare = LiveComparison(snapshot);
             var session = liveSession; long sequence = ++liveSequence;
+            bool includeRestartTime = serverSupportsRestartTime;
+            var wireObservation = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(CompetitionProtocol.Json().Serialize(snapshot));
+            if (!includeRestartTime) wireObservation.Remove("restart_ms");
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
-                session_id = session.session_id, session_token = session.session_token, sequence, observation = snapshot, compare });
+                session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
             var response = await transport.Send("POST", cfg.Endpoint + "/live/updates", credential.Hwid, credential.Secret, body, 3000, stop.Token).ConfigureAwait(false);
             if (!LiveCurrent(epoch, cfg.Server)) return;
             CompetitionLiveAck ack = null;
@@ -328,7 +342,7 @@ namespace Pal98Timer
             { LiveRetry(response, "实时心跳未获确认，正在后台重连"); return; }
             liveFailures = 0; nextLiveAttemptTick = 0;
             nextLiveDueTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
-            liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接" };
+            liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接", CompatibilityMode = !includeRestartTime };
             if (revision != Interlocked.Read(ref liveRevision)) { nextLiveDueTick = 0; return; }
             if (serial == Interlocked.Read(ref querySerial) && token == Volatile.Read(ref activeToken))
                 AcceptLiveStandings(ack.standings, compare, epoch, serial, token);

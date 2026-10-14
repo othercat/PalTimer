@@ -100,7 +100,7 @@ namespace Pal98Timer
         }
         private sealed class ProfileResource { public string kind { get; set; } public string relative_path { get; set; } public string sha256 { get; set; } public long size_bytes { get; set; } }
         private sealed class ProfileDescriptor { public string schema { get; set; } public string profile_id { get; set; } public string profile_version { get; set; } public ProfileResource[] resource_set { get; set; } }
-        internal static bool ReadError(Exception e) => e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is FormatException ||
+        internal static bool ReadError(Exception e) => e is IOException || e is InvalidDataException || e is UnauthorizedAccessException || e is ArgumentException || e is FormatException ||
             e is InvalidOperationException || e is System.ComponentModel.Win32Exception || e is System.Security.SecurityException;
         internal static string ReadText(string path, int max)
         {
@@ -113,7 +113,11 @@ namespace Pal98Timer
         private static string HashBytes(byte[] bytes)
         { using (var sha = System.Security.Cryptography.SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); }
         internal static string PresetDigest(Preset p) => HashBytes(Encoding.UTF8.GetBytes(LocalTimelineConfiguration.Json().Serialize(new {
-            p.schema, p.id, p.name, p.producer_version, p.settings_contract, p.minimum_runtime, p.minimum_timer, p.files, p.tournament, p.dependencies })));
+            p.schema, p.id, p.name, p.producer_version, p.settings_contract, p.minimum_runtime, p.minimum_timer, p.files, p.tournament, p.dependencies })
+            // ConfigTool uses the Framework serializer; the timer's legacy JSON
+            // library leaves these four characters literal. Match the producer's
+            // bytes only for its checksum, without changing local timeline keys.
+            .Replace("&", "\\u0026").Replace("\u0085", "\\u0085").Replace("\u2028", "\\u2028").Replace("\u2029", "\\u2029")));
         internal static Preset Parse(string text)
         {
             var p = LocalTimelineConfiguration.Json().Deserialize<Preset>(text);
@@ -437,6 +441,13 @@ namespace Pal98Timer
             lock (sync) return current != null ? Task.FromResult(current) : reading ?? Task.FromResult<LocalTimelineConfiguration>(null);
         }
         internal string Error { get { lock (sync) return error; } }
+        internal static LocalTimelineConfiguration CompletedValue(Task<LocalTimelineConfiguration> task)
+        {
+            // A local reference is optional. Observe a failed task without
+            // allowing its exception to escape into the gameplay timing loop.
+            if (task.IsFaulted) { var ignored = task.Exception; }
+            return task.Status == TaskStatus.RanToCompletion ? task.Result : null;
+        }
         internal void Observe(Process process, string route)
         {
             lock (sync) {
@@ -448,7 +459,7 @@ namespace Pal98Timer
                 var observed = reading;
                 observed.ContinueWith(finished => {
                     lock (sync) if (ReferenceEquals(reading, observed)) {
-                        current = finished.Result;
+                        current = CompletedValue(finished);
                         error = current == null ? "开局配置暂不可读，请选择本地配置归属。" : "";
                     }
                 }, TaskScheduler.Default);
