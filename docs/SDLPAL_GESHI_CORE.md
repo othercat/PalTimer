@@ -95,6 +95,8 @@ SAVE 必须收到对应 request ID 的成功确认，才复制已经关闭的 `2
 
 VS 2026 / MSBuild 18，Release|x64，.NET Framework 4.7.2。普通仓库布局继续从相邻 PALDLL_DX9/shared 读取 PalUserData.cs；worktree 用可覆盖属性，不提交本机绝对路径：
 
+完整发布构建还须在本地提供既有的 `Pal98Timer/TournamentIntegrityKey.txt`；EXE 与 Online 项目会共同嵌入该受信资源。它被 Git 忽略且排除于公开源码包，不能用开发密钥替代，也不能写入文档或日志。`PalSharedSourceRoot` 不提供此输入。缺少它时普通构建和 `--startup-check` 可能成功，但不能据此声称传统比赛锁读取已验证；冻结后必须另外运行 `tests/run_online_module_tests.ps1` 的真实组件检查，再签发/保留最终组合，签发后不重编产品。
+
 ```powershell
 & $msbuild .\Pal98Timer.sln /p:Configuration=Release /p:Platform=x64 "/p:PalSharedSourceRoot=$shared" /m /nodeReuse:false
 & .\tests\run_sdlpal_tests.ps1 -PalSharedSourceRoot $shared -NativeSnapshotFile $initialSnapshot,$loadedSnapshot
@@ -104,3 +106,11 @@ VS 2026 / MSBuild 18，Release|x64，.NET Framework 4.7.2。普通仓库布局�
 SDL 定向测试使用真实命名 MMF/控制确认、生产核心时钟及原生 JSON 快照，覆盖身份错误、过期/撕裂、事件环/逃跑、暂停/失焦、接力备份/epoch 和导入。物品检查验证实际窗口勾选、配置备份、生产 `OnTick` 到插件、OBS、云 payload 与 `CloudSessionRunner` 的路径，并验证两份原生存档的独立已核对总数：现金31265、80种/355件；现金9817、107种/458件。窗口截图由不激活的屏幕外测试宿主生成，不代表已完成整条游玩路线。竞赛测试只使用本机 Fake transport/auth，验证新配置榜单查询、未批准阻断、批准后的既有 challenge/upload 流程，并回归原有身份和上传行为；测试替身不进入产品程序集。
 
 发布验收还须成套签发 EXE/Online/Auth/公开登记文件，实测新游戏至结局、菜单 F9/F10/F11、OBS、两台实体电脑接力与个人云往返。上文分别记录已完成的发布件原生接力与 OBS 预览证据，不以单机结果替代尚未执行的环境。正式榜单的测试通过服务端预演/隔离测试环境完成，不上传合成跑次污染正式榜单。
+
+### 3.39.1 发布验收（Issue #20，2026-10-18）
+
+产品源码冻结 `2532f25`。完整发布输入构建的 103 项 SDL 回归通过；EXE/Online/Auth/公开登记重新签发后，7 项真实加载场景通过，包含八种已支持的比赛锁读取与篡改/依赖拒绝。新 EXE 的 `--startup-check` 返回 0。隔世 r3 和初次 r4 构建都没有嵌入上述比赛锁资源；不能沿用正式目录 3.38.2 的旧七项测试作为它们的证据。r5 已补齐 EXE 和 Online 的相同受信输入，未修改校验规则。
+
+r5 计时器 SHA-256 为 `8a1f3aeb717b4f89288da39d6e9eed371d0b7b312f9492bae4d6be646a330d24`。两份真实原生游戏接力的 20 项检查通过（`artifacts/native-relay-184bf462`），新增渲染状态/节点时间/区间比对；普通和源包存档均未改变。真实界面从标准文件对话框导入 83.456 秒、第一节点 Completed/20.123 秒：主窗口显示 1:23.45、20.12 和 `[0~1] 0:20.12`，保持暂停及辅助跑次标记，OBS 独立遮罩也正确显示时间和已完成节点。证据在 `artifacts/timer-ui-r5-issue20`；验收副本已退出，既有游戏窗口和玩家进度未操作。界面连接的是先前候选游戏，仅核验此次计时器导入显示，不代表整条路线或 OBS 软件重新采集。
+
+整包 `GeshiEasy-Speedrun-Win10-20261018-r5.zip` 为 303038452 字节，SHA-256 `105ea1d1c99609a5e0e34e273bc9a347e32135151f6de463828c9459a8c0cde3`。176 个文件、110 首 MP3、五份原存档、资源/和谐形象身份及签发组合审计通过；相对 r3 仅改变四个计时器发布文件与使用说明，游戏、SDL2、浏览器、改键工具和资源保持原字节。旧个人云与新榜单仍分别需要登记、批准和真实回执；本地验收没有向正式榜单上传合成成绩。
