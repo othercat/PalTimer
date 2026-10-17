@@ -138,6 +138,7 @@ namespace Pal98Timer
         public bool AcceptPal98BaseTitle = false;
         public int SnapshotIntervalMilliseconds = 500;
         public bool RoomExitSplit = false;
+        public string RequestedCore = "";
 
         public bool Enabled
         {
@@ -165,7 +166,15 @@ namespace Pal98Timer
             for (int i = 1; i < args.Length; i++)
             {
                 string arg = args[i];
-                if (arg == "--automation-snapshot-export" && i + 1 < args.Length)
+                if (arg == "--core")
+                {
+                    if (i + 1 >= args.Length) throw new ArgumentException("--core 需要核心名称");
+                    string name = args[++i];
+                    if (name == "sdlpal-geshi-easy") name = "SdlpalGeshi";
+                    if (!TimerCore.GetAllCores().Contains(name)) throw new ArgumentException("未知计时核心：" + name);
+                    parsed.RequestedCore = name;
+                }
+                else if (arg == "--automation-snapshot-export" && i + 1 < args.Length)
                 {
                     parsed.SnapshotExportPath = args[++i];
                 }

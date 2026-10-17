@@ -50,9 +50,21 @@ namespace Pal98Timer
             // the timer's own directory or accept a previous machine preference.
             long created = process.StartTime.ToUniversalTime().ToFileTimeUtc();
             string path = process.MainModule.FileName;
-            if (!Path.GetFileName(path).Equals("PAL.exe", StringComparison.OrdinalIgnoreCase) || process.HasExited)
-                throw new InvalidDataException("当前目标不是运行中的 PAL.exe。");
-            var result = LoadDirectory(Path.GetDirectoryName(path));
+            CompetitionSettings result;
+            // A renamed PAL.exe is not sufficient evidence for the SDL branch.
+            // Its versioned read-only bridge must identify this exact process.
+            if (Path.GetFileName(path).Equals("PAL.exe", StringComparison.OrdinalIgnoreCase))
+                result = LoadDirectory(Path.GetDirectoryName(path));
+            else
+            {
+                using (var bridge = new SdlpalBridge())
+                {
+                    bridge.Attach(Process.GetProcessById(process.Id));
+                    SdlpalSnapshot snapshot;
+                    if (!bridge.TryRead(out snapshot) || snapshot.diagnostic) throw new InvalidDataException("SDLPAL 运行时身份无效或处于诊断模式");
+                    result = LoadDirectory(snapshot.gamePath);
+                }
+            }
             if (process.HasExited || created != process.StartTime.ToUniversalTime().ToFileTimeUtc())
                 throw new InvalidDataException("读取配置期间游戏已退出。");
             return result;

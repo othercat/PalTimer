@@ -26,6 +26,7 @@
     <Compile Include="CompetitionGameSettings.cs"/>
     <Compile Include="CompetitionWindows.cs"/>
     <Compile Include="OnlineGameplayModels.cs"/>
+    <Compile Include="..\Pal98Timer\SdlpalBridge.cs"><Link>SdlpalBridge.cs</Link></Compile>
     <Compile Include="OnlineEntryPoint.cs"/>
     <Compile Include="AssemblyInfo.cs"/>
     <Compile Include="..\Pal98Timer\RankingConfiguration.cs"><Link>RankingConfiguration.cs</Link></Compile>

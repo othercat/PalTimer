@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.38.2（文件版本 3.38.2.0）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.39.0（文件版本 3.39.0.0）；需要 .NET Framework 4.7.2 框架**
+
+2026-10-18 / 3.39.0：新增 Windows 10+ 的 [SDLPAL 隔世追凶（简单）独立核心](docs/SDLPAL_GESHI_CORE.md)，支持版本化只读运行状态、可编辑自动节点、独立按键配置入口、接力与个人云档、OBS、独立榜单身份及原有授权上传流程。配套 Online DLL 1.0.0.5；EXE/Online/Auth/公开登记文件须成套签发更新。正式榜单需要服务端接受新 family 与实际引擎/资源身份，不把该改版归入 PAL98/DX9 榜单。
 
 2026-10-14 云接力菜单补修：DX9 与自动玩法核心导入接力后，个人云存档上传不再被成绩资格校验阻断；导出后的进程/跑次检查和成绩、比赛、硬核未验证边界保持。沿用 3.38.2，EXE、Online、Auth 与公开登记文件成套更新。真实菜单后台回调新增离线回归；云服务批准及实机往返仍为独立验收。
 

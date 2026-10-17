@@ -21,12 +21,20 @@ namespace Pal98Timer
         internal static string SerializeRun(CompetitionRun run, bool includeRestartTime = true) {
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
+            RemoveUnusedWalkField(fields, "gameplay");
+            if (fields.TryGetValue("observations", out var observationFields) && observationFields is Dictionary<string, object> observed)
+                RemoveUnusedWalkField(observed, "initial_gameplay");
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
             if (run.protocol != OnlineV2) fields.Remove("observations");
             if (run.protocol != OnlineV2 || !includeRestartTime) fields.Remove("restart_ms");
             if (run.protocol == Online || run.protocol == OnlineV2) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
             else { fields.Remove("ranking"); fields.Remove("custom_competition_id"); }
             return run.protocol == Online || run.protocol == OnlineV2 ? CanonicalJson(fields) : serializer.Serialize(fields);
+        }
+        private static void RemoveUnusedWalkField(Dictionary<string, object> fields, string key)
+        {
+            if (fields.TryGetValue(key, out var value) && value is Dictionary<string, object> game &&
+                (!game.TryGetValue("family", out var family) || !Equals(family, "sdlpal-geshi-easy"))) game.Remove("walk_frame_ms");
         }
         // Preserve a deterministic body across the legacy serializer's different
         // dictionary/property traversal orders. The sealed original bytes are

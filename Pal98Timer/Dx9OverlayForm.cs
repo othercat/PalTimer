@@ -167,18 +167,22 @@ namespace Pal98Timer
         }
 
         public static Dx9OverlayLayoutSettings LoadLayout()
+        { return LoadLayout("dx9_overlay_layout"); }
+
+        internal static Dx9OverlayLayoutSettings LoadLayout(string settingsName)
         {
+            string layoutPath = TimerUserSettings.GetPath(settingsName);
             Dx9OverlayLayoutSettings result = Dx9OverlayLayoutSettings.CreateDefault();
             bool hasWindowLeft = false;
             bool hasWindowTop = false;
             try
             {
-                if (!File.Exists(LayoutConfigFileName))
+                if (!File.Exists(layoutPath))
                 {
                     return result;
                 }
 
-                string[] lines = File.ReadAllLines(LayoutConfigFileName, Encoding.UTF8);
+                string[] lines = File.ReadAllLines(layoutPath, Encoding.UTF8);
                 foreach (string rawLine in lines)
                 {
                     int separator = rawLine.IndexOf('=');
@@ -245,6 +249,9 @@ namespace Pal98Timer
         }
 
         public static void SaveLayout(Dx9OverlayLayoutSettings settings)
+        { SaveLayout(settings, "dx9_overlay_layout"); }
+
+        internal static void SaveLayout(Dx9OverlayLayoutSettings settings, string settingsName)
         {
             if (settings == null)
             {
@@ -269,7 +276,7 @@ namespace Pal98Timer
                 text.AppendLine("window_left=" + value.WindowLeft.ToString(CultureInfo.InvariantCulture));
                 text.AppendLine("window_top=" + value.WindowTop.ToString(CultureInfo.InvariantCulture));
             }
-            TimerUserSettings.WriteText("dx9_overlay_layout", text.ToString(), new UTF8Encoding(false));
+            TimerUserSettings.WriteText(settingsName, text.ToString(), new UTF8Encoding(false));
         }
 
         public static string ValidateToggleHotkey(Keys hotkey, Keys soundToggleHotkey)
@@ -550,6 +557,7 @@ namespace Pal98Timer
 
         public event EventHandler EditModeChanged;
         public event Action<Exception> LayoutSaveFailed;
+        private readonly Action<Dx9OverlayLayoutSettings> saveLayout;
 
         public Dx9OverlayForm(Func<Dx9OverlaySnapshot> snapshotProvider)
             : this(snapshotProvider, Dx9OverlaySettings.LoadLayout())
@@ -559,6 +567,10 @@ namespace Pal98Timer
         internal Dx9OverlayForm(
             Func<Dx9OverlaySnapshot> snapshotProvider,
             Dx9OverlayLayoutSettings layoutSettings)
+            : this(snapshotProvider, layoutSettings, Dx9OverlaySettings.SaveLayout) { }
+
+        internal Dx9OverlayForm(Func<Dx9OverlaySnapshot> snapshotProvider,
+            Dx9OverlayLayoutSettings layoutSettings, Action<Dx9OverlayLayoutSettings> saveLayout)
         {
             if (snapshotProvider == null)
             {
@@ -566,6 +578,7 @@ namespace Pal98Timer
             }
 
             SnapshotProvider = snapshotProvider;
+            this.saveLayout = saveLayout ?? throw new ArgumentNullException("saveLayout");
             LayoutSettings = layoutSettings == null ? Dx9OverlayLayoutSettings.CreateDefault() : layoutSettings.Clone();
             LayoutSettings.Normalize();
             AutoScaleMode = AutoScaleMode.None;
@@ -905,7 +918,7 @@ namespace Pal98Timer
             LayoutSettings.Normalize();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -927,7 +940,7 @@ namespace Pal98Timer
             LayoutSettings.Normalize();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -943,7 +956,7 @@ namespace Pal98Timer
             LayoutSettings.ToggleHotkey = hotkey;
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -958,7 +971,7 @@ namespace Pal98Timer
             LayoutSettings = Dx9OverlayLayoutSettings.CreateDefault();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -1240,7 +1253,7 @@ namespace Pal98Timer
         {
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch (Exception ex)
             {

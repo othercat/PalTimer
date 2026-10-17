@@ -27,7 +27,9 @@ namespace Pal98Timer
                 configuration_id != Digest(rules)) return false;
             return Value("content") == game.content_sha256 && Value("family") == game.family &&
                 Value("fade_ms") == game.fade_ms.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
-                Value("map_speed_ticks") == game.map_speed_ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Value("map_speed_ticks") == game.map_speed_ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+                (game.family != "sdlpal-geshi-easy" || Value("walk_frame_ms") == game.walk_frame_ms?.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+                    CompetitionProtocol.Digest(Value("engine_sha256")) && CompetitionProtocol.Digest(Value("route_rules_sha256")));
         }
         internal string Value(string key) => rules != null && rules.TryGetValue(key, out var value) ? value : null;
         internal RankingConfiguration Copy() => new RankingConfiguration { schema = schema, configuration_id = configuration_id,

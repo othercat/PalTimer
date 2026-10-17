@@ -257,7 +257,7 @@ namespace Pal98Timer
         /// 跳转到第n个时间节点
         /// </summary>
         /// <param name="index"></param>
-        public void Jump(int index)
+        public virtual void Jump(int index)
         {
             // A manual route rewind must not reuse an already uploaded run id.
             if (index < CurrentStep)
@@ -1010,6 +1010,7 @@ namespace Pal98Timer
         internal virtual Process CompetitionGameProcess { get { return null; } }
         internal virtual bool CompetitionRestartPending => false;
         internal virtual bool CompetitionMetadataPending => CompetitionRestartPending;
+        internal virtual bool CompetitionPublicationAllowed => true;
         private long competitionSequence = -1, competitionPoll, competitionMetadataPoll;
         private Process competitionProcess;
         private int competitionStep = -2;
@@ -1021,7 +1022,7 @@ namespace Pal98Timer
         internal virtual void CaptureCompetitionGameplay(CompetitionObservation observation) { }
         private void PublishCompetitionIfChanged()
         {
-            if (form == null || CheckPoints == null || CheckPoints.Count == 0) return;
+            if (form == null || CheckPoints == null || CheckPoints.Count == 0 || !CompetitionPublicationAllowed) return;
             if (!form.CompetitionEnabled(this)) { competitionMetadataPoll = 0; return; }
             string coreIdentity = competitionCoreId;
             long sequence = ScoreRunSequence, now = Stopwatch.GetTimestamp(); int step = CurrentStep;
@@ -1154,7 +1155,7 @@ namespace Pal98Timer
         /// 设置主时间
         /// </summary>
         /// <param name="ts"></param>
-        public void SetTS(TimeSpan ts)
+        public virtual void SetTS(TimeSpan ts)
         {
             MT.SetTS(ts);
             try

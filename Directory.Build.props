@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Override for an isolated worktree; keep the normal sibling checkout layout. -->
+    <PalSharedSourceRoot Condition="'$(PalSharedSourceRoot)' == ''">$(MSBuildThisFileDirectory)..\PALDLL_DX9\shared</PalSharedSourceRoot>
+  </PropertyGroup>
+</Project>

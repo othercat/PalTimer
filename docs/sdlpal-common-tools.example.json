@@ -1,0 +1,11 @@
+{
+  "schema": "PAL98.ToolLaunchSettings.v1",
+  "competition_upload": {
+    "schema": "PAL98.TimerOnlineSettings.v1",
+    "xiaorou": {
+      "enabled": true,
+      "server": "https://www.pallab.top",
+      "use_custom_competition": false
+    }
+  }
+}

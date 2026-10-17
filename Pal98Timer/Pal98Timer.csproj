@@ -133,7 +133,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\PALDLL_DX9\shared\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
+    <Compile Include="$(PalSharedSourceRoot)\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
+    <Compile Include="SdlpalBridge.cs" />
+    <Compile Include="SdlpalGeshi.cs" />
+    <Compile Include="SdlpalRelay.cs" />
     <Compile Include="AboutForm.cs">
       <SubType>Form</SubType>
     </Compile>

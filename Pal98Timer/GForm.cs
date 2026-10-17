@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.38.2";
+        public const string CurrentVersion = "3.39.0";
         public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -134,7 +134,9 @@ namespace Pal98Timer
                 mnMain.Items.Add(ti);
                 CoreBtns.Add(cn, ti);
             }
-            try
+            if (!string.IsNullOrEmpty(AutomationArgs.Current.RequestedCore))
+                LoadCore(TimerCore.GetCoreIns(AutomationArgs.Current.RequestedCore, this));
+            else try
             {
                 string lastCorePath = TimerUserSettings.GetPath("LastCore");
                 if (File.Exists(lastCorePath))
@@ -349,6 +351,7 @@ namespace Pal98Timer
 
         public void LoadCore(TimerCore core)
         {
+            if (core is SdlpalGeshi) { KeyChangerDel.Disable(); KeyChangerDel.Close(); }
             //Success(core.GetType().Name);
             if (this.core != null)
             {
@@ -663,6 +666,12 @@ namespace Pal98Timer
                     handle = core.NeedBlockFunctionKey(10);
                     break;
                 case Keys.F11:
+                    if (core is SdlpalGeshi)
+                    {
+                        if (hookStruct.flags >= 128) core.OnFunctionKey(11);
+                        handle = true;
+                        break;
+                    }
                     if (KeyChangerDel.IsHardcoreBlocked)
                     {
                         KeyChangerDel.RefreshHardcoreProtection();
@@ -806,8 +815,7 @@ namespace Pal98Timer
         private void tmMain_Tick(object sender, EventArgs e)
         {
             if (!startupCompleted) return;
-            KeyChangerDel.RefreshHardcoreProtection();
-            KeyChangerDel.TryAutoOpen();
+            if (!(core is SdlpalGeshi)) { KeyChangerDel.RefreshHardcoreProtection(); KeyChangerDel.TryAutoOpen(); }
             ShowKCEnable();
             if (core != null)
             {
@@ -913,6 +921,7 @@ namespace Pal98Timer
         
         private void btnKeyChange_Click(object sender, EventArgs e)
         {
+            if (core is SdlpalGeshi sdlpal) { sdlpal.OpenKeyConfig(); return; }
             if (KeyChangerDel.IsHardcoreBlocked) { ShowKCEnable(); return; }
             long keyChangerRequest = KeyChangerDel.BeginEnableRequest();
             /*IsKeyInEdit = true;

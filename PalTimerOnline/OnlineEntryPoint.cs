@@ -62,7 +62,8 @@ namespace Pal98Timer
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
-                    family = value.Gameplay.Family, fade_ms = value.Gameplay.Fade, map_speed_ticks = value.Gameplay.Speed },
+                    family = value.Gameplay.Family, fade_ms = value.Gameplay.Fade, map_speed_ticks = value.Gameplay.Speed,
+                    walk_frame_ms = ReadWalkFrame(value) },
                 Ranking = value.Ranking == null ? null : new RankingConfiguration { schema = value.Ranking.Schema,
                     configuration_id = value.Ranking.Id, covered = value.Ranking.Covered,
                     rules = value.Ranking.Rules?.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal) },
@@ -72,6 +73,12 @@ namespace Pal98Timer
             };
         }
         public void PublishClock(string token, long elapsed, bool running, long observedTick) => client.PublishClock(token, elapsed, running, observedTick);
+        private static int? ReadWalkFrame(OnlineSnapshotV1 value)
+        {
+            string text; int number;
+            return value.Extensions != null && value.Extensions.TryGetValue("sdlpal.walk_frame_ms", out text) &&
+                int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) ? number : (int?)null;
+        }
         public void Invalidate(string token) => client.Invalidate(token);
         public void ShowSettings(IWin32Window owner)
         {
