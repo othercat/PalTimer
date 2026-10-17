@@ -336,12 +336,14 @@ internal static class SdlpalBehavior
         internal readonly Engine Engine=new Engine();
         readonly System.Windows.Forms.Form controlState=new System.Windows.Forms.Form();
         internal readonly SdlpalGeshi Core;
+        internal readonly GForm Form;
         internal readonly PTimer Watch;
         internal CompletionFixture(bool nonSequential)
         {
             // Bypass GForm startup, networking and hotkeys. The donated window
             // is never shown; true models GForm's default nonsequential mode.
             var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            Form=form;
             form.IsNonSequentialCheck=nonSequential;form.IsShowPSInDots=false;
             var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);
             window.SetValue(form,window.GetValue(controlState));
@@ -374,6 +376,45 @@ internal static class SdlpalBehavior
                 Core.CheckPoints.Select(point=>point.Status).SequenceEqual(statuses),name+" stays stopped with unchanged main/split times and statuses");
         }
         public void Dispose() {Core.Unload();controlState.Dispose();Engine.Dispose();}
+    }
+    static void BattleClockTests()
+    {
+        foreach(bool excludePause in new[]{false,true}) using(var run=new CompletionFixture(true))
+        {
+            run.Form.IsBattlePauseNoTimer=excludePause;run.StartNewGame();
+            var battle=(PTimer)typeof(SdlpalGeshi).GetField("battleTimer",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(run.Core);
+            run.Engine.State.battle.active=true;run.Engine.State.battle.sequence=1;run.Tick();
+            Check(battle.IsRunning&&run.Watch.IsRunning,"active battle starts both clocks, exclude pause="+excludePause);
+            run.Core.IsUIPause=true;run.Tick();
+            var main=run.Core.GetMainWatch();var pausedBattle=battle.CurrentTS;Thread.Sleep(20);run.Tick();
+            Check(!run.Watch.IsRunning&&run.Core.GetMainWatch()==main&&battle.IsRunning==!excludePause&&
+                (excludePause?battle.CurrentTS==pausedBattle:battle.CurrentTS>pausedBattle),"F9 freezes the main clock and follows the battle pause option="+excludePause);
+            run.Core.IsUIPause=false;run.Engine.State.focused=false;run.Tick();
+            Check(!run.Watch.IsRunning&&battle.IsRunning==!excludePause,"focus loss follows the battle pause option="+excludePause);
+            run.Form.IsBattlePauseNoTimer=!excludePause;run.Tick();
+            Check(!run.Watch.IsRunning&&battle.IsRunning==excludePause,"changing the battle pause option takes effect while paused");
+            run.Form.IsBattlePauseNoTimer=excludePause;run.Engine.State.focused=true;run.Tick();
+            Check(run.Watch.IsRunning&&battle.IsRunning,"regaining focus resumes both clocks");
+            Set(run.Core,"busyRelay",true);run.Tick();Check(!run.Watch.IsRunning&&!battle.IsRunning,"relay freezes both clocks regardless of pause option");
+            Set(run.Core,"busyRelay",false);run.Tick();
+            run.Engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(run.Core,"OnTick");
+            Check(!run.Watch.IsRunning&&!battle.IsRunning,"stale game data freezes both clocks regardless of pause option");
+            run.Tick();Check(battle.IsRunning,"fresh game data resumes the active battle");
+            run.Engine.State.battle.active=false;run.Tick();Check(!battle.IsRunning,"battle exit stops the subclock");
+            battle.SetTS(TimeSpan.FromSeconds(60));run.Engine.State.battle.active=true;run.Engine.State.battle.sequence++;run.Tick();
+            Check(battle.IsRunning&&battle.CurrentTS<TimeSpan.FromSeconds(1),"a new battle starts its own subclock");
+            battle.Stop();battle.SetTS(TimeSpan.FromSeconds(60));run.Engine.State.epoch++;run.Tick();
+            Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&battle.CurrentTS<TimeSpan.FromSeconds(1)&&battle.IsRunning==!excludePause,
+                "load epoch cannot carry the old battle time, even when the sequence is reused");
+            run.Core.IsUIPause=false;run.Engine.State.completed=true;run.Tick();
+            Check(!battle.IsRunning&&!run.Watch.IsRunning,"completion stops both clocks even if the battle flag remains set");
+            run.Core.Reset();Check(!battle.IsRunning&&battle.CurrentTS==TimeSpan.Zero,"reset clears the battle subclock");
+            run.Core.InitCheckPointsEx();
+            run.Engine.State.completed=false;run.Engine.State.started=false;run.Tick();
+            Check(!battle.IsRunning,"title screen cannot count a leftover battle flag");
+            run.Engine.State.started=true;run.Tick();Check(battle.IsRunning,"new game can start another battle");
+            run.Core.Unload();Check(!battle.IsRunning&&!run.Watch.IsRunning,"unloading the core stops its clocks");
+        }
     }
     static void BestReferenceTests()
     {
@@ -538,7 +579,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

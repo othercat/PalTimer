@@ -307,10 +307,12 @@ namespace Pal98Timer
                 }
                 if (!observer.BeganHere) competitionImportedRun = observer.Started;
                 if (observer.EpochChanged && wasStarted && !busyRelay) PauseForLoad();
-                if (snapshot.battle.sequence != battleSequence) { battleSequence = snapshot.battle.sequence; battleTimer.Reset(); }
+                if (observer.EpochChanged || snapshot.battle.sequence != battleSequence) { battleSequence = snapshot.battle.sequence; battleTimer.Reset(); }
                 bool running = snapshot.started && snapshot.focused && !IsUIPause && !busyRelay;
                 status = !snapshot.started ? "等待新游戏" : busyRelay ? "接力存读档中" : IsUIPause ? "已暂停（F9继续）" : !snapshot.focused ? "游戏失去焦点" : "计时中";
-                if (running && snapshot.battle.active) battleTimer.Start(); else battleTimer.Stop();
+                bool countBattle = snapshot.started && snapshot.battle.active && !snapshot.completed && !busyRelay &&
+                    CurrentStep < CheckPoints.Count && (!form.IsBattlePauseNoTimer || running);
+                if (countBattle) battleTimer.Start(); else battleTimer.Stop();
                 if (running)
                 {
                     idleTimer.Stop(); StartAndCheckMainTimer();
@@ -464,7 +466,7 @@ namespace Pal98Timer
             }
         }
         public override void UnloadUI() { if (itemsForm != null) { itemsForm.Dispose(); itemsForm = null; } if (overlay != null) { overlay.Stop(); overlay.Dispose(); overlay = null; } base.UnloadUI(); }
-        public override void Unload() { lock (gate) { unloaded = true; base.Unload(); bridge?.Dispose(); bridge = null; MT.Stop(); } }
+        public override void Unload() { lock (gate) { unloaded = true; base.Unload(); bridge?.Dispose(); bridge = null; MT.Stop(); battleTimer.Stop(); idleTimer.Stop(); } }
 
         private sealed class ImportedTimer
         {
