@@ -112,7 +112,7 @@ internal static class SdlpalBehavior
         protected override bool ShowWithoutActivation=>true;
         internal RenderHost() {ShowInTaskbar=false;StartPosition=System.Windows.Forms.FormStartPosition.Manual;Location=new System.Drawing.Point(-20000,-20000);}
     }
-    static void ItemCoreTests()
+    static void ItemCoreTests(bool showUi)
     {
         using(var engine=new Engine())
         {
@@ -169,7 +169,7 @@ internal static class SdlpalBehavior
                     Check(grid.Rows.Count==242&&(string)music.Cells[2].Value=="音樂播放器"&&(int)music.Cells[6].Value==6,"real item window displays full audited catalog and live modified item quantities");
                     music.Cells[0].Value=false;
                     Check(!core.ItemSettings.WatchedIds.Contains(585),"real checkbox operation persists watch removal");
-                    using(var host=new RenderHost())
+                if(showUi) using(var host=new RenderHost())
                     {
                         dialog.TopLevel=false;host.ClientSize=dialog.Size;host.Controls.Add(dialog);dialog.Show();host.Show();System.Windows.Forms.Application.DoEvents();
                         using(var bitmap=new System.Drawing.Bitmap(dialog.Width,dialog.Height)) {dialog.DrawToBitmap(bitmap,new System.Drawing.Rectangle(System.Drawing.Point.Empty,dialog.Size));bitmap.Save(Path.Combine(root,"items-window.png"));}
@@ -180,6 +180,7 @@ internal static class SdlpalBehavior
                         Check(grid.Rows.Count==0&&core.ItemSettings.WatchedIds.Length==0,"removing last watched row commits safely before filtering it away");
                         host.Hide();
                     }
+                if(!showUi) Console.WriteLine("SKIP item window rendering and bound filtering (--no-gui)");
                 }
                 config.WatchedIds=new[]{585};core.ApplyItemSettings(config);
                 engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(core,"OnTick");payload=GForm.BuildCloudPayload(core,false,2);
@@ -330,12 +331,139 @@ internal static class SdlpalBehavior
             }
         }
     }
+    sealed class CompletionFixture : IDisposable
+    {
+        internal readonly Engine Engine=new Engine();
+        readonly System.Windows.Forms.Form controlState=new System.Windows.Forms.Form();
+        internal readonly SdlpalGeshi Core;
+        internal readonly PTimer Watch;
+        internal CompletionFixture(bool nonSequential)
+        {
+            // Bypass GForm startup, networking and hotkeys. The donated window
+            // is never shown; true models GForm's default nonsequential mode.
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            form.IsNonSequentialCheck=nonSequential;form.IsShowPSInDots=false;
+            var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);
+            window.SetValue(form,window.GetValue(controlState));
+            Core=new SdlpalGeshi(form);Set(form,"core",Core);Call(Core,"InitCheckPoints");
+            form.rr=new GRender(controlState);
+            foreach(var point in Core.CheckPoints)point.SetUIItem(form.rr.AddItem(point.GetNickName(),point.Best));
+            var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(Engine.Process.Id));Set(Core,"bridge",bridge);
+            Watch=(PTimer)typeof(TimerCore).GetField("MT",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(Core);
+            // Exercise assisted-run validation independently of the diagnostic
+            // rejection. No cloud runner or competition session is constructed.
+            Engine.State.diagnostic=false;
+        }
+        internal void Tick() {Engine.Publish();Call(Core,"OnTick");}
+        internal bool Statuses(CheckPointStatus first,CheckPointStatus last) =>
+            Core.CheckPoints[0].Status==first&&Core.CheckPoints[1].Status==last;
+        internal bool Assisted => !Core.CanBeginCompetitionHere(0)&&Core.GetScoreValidationError().Length>0;
+        internal void StartNewGame()
+        {
+            Tick();Engine.State.started=true;Tick();
+            Check(Watch.IsRunning&&Core.CurrentStep==0&&Statuses(CheckPointStatus.InProgress,CheckPointStatus.NotStarted)&&
+                Core.CanBeginCompetitionHere(0)&&Core.GetScoreValidationError()=="","completion fixture observes a genuine new-game origin");
+        }
+        internal void CheckFrozen(string name)
+        {
+            var time=Core.GetMainWatch();var splits=Core.CheckPoints.Select(point=>point.Current).ToArray();
+            var statuses=Core.CheckPoints.Select(point=>point.Status).ToArray();
+            for(int i=0;i<4;i++) {Thread.Sleep(10);Tick();}
+            Check(!Watch.IsRunning&&Core.CurrentStep==2&&Core.GetMainWatch()==time&&
+                Core.CheckPoints.Select(point=>point.Current).SequenceEqual(splits)&&
+                Core.CheckPoints.Select(point=>point.Status).SequenceEqual(statuses),name+" stays stopped with unchanged main/split times and statuses");
+        }
+        public void Dispose() {Core.Unload();controlState.Dispose();Engine.Dispose();}
+    }
+    static void CompletionTests()
+    {
+        foreach(bool nonSequential in new[]{true,false})
+        {
+            string mode=nonSequential?"default nonsequential":"explicit sequential";
+            using(var run=new CompletionFixture(nonSequential))
+            {
+                run.StartNewGame();run.Engine.State.battleEvents=new[]{Victory(1)};run.Tick();
+                Check(run.Watch.IsRunning&&run.Core.CurrentStep==1&&run.Statuses(CheckPointStatus.Completed,CheckPointStatus.InProgress),
+                    mode+": production OnTick observes the new serpent victory before the ending");
+                run.Engine.State.completed=true;run.Tick();
+                Check(!run.Watch.IsRunning&&run.Core.CurrentStep==2&&run.Statuses(CheckPointStatus.Completed,CheckPointStatus.Completed)&&
+                    run.Core.GetScoreValidationError()=="",mode+": observed new game completes and stops without becoming assisted");
+                run.CheckFrozen(mode+" new game");
+            }
+            using(var run=new CompletionFixture(nonSequential))
+            {
+                run.Engine.State.started=true;run.Engine.State.loadedFrom=1;run.Tick();
+                Check(run.Watch.IsRunning&&run.Core.CurrentStep==0&&run.Statuses(CheckPointStatus.InProgress,CheckPointStatus.NotStarted)&&run.Assisted,
+                    mode+": original-save late attach starts an assisted clock without inventing a serpent victory");
+                run.Engine.State.completed=true;run.Tick();
+                if(nonSequential)
+                {
+                    Check(!run.Watch.IsRunning&&run.Core.CurrentStep==2&&run.Statuses(CheckPointStatus.AutoSkipped,CheckPointStatus.Completed)&&run.Assisted,
+                        mode+": completed skips the unobserved serpent and stops the assisted run");
+                }
+                else
+                {
+                    var before=run.Core.GetMainWatch();Thread.Sleep(20);run.Tick();
+                    Check(run.Core.CurrentSnapshot.completed&&run.Watch.IsRunning&&run.Core.GetMainWatch()>before&&run.Core.CurrentStep==0&&
+                        run.Statuses(CheckPointStatus.InProgress,CheckPointStatus.NotStarted)&&run.Assisted,
+                        mode+": completed alone retains the unobserved current node and running clock");
+                    run.Core.Jump(1);run.Tick();
+                    Check(!run.Watch.IsRunning&&run.Core.CurrentStep==2&&run.Statuses(CheckPointStatus.ManualSkipped,CheckPointStatus.Completed)&&run.Assisted,
+                        mode+": manual jump to the latched ending stops and remains assisted");
+                }
+                run.CheckFrozen(mode+" late attach");
+            }
+            var imports=new[]{
+                new{Step=0,First=CheckPointStatus.InProgress},
+                new{Step=1,First=CheckPointStatus.Completed},
+                new{Step=1,First=CheckPointStatus.ManualSkipped},
+                new{Step=1,First=CheckPointStatus.AutoSkipped},
+                new{Step=2,First=CheckPointStatus.Completed}
+            };
+            foreach(var source in imports) using(var run=new CompletionFixture(nonSequential))
+            {
+                run.StartNewGame();
+                string name=mode+" imported step "+source.Step+"/"+source.First;
+                var last=source.Step==2?CheckPointStatus.Completed:source.Step==1?CheckPointStatus.InProgress:CheckPointStatus.NotStarted;
+                var timeline=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(run.Core.GetRStr());
+                timeline["Current"]="00:01:23.456";timeline["Step"]=source.Step;
+                timeline["CheckPoints"]=run.Core.CheckPoints.Select((point,index)=>new {name=point.Name,
+                    time=index==0&&source.Step>0?"00:00:20.123":index==1&&source.Step==2?"00:01:05.432":"00:00:00.000"}).ToArray();
+                timeline["SdlpalStatuses"]=new[]{source.First.ToString(),last.ToString()};
+                var imported=Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(timeline),run.Core.CurrentSnapshot.IdentityKey);
+                Call(run.Core,"Restore",imported,run.Core.CurrentSnapshot);
+                Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==TimeSpan.FromMilliseconds(83456)&&
+                    run.Core.CurrentStep==source.Step&&run.Statuses(source.First,last)&&run.Assisted,name+": restore preserves progress, pauses and marks assistance");
+                run.Engine.State.completed=true;run.Tick();
+                Check(run.Core.CurrentSnapshot.completed&&run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==TimeSpan.FromMilliseconds(83456)&&
+                    run.Core.CurrentStep==source.Step&&run.Statuses(source.First,last)&&run.Assisted,name+": observing completed while paused does not advance or restart");
+                run.Core.IsUIPause=false;run.Tick();
+                if(source.Step==0&&!nonSequential)
+                {
+                    Check(run.Watch.IsRunning&&run.Core.CurrentStep==0&&run.Statuses(CheckPointStatus.InProgress,CheckPointStatus.NotStarted)&&run.Assisted,
+                        name+": resume still waits for the unobserved serpent in sequential mode");
+                }
+                else
+                {
+                    var expectedFirst=source.Step==0?CheckPointStatus.AutoSkipped:source.First;
+                    Check(!run.Watch.IsRunning&&run.Core.CurrentStep==2&&run.Statuses(expectedFirst,CheckPointStatus.Completed)&&run.Assisted,
+                        name+": resume completes or retains the finished route without granting eligibility");
+                    if(source.Step==2)
+                        Check(run.Core.GetMainWatch()==TimeSpan.FromMilliseconds(83456)&&run.Core.CheckPoints[1].Current==TimeSpan.FromMilliseconds(65432),
+                            name+": finished import retains its distinct main and final-split values");
+                    run.CheckFrozen(name);
+                }
+            }
+        }
+    }
     [STAThread] static int Main(string[] args)
     {
         try
         {
             typeof(TimerUserSettings).GetField("store",BindingFlags.NonPublic|BindingFlags.Static).SetValue(null,new TimerSettingsStore(root,Path.Combine(root,"localappdata"),_=>{}));
             TimerUserSettings.ClearPathCache();SoundConfig.ins.GlobalEnabled=false;
+            bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
+            if(noGui&&args.Contains("--ui")) throw new ArgumentException("--no-gui cannot be combined with --ui");
             if(args.Length==1&&args[0]=="--ui")
             {
                 System.Windows.Forms.Application.EnableVisualStyles();
@@ -353,7 +481,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();ItemCoreTests();Console.WriteLine("PASS total="+count);return 0;
+            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }
