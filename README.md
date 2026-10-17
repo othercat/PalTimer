@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.39.1（文件版本 3.39.1.0）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.39.2（文件版本 3.39.2.0）；需要 .NET Framework 4.7.2 框架**
+
+2026-10-18 / 3.39.2：修复隔世追凶切换配置时残留旧最佳记录、战斗副表忽略“战斗暂停不计时”设置，以及切换核心后插件窗口未刷新和菜单重复卸载问题（Issues #21–#23）。本次计时进度不受最佳记录刷新影响；主计时暂停行为保持。Online 沿用 1.0.0.5，新 EXE 须配套重新签发 Auth 和公开登记。
 
 2026-10-18 / 3.39.1：修复隔世追凶核心导入时间线或接力后，已完成节点被主窗口显示为“跳过”、区间用时仍取导入前数值的问题。恢复后的状态、节点时间和区间显示一致；导入后仍暂停并保留辅助跑次标记。Online 沿用 1.0.0.5，新 EXE 须配套重新签发 Auth 和公开登记。见 [Issue #20](https://github.com/othercat/PalTimer/issues/20)。
 
