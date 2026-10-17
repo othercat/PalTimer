@@ -235,9 +235,9 @@ namespace Pal98Timer
         internal static CloudPayload BuildCloudPayload(TimerCore boundCore, bool isC, int nextDo)
         {
             var payload = new CloudPayload { IsC = isC };
-            // SDL plugins are display state, including explicit empty/unavailable
-            // output. They must clear an old cloud display after disconnect/disable
-            // even when the score stream is suppressed. This grants no score access.
+            // Cache SDL display state, including explicit empty/unavailable output.
+            // PalCloudLib transmits this cache only with a nonempty BigData POST;
+            // suppressed scores cannot independently update or clear cloud display.
             bool sdlpal = boundCore is SdlpalGeshi;
             bool hideDiagnostic = sdlpal && !boundCore.CompetitionPublicationAllowed;
             bool allowed = string.IsNullOrEmpty(boundCore.GetScoreValidationError());
