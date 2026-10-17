@@ -281,14 +281,26 @@ namespace Pal98Timer
         public override string GetCriticalError() { string value = warning; warning = ""; return value; }
         public override string GetRuntimeIntegrityStatus() => GetScoreValidationError();
         public override void OnFunctionKey(int number) { if (number == 11) OpenKeyConfig(); }
+        internal ProcessStartInfo CreateKeyConfigStartInfo()
+        {
+            lock (gate)
+            {
+                SdlpalSnapshot snapshot;
+                if (bridge == null || !bridge.TryRead(out snapshot))
+                    throw new InvalidOperationException("请先启动隔世追凶游戏");
+                // gamePath is the resource directory (usually ./PAL), not the executable directory.
+                string directory = Path.GetDirectoryName(bridge.Process.MainModule.FileName);
+                return new ProcessStartInfo(Path.Combine(directory, "LostEditKeyConfig.exe"))
+                    { WorkingDirectory = directory, UseShellExecute = true };
+            }
+        }
         internal void OpenKeyConfig()
         {
             try
             {
-                var s = observer.Snapshot; if (s == null) throw new InvalidOperationException("请先启动隔世追凶游戏");
-                string exe = Path.Combine(s.gamePath, "LostEditKeyConfig.exe");
-                if (!File.Exists(exe)) throw new FileNotFoundException("游戏目录缺少 LostEditKeyConfig.exe");
-                Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = s.gamePath, UseShellExecute = true });
+                var start = CreateKeyConfigStartInfo();
+                if (!File.Exists(start.FileName)) throw new FileNotFoundException("游戏目录缺少 LostEditKeyConfig.exe");
+                Process.Start(start);
             }
             catch (Exception ex) { form.Error(ex.Message); }
         }

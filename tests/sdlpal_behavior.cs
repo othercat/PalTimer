@@ -146,6 +146,10 @@ internal static class SdlpalBehavior
                 var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);
                 window.SetValue(form,window.GetValue(controlState));
             var core=new SdlpalGeshi(form);Call(core,"InitCheckPoints");var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(engine.Process.Id));Set(core,"bridge",bridge);
+            var keyConfig=core.CreateKeyConfigStartInfo();
+            string executableDirectory=Path.GetDirectoryName(engine.Process.MainModule.FileName);
+            Check(keyConfig.WorkingDirectory==executableDirectory && keyConfig.FileName==Path.Combine(executableDirectory,"LostEditKeyConfig.exe") &&
+                keyConfig.WorkingDirectory!=engine.State.gamePath,"F11 locates key configuration beside the verified executable, independently of resources");
             Call(core,"OnTick");engine.State.started=true;engine.Publish();Call(core,"OnTick");Thread.Sleep(70);
             Check(core.GetMainWatch().TotalMilliseconds>=50,"production core clock starts on new game");
             core.IsUIPause=true;Call(core,"OnTick");var paused=core.GetMainWatch();Thread.Sleep(50);Call(core,"OnTick");
