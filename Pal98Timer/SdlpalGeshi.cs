@@ -199,6 +199,29 @@ namespace Pal98Timer
                 }
             }
         }
+        public override void RefreshBestReference()
+        {
+            lock (gate)
+            {
+                // A category without a reference must not inherit the previous
+                // category's values, including when parsing fails partway through.
+                Best = null;
+                try { LoadBest(); }
+                catch { Best = null; throw; }
+                finally
+                {
+                    if (CheckPoints != null)
+                        foreach (var point in CheckPoints)
+                        {
+                            var reference = GetBest(point.Name);
+                            if (string.IsNullOrEmpty(reference.NickName))
+                                reference.NickName = T(rules.First(rule => rule.Id == point.Name).Name);
+                            point.SetBestReference(reference);
+                        }
+                    RefreshClearPrediction();
+                }
+            }
+        }
         protected override void ValidateBestSave() { }
         protected override void FillReferenceIdentity(HObj data) { data["SdlpalRoute"] = RouteIdentity; data["SdlpalProfile"] = "geshi-easy-v1"; data["SdlpalCategory"] = BestCategory; }
         protected override void ValidateBestReference(HObj data)

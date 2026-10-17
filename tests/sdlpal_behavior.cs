@@ -375,6 +375,63 @@ internal static class SdlpalBehavior
         }
         public void Dispose() {Core.Unload();controlState.Dispose();Engine.Dispose();}
     }
+    static void BestReferenceTests()
+    {
+        using(var run=new CompletionFixture(true))
+        {
+            run.StartNewGame();run.Engine.State.battleEvents=new[]{Victory(1)};run.Tick();
+            run.Core.IsUIPause=true;run.Tick();
+            var defaults=SdlpalSplitRule.Defaults().Select(rule=>rule.Name).ToArray();
+            var times=run.Core.CheckPoints.Select(point=>point.Current).ToArray();
+            var statuses=run.Core.CheckPoints.Select(point=>point.Status).ToArray();
+            var elapsed=run.Core.GetMainWatch();
+            string path=run.Core.ActiveBestPath;
+            var reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(run.Core.GetRStr());
+            reference["CheckPoints"]=run.Core.CheckPoints.Select((point,index)=>new {name=point.Name,des="Reference A "+index,
+                time=index==0?"00:00:20.000":"00:02:00.000"}).ToArray();
+            string complete=SdlpalBridge.Json().Serialize(reference);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            Action assertCleared=()=>{
+                Check(run.Core.CheckPoints.All(point=>point.Best==TimeSpan.Zero)&&
+                    run.Core.CheckPoints.Select(point=>point.GetNickName()).SequenceEqual(defaults),"missing or invalid reference clears times and restores route labels");
+                Check((TimeSpan)typeof(TimerCore).GetField("BestClear",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(run.Core)==TimeSpan.Zero&&
+                    (TimeSpan)typeof(TimerCore).GetField("WillClear",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(run.Core)==TimeSpan.Zero,
+                    "missing or invalid reference clears the total and predicted finish");
+                Check(run.Core.CheckPoints.All(point=>{
+                    var item=(GRender.GItem)typeof(CheckPoint).GetField("_uiItem",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(point);
+                    return item.Best==point.Best&&item.Name==point.GetNickName();}),"rendered references follow the active category");
+            };
+            try
+            {
+                File.WriteAllText(path,complete);run.Core.RefreshBestReference();
+                Check(run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(20)&&run.Core.CheckPoints[1].Best==TimeSpan.FromSeconds(120)&&
+                    run.Core.CheckPoints[0].NickName=="Reference A 0","category A loads both reference values and edited labels");
+                run.Engine.State.walkFrameMs=80;run.Tick();
+                Check(path!=run.Core.ActiveBestPath&&!File.Exists(run.Core.ActiveBestPath),"category B has no reference file");
+                assertCleared();
+                run.Engine.State.walkFrameMs=90;run.Tick();
+                Check(run.Core.CheckPoints[1].Best==TimeSpan.FromSeconds(120)&&run.Core.CheckPoints[1].NickName=="Reference A 1",
+                    "switching back restores category A's reference");
+                reference["CheckPoints"]=new[]{new{name=run.Core.CheckPoints[0].Name,des="Partial",time="00:00:30.000"}};
+                File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));run.Core.RefreshBestReference();
+                Check(run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(30)&&run.Core.CheckPoints[0].NickName=="Partial"&&
+                    run.Core.CheckPoints[1].Best==TimeSpan.Zero&&run.Core.CheckPoints[1].GetNickName()==defaults[1],
+                    "a partial reference resets omitted checkpoints to route defaults");
+                reference["CheckPoints"]=new object[]{new{name=run.Core.CheckPoints[0].Name,des="Invalid partial",time="00:00:40.000"},null};
+                string malformed=SdlpalBridge.Json().Serialize(reference);File.WriteAllText(path,malformed);
+                Reject(()=>run.Core.RefreshBestReference(),"an invalid reference after a valid first point is reported");assertCleared();
+                Check(File.ReadAllText(path)==malformed,"invalid reference input remains available for repair");
+                File.WriteAllText(path,complete);run.Core.RefreshBestReference();
+                reference["SdlpalCategory"]="wrong-category";File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));
+                Reject(()=>run.Core.RefreshBestReference(),"foreign category reference is rejected");assertCleared();
+                Check(run.Core.CurrentStep==1&&run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==elapsed&&
+                    run.Core.CheckPoints.Select(point=>point.Current).SequenceEqual(times)&&run.Core.CheckPoints.Select(point=>point.Status).SequenceEqual(statuses)&&
+                    run.Core.GetScoreValidationError().Contains("配置变化"),
+                    "reference refresh preserves the paused run, actual splits, statuses and changed-identity validation");
+            }
+            finally {File.Delete(path);}
+        }
+    }
     static void CompletionTests()
     {
         foreach(bool nonSequential in new[]{true,false})
@@ -481,7 +538,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }
