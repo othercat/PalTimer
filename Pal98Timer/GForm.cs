@@ -406,6 +406,7 @@ namespace Pal98Timer
                 rr.IsForceRefreshAll = true;
             }
             core.Start();
+            if (pmf != null && !pmf.IsDisposed) pmf.RefreshPlugins();
             WriteAutomationSnapshot("core_loaded");
         }
 
@@ -1014,7 +1015,7 @@ namespace Pal98Timer
         PluginMgrForm pmf = null;
         private void btnPluginManage_Click(object sender, EventArgs e)
         {
-            if (pmf == null)
+            if (pmf == null || pmf.IsDisposed)
             {
                 pmf = new PluginMgrForm(() => core);
                 this.CenterChild(pmf);
@@ -1023,6 +1024,11 @@ namespace Pal98Timer
                     pmf.Dispose();
                     pmf = null;
                 };
+            }
+            else
+            {
+                pmf.RefreshPlugins();
+                pmf.Activate();
             }
         }
 

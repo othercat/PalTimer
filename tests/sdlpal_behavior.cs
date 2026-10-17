@@ -377,6 +377,71 @@ internal static class SdlpalBehavior
         }
         public void Dispose() {Core.Unload();controlState.Dispose();Engine.Dispose();}
     }
+    sealed class PluginTestCore : TimerCore
+    {
+        internal PluginTestCore(GForm form) : base(form) {CoreName="PLUGIN_TEST";}
+        protected override void InitCheckPoints() {CheckPoints=new List<CheckPoint>{new CheckPoint(0,new CheckPointNewer{Name="test"}){Check=()=>false}};}
+        protected override void OnTick() { }
+        public override void InitUI() { }
+        public override void OnFunctionKey(int number) { }
+        public override string GetMoreInfo()=>"";
+        public override string GetSmallWatch()=>"";
+        public override string GetSecondWatch()=>"";
+        public override string GetGameVersion()=>"";
+        public override string GetAAction()=>"";
+        public override string GetCriticalError()=>"";
+        public override bool IsMainWatchStar()=>false;
+        public override bool IsShowC()=>false;
+        public override bool NeedBlockCtrlEnter()=>false;
+    }
+    sealed class SilentUiContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback callback,object state) { }
+        public override void Send(SendOrPostCallback callback,object state) { }
+    }
+    static void PluginCoreSwitchTests()
+    {
+        // Exercise GForm.LoadCore itself, with no shown window, hooks, real
+        // cloud transport or background game reader in this isolated test host.
+        using(var controlState=new System.Windows.Forms.Form())
+        using(var menu=new System.Windows.Forms.ContextMenuStrip())
+        using(var cloudMenu=new System.Windows.Forms.ContextMenuStrip())
+        using(var board=new GBoard())
+        using(var runner=new CloudSessionRunner(_=>new ItemCloudClient(),10))
+        {
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);
+            window.SetValue(form,window.GetValue(controlState));form.SyncContext=new SilentUiContext();
+            form.rr=new GRender(controlState);form.rr.SetGBoard(board);form.btnPause=form.rr.AddBtn("pause",(x,y,b)=>{},9);
+            Set(form,"btnCloud",form.rr.AddBtn("cloud",(x,y,b)=>{},30));
+            Set(form,"btnCloudInit",new System.Windows.Forms.ToolStripMenuItem());Set(form,"cloudStatusItem",new System.Windows.Forms.ToolStripMenuItem());
+            form.mnData=menu;Set(form,"cmCloud",cloudMenu);Set(form,"cloudRunner",runner);
+            TimerCore selected=null;
+            Action<TimerCore> load=next=>{
+                typeof(TimerCore).GetField("IsAllRun",BindingFlags.NonPublic|BindingFlags.Instance).SetValue(next,false);
+                selected=next;form.LoadCore(next);
+            };
+            using(var manager=new PluginMgrForm(()=>selected))
+            {
+                Set(form,"pmf",manager);
+                var table=(System.Windows.Forms.DataGridView)typeof(PluginMgrForm).GetField("dvPlugins",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(manager);
+                load(new PluginTestCore(form));Check(table.Rows.Count==0,"ordinary core has no SDL built-in plugin rows");
+                var first=new SdlpalGeshi(form);load(first);
+                Check(table.Rows.Count==2&&Convert.ToString(table.Rows[0].Cells[2].Value)==SdlpalGeshi.GameplayName,
+                    "an already-open plugin manager gains SDL rows immediately after GForm.LoadCore");
+                table.Rows[0].Cells[0].Value=false;Call(manager,"dvPlugins_CellContentClick",table,new System.Windows.Forms.DataGridViewCellEventArgs(0,0));
+                Check(!first.ItemSettings.FujiaEnabled,"retained manager toggles the first active SDL core");
+                var second=new SdlpalGeshi(form);load(second);
+                Check(table.Rows.Count==2&&!(bool)table.Rows[0].Cells[0].Value,"SDL-to-SDL switch refreshes persisted settings without duplicate rows");
+                table.Rows[0].Cells[0].Value=true;Call(manager,"dvPlugins_CellContentClick",table,new System.Windows.Forms.DataGridViewCellEventArgs(0,0));
+                Check(second.ItemSettings.FujiaEnabled&&!first.ItemSettings.FujiaEnabled,"retained manager rebinds changes to the replacement core only");
+                load(new PluginTestCore(form));Check(table.Rows.Count==0,"switching back removes both SDL rows from the same manager");
+                manager.Dispose();load(new PluginTestCore(form));Check(manager.IsDisposed,"core switching tolerates a disposed plugin window");
+            }
+            selected.Unload();selected.UnloadUI();selected.UnloadPlugins();
+            new SdlpalItemSettings().Save();
+        }
+    }
     static void BattleClockTests()
     {
         foreach(bool excludePause in new[]{false,true}) using(var run=new CompletionFixture(true))
@@ -579,7 +644,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

@@ -387,7 +387,7 @@ namespace Pal98Timer
         {
             var item = cloud ? form.NewCloudMenuItem() : form.NewMenuItem();
             item.Text = T(text); item.Tag = text; item.Click += (sender, args) => { try { action(); } catch (Exception ex) { form.Error(ex.Message); } };
-            translatedMenus.Add(item); AddUIT(item); return item;
+            translatedMenus.Add(item); return item;
         }
         public override void InitUI()
         {
