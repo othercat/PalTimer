@@ -95,7 +95,7 @@ SAVE 必须收到对应 request ID 的成功确认，才复制已经关闭的 `2
 
 VS 2026 / MSBuild 18，Release|x64，.NET Framework 4.7.2。普通仓库布局继续从相邻 PALDLL_DX9/shared 读取 PalUserData.cs；worktree 用可覆盖属性，不提交本机绝对路径：
 
-完整发布构建还须在本地提供既有的 `Pal98Timer/TournamentIntegrityKey.txt`；EXE 与 Online 项目会共同嵌入该受信资源。它被 Git 忽略且排除于公开源码包，不能用开发密钥替代，也不能写入文档或日志。`PalSharedSourceRoot` 不提供此输入。缺少它时普通构建和 `--startup-check` 可能成功，但不能据此声称传统比赛锁读取已验证；冻结后必须另外运行 `tests/run_online_module_tests.ps1` 的真实组件检查，再签发/保留最终组合，签发后不重编产品。
+完整发布构建还须在本地提供既有的 `Pal98Timer/TournamentIntegrityKey.txt`；EXE 与 Online 项目会共同嵌入该受信资源。它被 Git 忽略且排除于公开源码包，不能用开发密钥替代，也不能写入文档或日志。`PalSharedSourceRoot` 不提供此输入。缺少它时普通构建和 `--startup-check` 可能成功，但不能据此声称传统比赛锁读取已验证。冻结 EXE/Online 并签发 Auth 后，必须另外运行 `tests/run_online_module_tests.ps1` 的真实组件检查；签发后不重编产品。
 
 ```powershell
 & $msbuild .\Pal98Timer.sln /p:Configuration=Release /p:Platform=x64 "/p:PalSharedSourceRoot=$shared" /m /nodeReuse:false
