@@ -25,7 +25,11 @@ internal static class SdlpalBehavior
         schema = 1, profile = "geshi-easy-v1", verified = true, diagnostic = true, resourceHash = new string('a',64),
         resourceHashes = new Dictionary<string,string> { ["SSS.MKF"] = new string('a',64), ["DATA.MKF"] = new string('b',64), ["WORD.DAT"] = new string('c',64), ["M.MSG"] = new string('d',64) },
         build = "offline-test", exeHash = SdlpalBridge.HashFile(Process.GetCurrentProcess().MainModule.FileName), gamePath = root, savePath = Path.Combine(root,"save"),
-        focused = true, canControl = true, epoch = 1, fadeCycleMs = 800, walkFrameMs = 90, battle = new SdlpalBattle(), battleEvents = new SdlpalBattleEvent[0]
+        focused = true, canControl = true, epoch = 1, fadeCycleMs = 800, walkFrameMs = 90, battle = new SdlpalBattle(), battleEvents = new SdlpalBattleEvent[0],
+        inventory = new SdlpalInventory[0], party = new[] {0},
+        roles = Enumerable.Range(0,6).Select(id => new SdlpalItemRole { id=id, name="角色"+id, equipment=new int[6] }).ToArray(),
+        catalog = Enumerable.Range(0,700).Select(id => new SdlpalCatalogEntry { id=id, name="物品"+id, data=new[]{0,id*10,0,0,0,0,0} }).ToArray(),
+        itemIds = Enumerable.Range(61,234).Concat(new[]{344,567,568,569,577,583,584,585}).ToArray()
     };
     static byte[] Header(SdlpalSnapshot value, int length, int pid = 777, ulong created = 123, ulong now = 10000)
     {
@@ -47,11 +51,146 @@ internal static class SdlpalBehavior
         state.verified=false; json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state)); Reject(()=>SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000),"unverified resources rejected");
         state=Snapshot(); string missing=SdlpalBridge.Json().Serialize(state).Replace("\"diagnostic\":true,",""); json=Encoding.UTF8.GetBytes(missing);
         Reject(()=>SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000),"missing diagnostic flag rejected");
+        state=Snapshot();state.started=true;state.inventory=new[]{new SdlpalInventory{slot=0,id=61,amount=4}};
+        json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state).Replace("\"amount\":4,",""));
+        var optional=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);var unavailable=new SdlpalItemTracker();unavailable.Observe(optional);
+        Check(optional.verified&&!unavailable.View.Available,"missing nested item quantity disables item data without fabricating zero or blocking timing identity");
         foreach(string path in paths)
         {
             json=File.ReadAllBytes(path); state=SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(new UTF8Encoding(false,true).GetString(json));
             var actual=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);
             Check(actual.profile=="geshi-easy-v1"&&actual.diagnostic,"real native diagnostic snapshot decodes: "+Path.GetFileName(path));
+            var items=new SdlpalItemTracker();items.Observe(actual);
+            Check(items.View.Available&&items.View.Rows.Any(row=>row.Id==585)&&!items.View.Rows.Any(row=>row.Id==571||row.Id==575),"native item catalog includes modified items and excludes initial magics: "+Path.GetFileName(path));
+            Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&items.View.Rows.Single(row=>row.Id==344).Name=="銅錢鏢","native item names/prices come from current resources");
+            Check(actual.scene==227 ? items.View.Cash==31265&&items.View.Kinds==80&&items.View.Quantity==355 :
+                actual.scene==93&&items.View.Cash==9817&&items.View.Kinds==107&&items.View.Quantity==458,"native save ownership/cash totals (all six equipment slots, active party only)");
+        }
+    }
+    static void ItemTests()
+    {
+        var s=Snapshot();s.started=true;s.cash=uint.MaxValue;s.party=new[]{0,1};
+        s.inventory=new[]{new SdlpalInventory{slot=0,id=61,amount=3,inUse=1},new SdlpalInventory{slot=1,id=61,amount=2},new SdlpalInventory{slot=255,id=585,amount=1}};
+        s.roles[0].equipment=new[]{61,62,0,0,0,0};s.roles[1].equipment=new[]{62,0,0,0,0,0};s.roles[5].equipment=new[]{344,0,0,0,0,0};
+        var tracker=new SdlpalItemTracker();tracker.Observe(s);var v=tracker.View;
+        Check(v.Available&&v.Cash==uint.MaxValue&&v.Kinds==3&&v.Quantity==9,"cash preserves uint32; duplicate stock aggregates, ownership deduplicates and absent-party gear is excluded");
+        Check(v.Rows.Single(r=>r.Id==61).Backpack==5&&v.Rows.Single(r=>r.Id==61).InUse==1&&v.Rows.Single(r=>r.Id==61).Total==6,"battle reservation remains owned stock, not a second copy or a consumed item");
+        Check(v.Rows.Single(r=>r.Id==62).Equipped==2&&v.Rows.All(r=>r.NetChange==0),"multiple equipped copies are quantities, first attach creates no gains");
+        s.inventory[0].amount++;tracker.Observe(s);Check(tracker.View.Rows.Single(r=>r.Id==61).NetChange==1,"observed increase changes current baseline total");
+        s.inventory[0].amount--;s.roles[0].equipment[0]=0;s.inventory[0].amount++;tracker.Observe(s);
+        Check(tracker.View.Rows.Single(r=>r.Id==61).NetChange==0,"moving equipment into inventory is not a gain");
+        s.inventory=s.inventory.Concat(new[]{new SdlpalInventory{slot=2,id=600,amount=1}}).ToArray();tracker.Observe(s);
+        Check(tracker.View.Rows.Single(r=>r.Id==600).NetChange==1,"observed modified item outside audited catalog is still monitored");
+        s.inventory=s.inventory.Where(i=>i.id!=600).ToArray();tracker.Observe(s);
+        Check(tracker.View.Rows.Single(r=>r.Id==600).Total==0,"a newly seen item stays visible after losing the last copy");
+        s.epoch++;s.cash=9817;s.inventory[0].amount=99;tracker.Observe(s);
+        Check(tracker.View.Rows.All(r=>r.NetChange==0)&&tracker.View.Cash==9817,"load epoch rebuilds item baseline without manufacturing gains");
+        tracker.Unavailable("lost");Check(!tracker.View.Available,"disconnect marks last table unavailable");
+        s.inventory[0].amount=1;tracker.Observe(s);Check(tracker.View.Rows.All(r=>r.NetChange==0),"reconnect establishes a new baseline");
+        tracker.Reset();tracker.Observe(s);Check(tracker.View.Rows.All(r=>r.NetChange==0),"timer/manual baseline reset creates no false item event");
+        s.Pid=2;s.inventory[0].amount=50;tracker.Observe(s);Check(tracker.View.Rows.All(r=>r.NetChange==0),"replacement game process creates a new baseline");
+        s.inventory[0].inUse=51;tracker.Observe(s);Check(!tracker.View.Available&&tracker.View.Status.Contains("背包"),"malformed stock is unavailable, never silently zero");s.inventory[0].inUse=0;
+        s.roles[1].id=0;tracker.Observe(s);Check(!tracker.View.Available,"duplicate role data is rejected");s.roles[1].id=1;
+        s.catalog[61].data=new[]{1,2};tracker.Observe(s);Check(!tracker.View.Available,"malformed object union cannot supply price or count");s.catalog[61].data=new int[7];
+        s.itemIds=null;tracker.Observe(s);Check(!tracker.View.Available,"missing audited catalog does not guess item types from union flags");
+        Reject(()=>new SdlpalItemSettings{WatchedIds=new[]{61,61}}.Validate(),"duplicate configured watches rejected");
+        Reject(()=>new SdlpalItemSettings{WatchedIds=new[]{700}}.Validate(),"out-of-range configured watch rejected");
+    }
+
+    sealed class ItemCloudClient : ICloudStepClient
+    {
+        internal readonly ManualResetEvent Received=new ManualResetEvent(false);
+        internal CloudPayload Last;
+        public bool Initialized=>true;public int NextDataKind=>2;
+        public CloudStepResult Step(CloudPayload payload,bool finish) {Last=payload;Received.Set();return new CloudStepResult{Initialized=true,Id=42};}
+        public void Upload(string local,string remote){throw new Exception("Unexpected upload");}
+        public void Download(string remote,string local){throw new Exception("Unexpected download");}
+        public void Stop(){}
+    }
+    sealed class RenderHost : System.Windows.Forms.Form
+    {
+        protected override bool ShowWithoutActivation=>true;
+        internal RenderHost() {ShowInTaskbar=false;StartPosition=System.Windows.Forms.FormStartPosition.Manual;Location=new System.Drawing.Point(-20000,-20000);}
+    }
+    static void ItemCoreTests()
+    {
+        using(var engine=new Engine())
+        {
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            using(var controlState=new System.Windows.Forms.Form())
+            {
+                var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);window.SetValue(form,window.GetValue(controlState));
+                var core=new SdlpalGeshi(form);Call(core,"InitCheckPoints");core.LoadPlugins();
+                var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(engine.Process.Id));Set(core,"bridge",bridge);
+                engine.State.diagnostic=false;engine.Publish();Call(core,"OnTick");engine.State.started=true;engine.State.cash=12345;engine.State.inventory=new[]{new SdlpalInventory{slot=0,id=585,amount=4}};
+                engine.State.catalog[585].name="音乐播放器";engine.Publish();Call(core,"OnTick");
+                var config=core.ItemSettings;config.WatchedIds=new[]{585,61};core.ApplyItemSettings(config);
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR)=="钱12345 道具1种 / 4件","production OnTick publishes SDL Fujia through real plugin slot");
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音乐播放器×4"),"production watch output uses live modified names and counts");
+                engine.State.catalog[585].name="音樂播放器";engine.Publish();Call(core,"OnTick");
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音乐播放器×4"),"simplified mode converts native traditional item names");
+                Set(core,"traditional",true);Call(core,"PublishItemPlugins");
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音樂播放器×4"),"traditional mode uses same live item counts");
+                Set(core,"traditional",false);Call(core,"PublishItemPlugins");
+                var overlay=(Dx9OverlaySnapshot)Call(core,"OverlaySnapshot");
+                Check(overlay.FooterText.Contains("钱12345")&&overlay.FooterText.Contains("音乐播放器×4"),"OBS wrapping footer includes both Fujia and selected item output");
+                core.Jump(0);
+                var payload=GForm.BuildCloudPayload(core,false,2);
+                Check(payload.SuppressScores&&payload.Lite==""&&payload.Big==""&&payload.Plugins["BR"].Contains("12345")&&payload.Plugins["BL"].Contains("音乐播放器×4"),"cloud preparation carries assisted-run item display without enabling its old score stream");
+                engine.State.diagnostic=true;engine.Publish();Call(core,"OnTick");var diagnostic=GForm.BuildCloudPayload(core,false,2);
+                Check(diagnostic.SuppressScores&&diagnostic.Plugins.Values.All(text=>text=="")&&!core.CompetitionPublicationAllowed,"diagnostic snapshots never send synthetic plugin values or scores to cloud");
+                engine.State.diagnostic=false;engine.Publish();Call(core,"OnTick");
+                var fake=new ItemCloudClient();using(var runner=new CloudSessionRunner(_=>fake,10))
+                {
+                    runner.Start(core.CoreName,()=>true,_=>GForm.BuildCloudPayload(core,false,2),(session,state)=>{});
+                    Check(fake.Received.WaitOne(3000)&&fake.Last.Plugins["BR"]==payload.Plugins["BR"]&&fake.Last.SuppressScores,"real CloudSessionRunner passes SDL plugin values to offline transport");
+                }
+                engine.State.inventory[0].amount=6;engine.Publish();Call(core,"OnTick");
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("×6(+2)"),"live MMF update advances selected-item net change");
+                core.RebaseItems();Check(!core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("(+2)"),"manual observation baseline does not reset timer");
+                config=core.ItemSettings;config.OnlyOwned=false;config.FujiaEnabled=false;config.WatchEnabled=false;core.ApplyItemSettings(config);
+                payload=GForm.BuildCloudPayload(core,false,2);overlay=(Dx9OverlaySnapshot)Call(core,"OverlaySnapshot");
+                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR)==""&&payload.Plugins["BR"]==""&&payload.Plugins["BL"]==""&&!overlay.FooterText.Contains("音乐播放器"),"disabling plugins explicitly clears main/OBS/cloud outputs");
+                var persisted=SdlpalItemSettings.Load();
+                Check(!persisted.FujiaEnabled&&!persisted.WatchEnabled&&!persisted.OnlyOwned&&persisted.WatchedIds.SequenceEqual(new[]{585,61})&&File.Exists(TimerUserSettings.GetPath(SdlpalItemSettings.FileName)+".previous"),"watch settings persist with previous configuration backup");
+                config.FujiaEnabled=true;config.WatchEnabled=true;core.ApplyItemSettings(config);
+                using(var manager=new PluginMgrForm(()=>core))
+                {
+                    var table=(System.Windows.Forms.DataGridView)typeof(PluginMgrForm).GetField("dvPlugins",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(manager);
+                    Check(table.Rows.Count==2&&Convert.ToString(table.Rows[0].Cells[2].Value)==SdlpalGeshi.GameplayName,"plugin manager lists dedicated built-in Fujia and item display");
+                    table.Rows[0].Cells[0].Value=false;Call(manager,"dvPlugins_CellContentClick",table,new System.Windows.Forms.DataGridViewCellEventArgs(0,0));
+                    Check(!core.ItemSettings.FujiaEnabled&&core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR)=="","plugin manager checkbox updates actual SDL plugin immediately");
+                }
+                core.ApplyItemSettings(config);
+                using(var dialog=new SdlpalItemsForm(()=>core.ItemView,()=>core.ItemSettings,core.ApplyItemSettings,core.RebaseItems,text=>text))
+                {
+                    var grid=(System.Windows.Forms.DataGridView)typeof(SdlpalItemsForm).GetField("grid",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(dialog);
+                    var music=grid.Rows.Cast<System.Windows.Forms.DataGridViewRow>().Single(row=>(int)row.Tag==585);
+                    Check(grid.Rows.Count==242&&(string)music.Cells[2].Value=="音樂播放器"&&(int)music.Cells[6].Value==6,"real item window displays full audited catalog and live modified item quantities");
+                    music.Cells[0].Value=false;
+                    Check(!core.ItemSettings.WatchedIds.Contains(585),"real checkbox operation persists watch removal");
+                    using(var host=new RenderHost())
+                    {
+                        dialog.TopLevel=false;host.ClientSize=dialog.Size;host.Controls.Add(dialog);dialog.Show();host.Show();System.Windows.Forms.Application.DoEvents();
+                        using(var bitmap=new System.Drawing.Bitmap(dialog.Width,dialog.Height)) {dialog.DrawToBitmap(bitmap,new System.Drawing.Rectangle(System.Drawing.Point.Empty,dialog.Size));bitmap.Save(Path.Combine(root,"items-window.png"));}
+                        var only=(System.Windows.Forms.CheckBox)typeof(SdlpalItemsForm).GetField("onlyWatched",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(dialog);
+                        only.Checked=true;System.Windows.Forms.Application.DoEvents();
+                        Check(grid.Rows.Count==1&&(int)grid.Rows[0].Tag==61,"only-watched filter keeps selected zero-count item visible");
+                        grid.Rows[0].Cells[0].Value=false;System.Windows.Forms.Application.DoEvents();
+                        Check(grid.Rows.Count==0&&core.ItemSettings.WatchedIds.Length==0,"removing last watched row commits safely before filtering it away");
+                        host.Hide();
+                    }
+                }
+                config.WatchedIds=new[]{585};core.ApplyItemSettings(config);
+                engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(core,"OnTick");payload=GForm.BuildCloudPayload(core,false,2);
+                Check(!core.ItemView.Available&&!core.GetMoreInfo().Contains("12345")&&payload.Plugins["BR"].Contains("不可用"),"stale bridge clears cash and sends unavailable plugin state");
+                engine.State.epoch++;engine.State.inventory[0].amount=50;engine.Publish();Call(core,"OnTick");
+                Check(core.ItemView.Available&&core.ItemView.Rows.All(row=>row.NetChange==0),"production core rebuilds item baseline after reconnect/load");
+                core.Reset();Check(!core.ItemView.Available&&core.ItemSettings.WatchedIds.SequenceEqual(new[]{585}),"reset clears observed items but preserves user watches");
+                core.Unload();core.UnloadPlugins();
+                Reject(()=>core.ApplyItemSettings(config),"closed/core-switched plugin configuration cannot modify new session");
+                new SdlpalItemSettings().Save();
+            }
         }
     }
     static SdlpalBattleEvent Victory(ulong sequence, ulong epoch=1, int result=3) => new SdlpalBattleEvent { seq=sequence,epoch=epoch,team=315,result=result,enemies=new[]{547},scene=10 };
@@ -196,7 +335,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();IntegrationTests();Console.WriteLine("PASS total="+count);return 0;
+            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();ItemCoreTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

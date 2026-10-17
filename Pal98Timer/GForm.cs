@@ -225,24 +225,31 @@ namespace Pal98Timer
             SyncContext.Send(delegate(object ignored) {
                 if (IsDisposed || !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence) return;
                 try {
-                    payload = new CloudPayload { IsC = rr.IsC };
-                    // The personal file session remains usable for any local
-                    // configuration; the old score stream retains its gate.
-                    if (!string.IsNullOrEmpty(boundCore.GetScoreValidationError())) {
-                        payload.SuppressScores = true;
-                        payload.Lite = payload.Big = "";
-                        return;
-                    }
-                    foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
-                        TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
-                        if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = boundCore.GetPluginResult(position);
-                    if ((nextDo == 0 || nextDo == 2) && !boundCore.CustomCloudLiteData())
-                        payload.Lite = boundCore.ForCloudLiteData();
-                    if ((nextDo == 1 || nextDo == 2) && !boundCore.CustomCloudBigData())
-                        payload.Big = boundCore.ForCloudBigData();
+                    payload = BuildCloudPayload(boundCore, rr.IsC, nextDo);
                 } catch (Exception ex) { error = ex; }
             }, null);
             if (error != null) throw error;
+            return payload;
+        }
+
+        internal static CloudPayload BuildCloudPayload(TimerCore boundCore, bool isC, int nextDo)
+        {
+            var payload = new CloudPayload { IsC = isC };
+            // SDL plugins are display state, including explicit empty/unavailable
+            // output. They must clear an old cloud display after disconnect/disable
+            // even when the score stream is suppressed. This grants no score access.
+            bool sdlpal = boundCore is SdlpalGeshi;
+            bool hideDiagnostic = sdlpal && !boundCore.CompetitionPublicationAllowed;
+            bool allowed = string.IsNullOrEmpty(boundCore.GetScoreValidationError());
+            if (allowed || sdlpal)
+                foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
+                    TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
+                    if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = hideDiagnostic ? "" : boundCore.GetPluginResult(position);
+            // The personal file session remains usable for any local
+            // configuration; the old score stream retains its gate.
+            if (!allowed) { payload.SuppressScores = true; payload.Lite = payload.Big = ""; return payload; }
+            if ((nextDo == 0 || nextDo == 2) && !boundCore.CustomCloudLiteData()) payload.Lite = boundCore.ForCloudLiteData();
+            if ((nextDo == 1 || nextDo == 2) && !boundCore.CustomCloudBigData()) payload.Big = boundCore.ForCloudBigData();
             return payload;
         }
 
@@ -1009,7 +1016,7 @@ namespace Pal98Timer
         {
             if (pmf == null)
             {
-                pmf = new PluginMgrForm();
+                pmf = new PluginMgrForm(() => core);
                 this.CenterChild(pmf);
                 pmf.Show(this);
                 pmf.FormClosed += delegate(object sender1, FormClosedEventArgs e1) {

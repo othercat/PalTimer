@@ -123,16 +123,66 @@ namespace Pal98Timer
         private bool freshSnapshot;
         private string bestCategory = "unbound";
         private Dx9OverlayForm overlay;
+        private SdlpalItemsForm itemsForm;
+        private readonly SdlpalItemTracker items = new SdlpalItemTracker();
+        private SdlpalItemSettings itemSettings = new SdlpalItemSettings();
         private ToolStripMenuItem cloudSave, cloudLoad, overlayMenu;
         private readonly List<ToolStripMenuItem> translatedMenus = new List<ToolStripMenuItem>();
-        public SdlpalGeshi(GForm form) : base(form) { CoreName = "SDLPAL_GESHI_EASY"; CheckInterval = 70; traditional = Dx9TimingCategory.Traditional; }
+        public SdlpalGeshi(GForm form) : base(form)
+        {
+            CoreName = "SDLPAL_GESHI_EASY"; CheckInterval = 70; traditional = Dx9TimingCategory.Traditional;
+            try { itemSettings = SdlpalItemSettings.Load(); }
+            catch (Exception ex) { warning = "物品监测配置读取失败，使用默认值；原文件保留：" + ex.Message; }
+        }
+        public override void LoadPlugins()
+        {
+            lock (gate)
+            {
+                // The two bundled SDL plugins own these slots even when disabled,
+                // so clearing an output is observable by the renderer/cloud cache.
+                foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL, TimerPluginBase.TimerPlugin.EPluginPosition.BR })
+                    if (!Plugins.ContainsKey(position))
+                    { var plugin = new SdlpalItemPlugin(position); plugin.OnLoad(); Plugins.Add(position, plugin); }
+                base.LoadPlugins(); PublishItemPlugins();
+            }
+        }
+        internal SdlpalItemSettings ItemSettings { get { lock (gate) return itemSettings.Copy(); } }
+        internal SdlpalItemView ItemView { get { lock (gate) return items.View; } }
+        internal void ApplyItemSettings(SdlpalItemSettings value)
+        {
+            lock (gate)
+            {
+                if (unloaded) throw new InvalidOperationException("核心已切换，请重新打开物品配置");
+                value = value.Copy(); value.Save(); itemSettings = value; PublishItemPlugins();
+            }
+        }
+        internal void RebaseItems()
+        {
+            lock (gate)
+            {
+                items.Reset();
+                if (freshSnapshot && observer.Snapshot != null) items.Observe(observer.Snapshot);
+                PublishItemPlugins();
+            }
+        }
+        private void PublishItemPlugins() => SendPluginsEvent(SdlpalItemPlugin.EventName, new SdlpalItemPluginText(items.View, itemSettings, T));
+        private void ShowItems()
+        {
+            if (itemsForm == null || itemsForm.IsDisposed)
+            {
+                itemsForm = new SdlpalItemsForm(() => ItemView, () => ItemSettings, ApplyItemSettings, RebaseItems, T);
+                itemsForm.Show(form);
+            }
+            else { itemsForm.Show(); itemsForm.Activate(); }
+        }
         internal override Process CompetitionGameProcess => bridge?.Process;
         internal override bool CompetitionPublicationAllowed => observer.Snapshot != null && !observer.Snapshot.diagnostic;
         internal SdlpalSnapshot CurrentSnapshot => observer.Snapshot;
         private string RouteIdentity => SdlpalSplitRule.Identity(rules);
         private string BestCategory => observer.Snapshot == null ? "unbound" : CompetitionProtocol.Hash(observer.Snapshot.IdentityKey).Substring(0, 16);
         public override string ActiveBestPath => TimerUserSettings.BestPath("best" + CoreName + "-" + BestCategory + "-" + RouteIdentity.Substring(0, 16) + ".txt");
-        private string T(string text) => traditional ? Microsoft.VisualBasic.Strings.StrConv(text, Microsoft.VisualBasic.VbStrConv.TraditionalChinese, 0x0804) : text;
+        private string T(string text) => Microsoft.VisualBasic.Strings.StrConv(text, traditional ?
+            Microsoft.VisualBasic.VbStrConv.TraditionalChinese : Microsoft.VisualBasic.VbStrConv.SimplifiedChinese, 0x0804);
         protected override void InitCheckPoints()
         {
             lock (gate)
@@ -216,6 +266,7 @@ namespace Pal98Timer
                 if (bridge == null || !bridge.TryRead(out snapshot))
                 {
                     freshSnapshot = false;
+                    items.Unavailable("游戏未连接或快照不可用"); PublishItemPlugins();
                     status = bridge?.Error ?? status; MT.Stop(); battleTimer.Stop();
                     if (observer.Started) idleTimer.Start();
                     if (bridge != null && (bridge.Process == null || bridge.Process.HasExited)) { bridge.Dispose(); bridge = null; }
@@ -224,6 +275,7 @@ namespace Pal98Timer
                 bool wasStarted = observer.Started;
                 freshSnapshot = true;
                 observer.Observe(snapshot, rules);
+                items.Observe(snapshot); PublishItemPlugins();
                 if (bestCategory != BestCategory)
                 {
                     bestCategory = BestCategory;
@@ -254,7 +306,7 @@ namespace Pal98Timer
         }
         public override void Reset()
         {
-            lock (gate) { base.Reset(); observer = new SdlpalRunObserver(); freshSnapshot = false; bestCategory = "unbound"; battleTimer.Reset(); idleTimer.Reset(); battleSequence = 0; }
+            lock (gate) { base.Reset(); observer = new SdlpalRunObserver(); freshSnapshot = false; bestCategory = "unbound"; battleTimer.Reset(); idleTimer.Reset(); battleSequence = 0; items.Reset(); PublishItemPlugins(); }
         }
         public override void Jump(int index)
         {
@@ -277,7 +329,8 @@ namespace Pal98Timer
         public override string GetSmallWatch() => battleTimer.CurrentTS.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + "s";
         public override string GetSecondWatch() => idleTimer.ToFullString();
         public override string GetGameVersion() => GameplayName;
-        public override string GetMoreInfo() => T(status + (observer.Snapshot == null ? "" : "  场景 " + observer.Snapshot.scene + "  金钱 " + observer.Snapshot.cash));
+        public override string GetMoreInfo() => T(status + (!freshSnapshot || observer.Snapshot == null ? "" : "  场景 " + observer.Snapshot.scene +
+            (items.View.Available ? "  金钱 " + items.View.Cash : "  物品数据不可用")));
         public override string GetAAction() => "";
         public override string GetCriticalError() { string value = warning; warning = ""; return value; }
         public override string GetRuntimeIntegrityStatus() => GetScoreValidationError();
@@ -320,10 +373,13 @@ namespace Pal98Timer
             Menu("接力－保存…", SaveRelay);
             Menu("接力－载入…", LoadRelay);
             Menu("按键配置（F11）", OpenKeyConfig);
+            Menu("实时物品检测 / 富甲设置…", ShowItems);
             Menu("简体 / 繁體", () => {
                 traditional = !traditional;
                 foreach (var item in translatedMenus) item.Text = T((string)item.Tag);
                 for (int i = 0; i < CheckPoints.Count; i++) CheckPoints[i].SetBestReference(new CheckPointNewer { Name = CheckPoints[i].Name, NickName = T(rules[i].Name), BestTS = CheckPoints[i].Best });
+                lock (gate) PublishItemPlugins();
+                itemsForm?.RefreshLanguage();
                 form.Invalidate();
             });
             cloudSave = Menu("云存档（隔世追凶）", CloudSave, true); cloudSave.Enabled = false;
@@ -377,13 +433,14 @@ namespace Pal98Timer
                 for (int i = 0; i < 3 && start + i < CheckPoints.Count; i++)
                 { var p = CheckPoints[start + i]; entries[i] = new Dx9OverlayTimelineEntry(T(p.GetNickName()), TItem.TimeSpanToString(p.Best), TItem.TimeSpanToString(p.Current), p.GetCHA(), p.Index == CurrentStep, p.Status == CheckPointStatus.Completed); }
                 IntPtr handle = IntPtr.Zero; try { handle = bridge?.Process?.MainWindowHandle ?? IntPtr.Zero; } catch { }
-                string plugin = GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR);
+                string plugin = string.Join("  ", new[] { GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR),
+                    GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL) }.Where(text => !string.IsNullOrEmpty(text)));
                 return new Dx9OverlaySnapshot(handle, overlay?.ConfiguredFontFamily, TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
                     GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], entries[2], T(status), false, !MT.IsRunning,
                     "SDLPAL / " + observer.Snapshot?.profile, "", "", T(GetScoreValidationError()), form.CloudID(), plugin);
             }
         }
-        public override void UnloadUI() { if (overlay != null) { overlay.Stop(); overlay.Dispose(); overlay = null; } base.UnloadUI(); }
+        public override void UnloadUI() { if (itemsForm != null) { itemsForm.Dispose(); itemsForm = null; } if (overlay != null) { overlay.Stop(); overlay.Dispose(); overlay = null; } base.UnloadUI(); }
         public override void Unload() { lock (gate) { unloaded = true; base.Unload(); bridge?.Dispose(); bridge = null; MT.Stop(); } }
 
         private sealed class ImportedTimer
@@ -429,6 +486,7 @@ namespace Pal98Timer
             {
                 MT.Stop(); MT.SetTS(timer.Current); idleTimer.Stop(); idleTimer.SetTS(timer.Idle); battleTimer.Reset();
                 AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot); freshSnapshot = true; Jump(timer.Step);
+                items.Reset(); items.Observe(snapshot); PublishItemPlugins();
                 for (int i = 0; i < rules.Length; i++) { CheckPoints[i].SetCurrentTSForLoad(timer.Times[i]); CheckPoints[i].Status = timer.Statuses[i]; }
                 PauseForLoad();
             }

@@ -13,8 +13,12 @@ namespace Pal98Timer
     public partial class PluginMgrForm : FormEx
     {
         private bool HasChanged = false;
-        public PluginMgrForm()
+        private readonly Func<TimerCore> currentCore;
+        private SdlpalGeshi sdlpal;
+        public PluginMgrForm() : this(null) { }
+        public PluginMgrForm(Func<TimerCore> currentCore)
         {
+            this.currentCore = currentCore;
             InitializeComponent();
             this.FormClosing += PluginMgrForm_FormClosing;
             RefreshPlugins();
@@ -31,6 +35,13 @@ namespace Pal98Timer
         public void RefreshPlugins()
         {
             dvPlugins.Rows.Clear();
+            sdlpal = currentCore?.Invoke() as SdlpalGeshi;
+            if (sdlpal != null)
+            {
+                var settings = sdlpal.ItemSettings;
+                ShowBundledPlugin("富甲（金钱与道具）", true, settings.FujiaEnabled);
+                ShowBundledPlugin("实时物品监测输出", false, settings.WatchEnabled);
+            }
             string pluginPath = TimerPluginPackageInfo.GetPluginDir();
             if (!Directory.Exists(pluginPath)) return;
             DirectoryInfo root = new DirectoryInfo(pluginPath);
@@ -52,6 +63,16 @@ namespace Pal98Timer
                 }
             }
 
+        }
+        private void ShowBundledPlugin(string name, bool fujia, bool enabled)
+        {
+            var row = new DataGridViewRow(); row.CreateCells(dvPlugins);
+            row.Cells[0].Value = enabled; row.Cells[0].Tag = fujia;
+            row.Cells[1].Value = name; row.Cells[2].Value = SdlpalGeshi.GameplayName;
+            row.Cells[3].Value = "1（内置）"; row.Cells[4].Value = "随计时器签发";
+            row.DefaultCellStyle.ForeColor = enabled ? Color.Green : Color.Black;
+            row.Cells[1].ToolTipText = "使用 SDLPAL 只读快照；立即生效。监测清单在“实时物品检测 / 富甲设置”中配置。";
+            dvPlugins.Rows.Add(row);
         }
         private void ShowOnePlugin(string tpgPath)
         {
@@ -77,6 +98,19 @@ namespace Pal98Timer
                 var row = dvPlugins.Rows[e.RowIndex];
                 var cell = row.Cells[e.ColumnIndex];
                 bool enable = (bool)cell.EditedFormattedValue;
+                if (cell.Tag is bool)
+                {
+                    if (sdlpal == null || !ReferenceEquals(currentCore?.Invoke(), sdlpal)) { RefreshPlugins(); return; }
+                    try
+                    {
+                        var settings = sdlpal.ItemSettings;
+                        if ((bool)cell.Tag) settings.FujiaEnabled = enable; else settings.WatchEnabled = enable;
+                        sdlpal.ApplyItemSettings(settings);
+                        cell.Value = enable; row.DefaultCellStyle.ForeColor = enable ? Color.Green : Color.Black;
+                    }
+                    catch (Exception ex) { Error("物品插件设置保存失败：" + ex.Message); RefreshPlugins(); }
+                    return;
+                }
                 TimerPluginPackageInfo ti = cell.Tag as TimerPluginPackageInfo;
                 if (enable != ti.Enable)
                 {

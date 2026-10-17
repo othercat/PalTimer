@@ -32,8 +32,22 @@ namespace Pal98Timer
     }
     internal sealed class SdlpalInventory
     {
+        public int slot { get; set; }
         public int id { get; set; }
         public int amount { get; set; }
+        public int inUse { get; set; }
+    }
+    internal sealed class SdlpalItemRole
+    {
+        public int id { get; set; }
+        public string name { get; set; }
+        public int[] equipment { get; set; }
+    }
+    internal sealed class SdlpalCatalogEntry
+    {
+        public int id { get; set; }
+        public string name { get; set; }
+        public int[] data { get; set; }
     }
     internal sealed class SdlpalSnapshot
     {
@@ -65,6 +79,11 @@ namespace Pal98Timer
         public SdlpalBattle battle { get; set; }
         public SdlpalBattleEvent[] battleEvents { get; set; }
         public SdlpalInventory[] inventory { get; set; }
+        public int[] party { get; set; }
+        public SdlpalItemRole[] roles { get; set; }
+        public SdlpalCatalogEntry[] catalog { get; set; }
+        public int[] itemIds { get; set; }
+        internal string ItemDataError;
         internal int Pid;
         internal ulong Created, Published;
         internal string IdentityKey => profile + "|" + exeHash + "|" + build + "|" +
@@ -125,7 +144,26 @@ namespace Pal98Timer
             for (int i = 1; i < value.battleEvents.Length; i++)
                 if (value.battleEvents[i].seq <= value.battleEvents[i - 1].seq) throw new InvalidDataException("战斗事件顺序无效");
             value.Pid = pid; value.Created = created; value.Published = published;
+            // Item viewing is an optional capability. Missing/invalid item fields
+            // must not turn an otherwise valid timing snapshot into zero stock.
+            value.ItemDataError = new[] { "cash", "inventory", "party", "roles", "catalog", "itemIds" }.Any(k => !fields.ContainsKey(k) || fields[k] == null) ||
+                !HasItemFields(fields, "inventory", "slot", "id", "amount", "inUse") ||
+                !HasItemFields(fields, "roles", "id", "name", "equipment") || !HasItemFields(fields, "catalog", "id", "name", "data")
+                ? "游戏未提供完整物品数据，请更新配套游戏" : null;
             return value;
+        }
+        private static bool HasItemFields(Dictionary<string, object> root, string name, params string[] required)
+        {
+            object value;
+            if (!root.TryGetValue(name, out value) || value is string) return false;
+            var entries = value as System.Collections.IEnumerable;
+            if (entries == null) return false;
+            foreach (object entry in entries)
+            {
+                var fields = entry as Dictionary<string, object>;
+                if (fields == null || required.Any(k => !fields.ContainsKey(k) || fields[k] == null)) return false;
+            }
+            return true;
         }
         internal void Attach(Process process)
         {

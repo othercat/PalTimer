@@ -22,7 +22,8 @@ $references = @($project.Project.ItemGroup.Reference | Where-Object { $_.Include
 $runtime = Join-Path $repo 'Pal98Timer\bin\x64\Release'
 $references += '/reference:System.Core.dll', '/reference:System.IO.Compression.dll', ('/reference:' + (Join-Path $runtime 'TimerPluginBase.dll'))
 $exe = Join-Path $out 'SdlpalBehavior.exe'
-& $csc /nologo /noconfig /target:exe /platform:x64 /main:SdlpalBehavior "/out:$exe" $references $sources (Join-Path $PSScriptRoot 'sdlpal_behavior.cs') *> (Join-Path $out 'host-build.log')
+$pluginResource = Join-Path $repo 'Pal98Timer\obj\x64\Release\Pal98Timer.PluginMgrForm.resources'
+& $csc /nologo /noconfig /target:exe /platform:x64 /main:SdlpalBehavior "/out:$exe" "/resource:$pluginResource,Pal98Timer.PluginMgrForm.resources" $references $sources (Join-Path $PSScriptRoot 'sdlpal_behavior.cs') *> (Join-Path $out 'host-build.log')
 if ($LASTEXITCODE -ne 0) { throw "SDL host build failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($exe + '.config')
