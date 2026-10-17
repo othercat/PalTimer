@@ -485,9 +485,17 @@ namespace Pal98Timer
             lock (gate)
             {
                 MT.Stop(); MT.SetTS(timer.Current); idleTimer.Stop(); idleTimer.SetTS(timer.Idle); battleTimer.Reset();
-                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot); freshSnapshot = true; Jump(timer.Step);
+                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot); freshSnapshot = true;
+                // Jump derives the interval and prediction from checkpoint times.
+                for (int i = 0; i < rules.Length; i++) CheckPoints[i].SetCurrentTSForLoad(timer.Times[i]);
+                Jump(timer.Step);
                 items.Reset(); items.Observe(snapshot); PublishItemPlugins();
-                for (int i = 0; i < rules.Length; i++) { CheckPoints[i].SetCurrentTSForLoad(timer.Times[i]); CheckPoints[i].Status = timer.Statuses[i]; }
+                for (int i = 0; i < rules.Length; i++)
+                {
+                    // Replace Jump's manual-skip status in both data and renderer.
+                    CheckPoints[i].Status = timer.Statuses[i];
+                    form?.rr?.UpdateItemStatus(i, timer.Statuses[i]);
+                }
                 PauseForLoad();
             }
         }

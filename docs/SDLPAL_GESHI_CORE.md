@@ -1,6 +1,6 @@
 # SDLPAL 隔世追凶（简单）独立核心
 
-Issue #18，PalTimer 3.39.0 / PalTimerOnline 1.0.0.5，Windows 10 及以后。核心菜单、标题玩法名称和版本行使用 **隔世追凶-简单**；整合包可用 `Pal98Timer.exe --core sdlpal-geshi-easy` 启动。没有指定参数时继续采用原有“上次核心 / 默认自动玩法核心”逻辑。
+Issues #18、#20，PalTimer 3.39.1 / PalTimerOnline 1.0.0.5，Windows 10 及以后。核心菜单、标题玩法名称和版本行使用 **隔世追凶-简单**；整合包可用 `Pal98Timer.exe --core sdlpal-geshi-easy` 启动。没有指定参数时继续采用原有“上次核心 / 默认自动玩法核心”逻辑。
 
 新核心不使用原版 PAL98、DX9、UNHAPPY 的进程内存地址，也不改变这三个核心的计时规则。游戏须发布 `Local\SDLPAL.LostEdit.v1.<PID>` v1 快照，且资源 profile 为 `geshi-easy-v1`。主仓 `docs/runtime-bridge.md` 是二进制布局的协议来源；本仓只实现客户端，不携带 SDLPAL 源码或资源。
 
@@ -15,6 +15,8 @@ Issue #18，PalTimer 3.39.0 / PalTimerOnline 1.0.0.5，Windows 10 及以后。�
 - OBS 独立遮罩复用现有渲染器，支持位置/缩放、字体、文字颜色、快捷键、恢复默认和插件/云 ID；新核心用独立配置。主窗口与榜单 OBS 功能也保留。简体/繁體切换调整本核心菜单、节点和状态显示。
 
 事件环丢失、读档 epoch 变化、过程中改变引擎/资源/速度都会保留诊断。丢失事件不补造胜利；中途连接不会把历史战斗当作刚完成的节点。
+
+3.39.1 修复了导入显示：先恢复各节点时间，再计算当前区间和预计通关；恢复后的 Completed、ManualSkipped、AutoSkipped 状态同步到主窗口渲染器。时间线、本地接力及个人云读档共用此恢复路径。导入后暂停、辅助跑次资格、控制映射、存档事务和传统 PAL98/DX9/UNHAPPY 核心保持原行为。行为回归绑定真实渲染器，原生接力验收也核对渲染状态、节点时间和区间值。
 
 ## 实时物品检测与富甲（Issue #19）
 

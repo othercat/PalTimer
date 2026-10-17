@@ -67,6 +67,7 @@ internal static class NativeSdlpalRelayHost
     {
         internal Process Process;
         internal SdlpalGeshi Core;
+        internal GRender Renderer;
         internal string DirectoryPath;
         readonly Form controlState = new Form();
         internal Endpoint(string directory, int slot, int step, TimeSpan elapsed)
@@ -96,6 +97,8 @@ internal static class NativeSdlpalRelayHost
                 window.SetValue(form, window.GetValue(controlState));
                 Core = new SdlpalGeshi(form);
                 Call(Core, "InitCheckPoints");
+                form.rr = Renderer = new GRender(controlState);
+                foreach (var point in Core.CheckPoints) point.SetUIItem(Renderer.AddItem(point.GetNickName(), point.Best));
                 object bridge = Activator.CreateInstance(Product.GetType("Pal98Timer.SdlpalBridge"), true);
                 try { Call(bridge, "Attach", Process.GetProcessById(Process.Id)); }
                 catch { ((IDisposable)bridge).Dispose(); throw; }
@@ -138,6 +141,10 @@ internal static class NativeSdlpalRelayHost
             "native game " + originalSlot + " advances epoch and preserves ordinary save slot");
         Check(receiver.Core.GetMainWatch() == elapsed && receiver.Core.CurrentStep == step && receiver.Core.IsUIPause,
             "timer " + originalSlot + " restores exact time and node while paused");
+        Check(receiver.Core.CheckPoints.Select((point, index) => receiver.Renderer.GetItem(index).Status == point.Status &&
+                  receiver.Renderer.GetItem(index).Cur == point.Current).All(matches => matches) &&
+              receiver.Core.GetPointSpan() == (step == 1 ? "[0~1] 0:20.00" : "--"),
+            "timer " + originalSlot + " renderer and displayed interval match restored data");
         Check(receiver.Core.GetScoreValidationError().Contains("诊断") && !(bool)Property(receiver.Core, "CompetitionPublicationAllowed"),
             "timer " + originalSlot + " still blocks competition publication");
         Evidence["loaded" + originalSlot] = actual;

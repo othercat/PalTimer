@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.39.0（文件版本 3.39.0.0）；需要 .NET Framework 4.7.2 框架**
+**当前版本：3.39.1（文件版本 3.39.1.0）；需要 .NET Framework 4.7.2 框架**
+
+2026-10-18 / 3.39.1：修复隔世追凶核心导入时间线或接力后，已完成节点被主窗口显示为“跳过”、区间用时仍取导入前数值的问题。恢复后的状态、节点时间和区间显示一致；导入后仍暂停并保留辅助跑次标记。Online 沿用 1.0.0.5，新 EXE 须配套重新签发 Auth 和公开登记。见 [Issue #20](https://github.com/othercat/PalTimer/issues/20)。
 
 2026-10-18 / 3.39.0：新增 Windows 10+ 的 [SDLPAL 隔世追凶（简单）独立核心](docs/SDLPAL_GESHI_CORE.md)，支持版本化只读运行状态、可编辑自动节点、独立按键配置入口、接力与个人云档、OBS、独立榜单身份及原有授权上传流程。配套 Online DLL 1.0.0.5；EXE/Online/Auth/公开登记文件须成套签发更新。正式榜单需要服务端接受新 family 与实际引擎/资源身份，不把该改版归入 PAL98/DX9 榜单。
 

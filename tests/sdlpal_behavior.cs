@@ -285,6 +285,8 @@ internal static class SdlpalBehavior
                 var window=typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance);
                 window.SetValue(form,window.GetValue(controlState));
             var core=new SdlpalGeshi(form);Call(core,"InitCheckPoints");var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(engine.Process.Id));Set(core,"bridge",bridge);
+            form.rr=new GRender(controlState);
+            foreach(var point in core.CheckPoints)point.SetUIItem(form.rr.AddItem(point.GetNickName(),point.Best));
             var keyConfig=core.CreateKeyConfigStartInfo();
             string executableDirectory=Path.GetDirectoryName(engine.Process.MainModule.FileName);
             Check(keyConfig.WorkingDirectory==executableDirectory && keyConfig.FileName==Path.Combine(executableDirectory,"LostEditKeyConfig.exe") &&
@@ -299,6 +301,22 @@ internal static class SdlpalBehavior
             string exported=core.GetRStr();Check(exported.Contains("SdlpalIdentity")&&exported.Contains("SdlpalStatuses"),"timeline export includes runtime identity and statuses");
             var imported=Call(core,"ValidateImport",exported,core.CurrentSnapshot.IdentityKey);Call(core,"Restore",imported,core.CurrentSnapshot);
             Check(core.IsUIPause&&core.CurrentStep==1&&core.GetScoreValidationError().Length>0,"timeline import restores progress paused and unverified");
+            foreach(var status in new[]{CheckPointStatus.Completed,CheckPointStatus.ManualSkipped,CheckPointStatus.AutoSkipped})
+            {
+                var timeline=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(exported);
+                timeline["Current"]="00:01:23.456";
+                timeline["CheckPoints"]=core.CheckPoints.Select((point,index)=>new {name=point.Name,time=index==0?"00:00:20.123":"00:00:00.000"}).ToArray();
+                timeline["SdlpalStatuses"]=new[]{status.ToString(),CheckPointStatus.InProgress.ToString()};
+                core.Jump(0);
+                core.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(3));
+                imported=Call(core,"ValidateImport",SdlpalBridge.Json().Serialize(timeline),core.CurrentSnapshot.IdentityKey);
+                Call(core,"Restore",imported,core.CurrentSnapshot);
+                Check(core.CheckPoints[0].Status==status&&form.rr.GetItem(0).Status==status&&
+                    form.rr.GetItem(0).Cur==core.CheckPoints[0].Current&&form.rr.GetItem(1).Status==CheckPointStatus.InProgress&&core.IsUIPause,
+                    "import from an earlier UI node preserves displayed status/time and pause: "+status);
+                Check(core.GetMainWatch()==TimeSpan.FromMilliseconds(83456)&&core.CheckPoints[0].Current==TimeSpan.FromMilliseconds(20123)&&
+                    core.GetPointSpan()=="[0~1] 0:20.12","import recalculates the displayed interval from restored time: "+status);
+            }
             Check(!core.CompetitionPublicationAllowed&&core.GetScoreValidationError().Contains("诊断"),"diagnostic runtime cannot publish competition observations");
             var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);
             Check(observation.Gameplay.Valid&&observation.Ranking.Valid(observation.Gameplay)&&observation.Gameplay.map_speed_ticks==0&&observation.Gameplay.walk_frame_ms==90,"independent SDL family uses milliseconds without PALDLL ticks");
