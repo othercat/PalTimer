@@ -103,10 +103,11 @@ namespace Pal98Timer
         }
     }
 
-    [TimerCoreDisplayName("SDLPAL 隔世追凶（简单）")]
+    [TimerCoreDisplayName("隔世追凶-简单")]
     public sealed class SdlpalGeshi : TimerCore
     {
         internal const string Family = "sdlpal-geshi-easy";
+        internal const string GameplayName = "隔世追凶-简单";
         private const string RulesFile = "sdlpal_geshi_splits.json", OverlayLayout = "sdlpal_geshi_overlay_layout";
         private readonly object gate = new object();
         private SdlpalBridge bridge;
@@ -275,7 +276,7 @@ namespace Pal98Timer
         public override bool IsMainWatchStar() => IsUIPause;
         public override string GetSmallWatch() => battleTimer.CurrentTS.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + "s";
         public override string GetSecondWatch() => idleTimer.ToFullString();
-        public override string GetGameVersion() => T("SDLPAL 隔世追凶（简单）");
+        public override string GetGameVersion() => GameplayName;
         public override string GetMoreInfo() => T(status + (observer.Snapshot == null ? "" : "  场景 " + observer.Snapshot.scene + "  金钱 " + observer.Snapshot.cash));
         public override string GetAAction() => "";
         public override string GetCriticalError() { string value = warning; warning = ""; return value; }
@@ -343,7 +344,7 @@ namespace Pal98Timer
         {
             if (overlay != null && !overlay.IsDisposed) return;
             overlay = new Dx9OverlayForm(OverlaySnapshot, Dx9OverlaySettings.LoadLayout(OverlayLayout), layout => Dx9OverlaySettings.SaveLayout(layout, OverlayLayout));
-            overlay.Text = "SDLPAL 隔世追凶 - OBS 独立遮罩";
+            overlay.Text = GameplayName + " - OBS 独立遮罩";
             overlay.LayoutSaveFailed += error => form.Error("OBS 设置保存失败：" + error.Message);
             overlay.FormClosed += (s, e) => { if (overlayMenu != null) overlayMenu.Checked = false; };
             overlay.Start(); overlayMenu.Checked = true;

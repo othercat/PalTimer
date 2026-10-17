@@ -842,7 +842,7 @@ namespace Pal98Timer
                 rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
                 var dx9Core = core as 仙剑98柔情DX9;
-                string windowTitle = "自动计时器" + (dx9Core == null ? "" : dx9Core.GameplayWindowTitleSuffix) +
+                string windowTitle = "自动计时器" + (core is SdlpalGeshi ? " " + SdlpalGeshi.GameplayName : dx9Core == null ? "" : dx9Core.GameplayWindowTitleSuffix) +
                     (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;
                 if (Text != windowTitle) Text = windowTitle;
                 rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());
@@ -877,7 +877,7 @@ namespace Pal98Timer
                 string displayTitle = core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title)
                     ? core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title) : MConfig.ins.Title;
                 // The compact header remains visible when the small window clips the longer version row.
-                rr.SetTitle(dx9Core == null ? displayTitle : dx9Core.AppendGameplayCodes(displayTitle));
+                rr.SetTitle(core is SdlpalGeshi ? (displayTitle + " " + SdlpalGeshi.GameplayName).Trim() : dx9Core == null ? displayTitle : dx9Core.AppendGameplayCodes(displayTitle));
             }
             else
             {

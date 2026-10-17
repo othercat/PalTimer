@@ -1,6 +1,6 @@
 # SDLPAL 隔世追凶（简单）独立核心
 
-Issue #18，PalTimer 3.39.0 / PalTimerOnline 1.0.0.5，Windows 10 及以后。核心菜单名为 **SDLPAL 隔世追凶（简单）**；整合包可用 `Pal98Timer.exe --core sdlpal-geshi-easy` 启动。没有指定参数时继续采用原有“上次核心 / 默认自动玩法核心”逻辑。
+Issue #18，PalTimer 3.39.0 / PalTimerOnline 1.0.0.5，Windows 10 及以后。核心菜单、标题玩法名称和版本行使用 **隔世追凶-简单**；整合包可用 `Pal98Timer.exe --core sdlpal-geshi-easy` 启动。没有指定参数时继续采用原有“上次核心 / 默认自动玩法核心”逻辑。
 
 新核心不使用原版 PAL98、DX9、UNHAPPY 的进程内存地址，也不改变这三个核心的计时规则。游戏须发布 `Local\SDLPAL.LostEdit.v1.<PID>` v1 快照，且资源 profile 为 `geshi-easy-v1`。主仓 `docs/runtime-bridge.md` 是二进制布局的协议来源；本仓只实现客户端，不携带 SDLPAL 源码或资源。
 
