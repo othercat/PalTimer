@@ -43,6 +43,8 @@ $pluginResource = Join-Path $repo 'Pal98Timer\obj\x64\Release\Pal98Timer.PluginM
 & $csc /nologo /noconfig /target:exe /platform:x64 /main:SdlpalBehavior "/out:$exe" "/resource:$pluginResource,Pal98Timer.PluginMgrForm.resources" $references $sources $hostSource *> (Join-Path $out 'host-build.log')
 if ($LASTEXITCODE -ne 0) { throw "SDL host build failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
+Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Destination $out
+Copy-Item -LiteralPath (Join-Path $repo 'PalTimerOnline\bin\x64\Release\PalTimerOnline.dll') -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($exe + '.config')
 $arguments = @()
 if ($NoGui) { $arguments += '--no-gui' }

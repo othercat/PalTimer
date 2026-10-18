@@ -17,9 +17,9 @@ namespace Pal98Timer
         public string saveBase64 { get; set; }
         internal byte[] Validate(string expectedIdentity)
         {
-            if (schema != "SDLPAL.GeshiRelay.v1" || identity != expectedIdentity || string.IsNullOrEmpty(timer) || timer.Length > 262144 ||
+            if (schema != "SDLPAL.GeshiRelay.v1" || !SdlpalSnapshot.SameResourceEngineIdentity(identity, expectedIdentity) || string.IsNullOrEmpty(timer) || timer.Length > 262144 ||
                 saveBase64 == null || saveBase64.Length > 4 * 1024 * 1024 || !SdlpalBridge.Digest(saveSha256))
-                throw new InvalidDataException("接力包版本、资源、引擎或速度配置不一致");
+                throw new InvalidDataException("接力包版本、资源或引擎不一致");
             byte[] data = Convert.FromBase64String(saveBase64);
             if (data.Length < 1024 || data.Length > 3 * 1024 * 1024 || Hash(data) != saveSha256)
                 throw new InvalidDataException("接力存档损坏或超过容量");
@@ -71,7 +71,7 @@ namespace Pal98Timer
                     if (!held) throw new IOException("另一个计时器正在存读接力档");
                     SdlpalSnapshot current;
                     if (bridge == null || !bridge.TryRead(out current) || current.Pid != expected.Pid || current.Created != expected.Created ||
-                        current.epoch != expected.epoch || current.IdentityKey != expected.IdentityKey || !current.canControl)
+                        current.epoch != expected.epoch || current.ResourceEngineIdentity != expected.ResourceEngineIdentity || !current.canControl)
                         throw new InvalidOperationException("请先回到游戏探索画面，并确认资源和存档未变化");
                     using (var map = MemoryMappedFile.OpenExisting("Local\\SDLPAL.LostEdit.Control.v1." + current.Pid, MemoryMappedFileRights.ReadWrite))
                     using (var view = map.CreateViewAccessor(0, 128, MemoryMappedFileAccess.ReadWrite))
@@ -100,7 +100,7 @@ namespace Pal98Timer
                                 while (SdlpalBridge.GetTickCount64() <= deadline + 1000)
                                 {
                                     SdlpalSnapshot after;
-                                    if (bridge.TryRead(out after) && after.epoch == epoch && after.Pid == current.Pid && after.Created == current.Created && after.IdentityKey == current.IdentityKey)
+                                    if (bridge.TryRead(out after) && after.epoch == epoch && after.Pid == current.Pid && after.Created == current.Created && after.ResourceEngineIdentity == current.ResourceEngineIdentity)
                                     {
                                         byte[] saved = null;
                                         if (command == 1)

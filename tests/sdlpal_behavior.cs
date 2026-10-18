@@ -48,7 +48,11 @@ internal static class SdlpalBehavior
         changed.gamePath="another-window-location";changed.savePath="other-saves";
         Check(original==category(changed),"online configuration survives engine update and installation paths");
         foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.fadeCycleMs++,s=>s.walkFrameMs++,s=>s.speed++,s=>s.battleSpeed++})
-        {changed=Clone(initial);edit(changed);Check(original!=category(changed),"actual speed change partitions online configuration");}
+        {
+            changed=Clone(initial);edit(changed);Check(original!=category(changed),"raw snapshot retains actual speed facts");
+            Check(initial.IdentityKey!=changed.IdentityKey&&initial.ResourceEngineIdentity==changed.ResourceEngineIdentity&&
+                SdlpalSnapshot.SameResourceEngineIdentity(initial.IdentityKey,changed.IdentityKey),"legacy serialized identity accepts only speed differences for relay");
+        }
         foreach(string name in initial.resourceHashes.Keys)
         {changed=Clone(initial);changed.resourceHashes[name]=new string('e',64);Check(original!=category(changed),"gameplay resource change partitions configuration: "+name);}
         var facts=initial.RankingFacts();
@@ -109,6 +113,8 @@ internal static class SdlpalBehavior
         Check(tracker.View.Rows.Single(r=>r.Id==61).NetChange==0,"moving equipment into inventory is not a gain");
         s.inventory=s.inventory.Concat(new[]{new SdlpalInventory{slot=2,id=600,amount=1}}).ToArray();tracker.Observe(s);
         Check(tracker.View.Rows.Single(r=>r.Id==600).NetChange==1,"observed modified item outside audited catalog is still monitored");
+        s.speed=5;s.battleSpeed=7;s.walkFrameMs=80;s.fadeCycleMs=700;tracker.Observe(s);
+        Check(tracker.View.Rows.Single(r=>r.Id==600).NetChange==1,"normal speed adjustment preserves observed item gains");
         s.inventory=s.inventory.Where(i=>i.id!=600).ToArray();tracker.Observe(s);
         Check(tracker.View.Rows.Single(r=>r.Id==600).Total==0,"a newly seen item stays visible after losing the last copy");
         s.epoch++;s.cash=9817;s.inventory[0].amount=99;tracker.Observe(s);
@@ -246,7 +252,19 @@ internal static class SdlpalBehavior
         run=new SdlpalRunObserver();state=Snapshot();state.started=true;state.battleEvents=new[]{Victory(1)};run.Observe(Clone(state),rules);
         Check(!run.BeganHere&&!run.Reached.Contains(rules[0].Id),"late attach cannot consume historical victory");
         state.battleEvents=new[]{Victory(3)};run.Observe(Clone(state),rules);Check(run.Issue.Contains("缺口")&&!run.Reached.Contains(rules[0].Id),"ring gap reports and rebuilds without inventing split");
-        state.walkFrameMs++;run.Observe(Clone(state),rules);Check(run.Issue.Contains("变化"),"speed change retains an unverified observation");
+        state.walkFrameMs++;run.Observe(Clone(state),rules);Check(run.Issue.Contains("缺口"),"speed change does not replace existing event-gap evidence");
+        foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.build="another-build",s=>s.exeHash=new string('f',64),
+            s=>s.resourceHashes["SSS.MKF"]=new string('e',64),s=>s.resourceHashes["DATA.MKF"]=new string('e',64),
+            s=>s.resourceHashes["WORD.DAT"]=new string('e',64),s=>s.resourceHashes["M.MSG"]=new string('e',64)})
+        {
+            run=new SdlpalRunObserver();state=Snapshot();run.Observe(Clone(state),rules);state.started=true;run.Observe(Clone(state),rules);
+            var changed=Clone(state);edit(changed);run.Observe(changed,rules);
+            Check(run.Issue=="计时期间资源或引擎配置变化","engine/build/each resource change still invalidates the run");
+            run.Observe(Clone(state),rules);Check(run.Issue.Length>0,"restoring the original identity cannot erase the observed change");
+            Check(!SdlpalSnapshot.SameResourceEngineIdentity(state.IdentityKey,changed.IdentityKey),"relay still rejects engine/build/resource changes");
+        }
+        foreach(string invalid in new[]{"",null,"wrong profile",Snapshot().IdentityKey+"|0",Snapshot().IdentityKey.Substring(0,Snapshot().IdentityKey.LastIndexOf('|'))+"|101"})
+            Check(!SdlpalSnapshot.SameResourceEngineIdentity(Snapshot().IdentityKey,invalid),"malformed legacy identity cannot bypass relay validation");
         Reject(()=>SdlpalSplitRule.Validate(new[]{rules[0],rules[0],rules[1]}),"duplicate node IDs rejected");
         Reject(()=>SdlpalSplitRule.Validate(new[]{rules[1],rules[0]}),"completion must be final");
         var repeated=new[]{rules[0],new SdlpalSplitRule{Id="second-serpent",Name="第二次八头蛇",Kind="battle",Team=315,Enemy=547},rules[1]};
@@ -273,7 +291,7 @@ internal static class SdlpalBehavior
             byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(State));byte[] header=Header(State,json.Length,Process.Id,(ulong)Process.StartTime.ToUniversalTime().ToFileTimeUtc(),SdlpalBridge.GetTickCount64());
             uint seq=View.ReadUInt32(20)+2;View.Write(20,seq|1);BitConverter.GetBytes(seq|1).CopyTo(header,20);View.WriteArray(0,header,0,header.Length);View.WriteArray(64,json,0,json.Length);Thread.MemoryBarrier();View.Write(20,seq&~1U);
         }
-        internal Task Reply(uint expectedCommand, uint status=1, byte[] expectedLoad=null)
+        internal Task Reply(uint expectedCommand, uint status=1, byte[] expectedLoad=null, Action<SdlpalSnapshot> beforeAck=null)
         {
             ulong previous=Control.ReadUInt64(40);
             return Task.Run(()=>{
@@ -286,7 +304,7 @@ internal static class SdlpalBehavior
                 {
                     if(expectedCommand==1)File.WriteAllBytes(file,Enumerable.Range(0,2048).Select(i=>(byte)i).ToArray());
                     else {Check(File.ReadAllBytes(file).SequenceEqual(expectedLoad),"LOAD stages exact bytes in fixed slot");State.epoch++;State.canControl=false;}
-                    Publish();
+                    beforeAck?.Invoke(State);Publish();
                 }
                 Control.Write(72,status);Control.Write(80,State.epoch);Thread.MemoryBarrier();Control.Write(64,id);
             });
@@ -305,12 +323,24 @@ internal static class SdlpalBehavior
             Check(saved.SavedBytes.Length==2048,"SAVE reads closed fixed-slot file after ack");
             var pack=new SdlpalRelayPackage{identity=snapshot.IdentityKey,timer="{}",saveBase64=Convert.ToBase64String(saved.SavedBytes),saveSha256=SdlpalRelayPackage.Hash(saved.SavedBytes)};
             Check(pack.Validate(snapshot.IdentityKey).SequenceEqual(saved.SavedBytes),"bounded relay JSON preserves RPG bytes");
+            var anotherSpeed=Clone(snapshot);anotherSpeed.speed=5;anotherSpeed.battleSpeed=7;anotherSpeed.walkFrameMs=80;anotherSpeed.fadeCycleMs=700;
+            Check(pack.Validate(anotherSpeed.IdentityKey).SequenceEqual(saved.SavedBytes),"existing v1 relay accepts different current speeds without changing RPG bytes");
             Reject(()=>pack.Validate("wrong profile"),"relay wrong engine/resource identity rejected");
             pack.saveSha256=new string('f',64);Reject(()=>pack.Validate(snapshot.IdentityKey),"relay corrupt hash rejected");
             byte[] load=Enumerable.Repeat((byte)42,2048).ToArray();var loadReply=engine.Reply(2,1,load);var loaded=SdlpalControl.Execute(bridge,2,snapshot,load);loadReply.GetAwaiter().GetResult();
             Check(loaded.Snapshot.epoch==2&&!loaded.Snapshot.canControl,"LOAD accepts matching ack during fade without requiring canControl");
             Check(Directory.GetFiles(engine.State.savePath,"250.rpg.backup-*").Length==1,"staging preserves prior reserved-slot file backup");
             Reject(()=>SdlpalControl.Execute(bridge,2,snapshot,load),"outdated epoch cannot issue LOAD");
+            engine.State.canControl=true;engine.Publish();bridge.TryRead(out snapshot);
+            engine.State.speed=5;engine.State.walkFrameMs=80;engine.Publish();
+            var speedReply=engine.Reply(1,1,null,s=>{s.battleSpeed=7;s.fadeCycleMs=700;});
+            var speedSaved=SdlpalControl.Execute(bridge,1,snapshot);speedReply.GetAwaiter().GetResult();
+            Check(speedSaved.Snapshot.speed==5&&speedSaved.Snapshot.battleSpeed==7&&speedSaved.Snapshot.fadeCycleMs==700,
+                "relay transaction accepts speed changes before command and acknowledgement");
+            var foreign=Clone(speedSaved.Snapshot);foreign.build="foreign-engine";
+            ulong request=engine.Control.ReadUInt64(40);
+            Reject(()=>SdlpalControl.Execute(bridge,1,foreign),"relay transaction rejects changed engine before issuing a command");
+            Check(engine.Control.ReadUInt64(40)==request,"rejected identity never writes a relay request");
             engine.State.canControl=true;engine.Publish();bridge.TryRead(out snapshot);var rejected=engine.Reply(1,2);
             Reject(()=>SdlpalControl.Execute(bridge,1,snapshot),"busy response does not claim save success");rejected.GetAwaiter().GetResult();
         }
@@ -363,7 +393,7 @@ internal static class SdlpalBehavior
             Check(!core.CanBeginCompetitionHere(0),"manual time change cannot claim a fresh competition start");
             Set(core,"relayRun",core.ScoreRunSequence);core.Jump(0);Check(!core.CanBeginCompetitionHere(0),"manual node rewind remains assisted");
             Reject(()=>Call(core,"CheckRelayOwner"),"manual node jump invalidates an earlier relay transaction lease");
-            string old=core.ActiveBestPath;engine.State.walkFrameMs=80;engine.Publish();Call(core,"OnTick");Check(old!=core.ActiveBestPath,"speed configuration partitions local best lines");
+            string old=core.ActiveBestPath;engine.State.walkFrameMs=80;engine.Publish();Call(core,"OnTick");Check(old==core.ActiveBestPath,"speed changes preserve this run's local best line");
             core.Reset();Check(core.GetMainWatch()==TimeSpan.Zero&&!core.IsUIPause,"reset clears clock and pause");core.Unload();
             }
         }
@@ -428,6 +458,57 @@ internal static class SdlpalBehavior
                 Core.CheckPoints.Select(point=>point.Status).SequenceEqual(statuses),name+" stays stopped with unchanged main/split times and statuses");
         }
         public void Dispose() {Core.Unload();controlState.Dispose();Engine.Dispose();}
+    }
+    static void SpeedConfigurationTests()
+    {
+        using(var run=new CompletionFixture(true))
+        {
+            run.StartNewGame();run.Watch.Stop();run.Watch.SetTS(TimeSpan.FromSeconds(20));run.Tick();
+            Func<CompetitionObservation> observe=()=>{
+                var value=new CompetitionObservation();
+                run.Core.CaptureCompetitionIdentity(out string hash,out string version,out int fade,out int speed,out string error);
+                value.DllHash=hash;value.GameVersion=version;value.FadeMilliseconds=fade;value.MapSpeedTicks=speed;
+                run.Core.CaptureCompetitionGameplay(value);return value;
+            };
+            var initial=observe();string path=run.Core.ActiveBestPath,exported=run.Core.GetRStr();
+            var reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(exported);
+            var savedTime=TimeSpan.ParseExact(Convert.ToString(reference["Current"]),@"hh\:mm\:ss\.fff",System.Globalization.CultureInfo.InvariantCulture);
+            reference["CheckPoints"]=run.Core.CheckPoints.Select((point,index)=>new{name=point.Name,des="Speed baseline "+index,time=index==0?"00:00:30.000":"00:02:00.000"}).ToArray();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            try
+            {
+                File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));run.Core.RefreshBestReference();
+                foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.speed=5,s=>s.speed=1,s=>s.speed=0,s=>s.battleSpeed=7,
+                    s=>s.battleSpeed=1,s=>s.battleSpeed=0,s=>s.walkFrameMs=80,s=>s.walkFrameMs=100,s=>s.fadeCycleMs=600,s=>s.fadeCycleMs=1200})
+                {
+                    edit(run.Engine.State);run.Tick();var current=observe();
+                    Check(run.Watch.IsRunning&&!run.Core.IsUIPause&&run.Core.GetScoreValidationError()==""&&current.LiveTimingValid==true,
+                        "normal speed adjustment keeps timing, score evidence and live validity intact");
+                    Check(current.FadeMilliseconds==initial.FadeMilliseconds&&current.MapSpeedTicks==initial.MapSpeedTicks&&current.TimelineId==initial.TimelineId&&
+                        SdlpalBridge.Json().Serialize(current.Gameplay)==SdlpalBridge.Json().Serialize(initial.Gameplay)&&
+                        SdlpalBridge.Json().Serialize(current.Ranking)==SdlpalBridge.Json().Serialize(initial.Ranking)&&current.Ranking.Valid(current.Gameplay),
+                        "initial and final online facts remain in the run's starting-speed category");
+                    Check(run.Core.ActiveBestPath==path&&run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(30)&&run.Core.CheckPoints[0].NickName=="Speed baseline 0",
+                        "in-run speed changes preserve the loaded PB and its nickname");
+                    var actual=new HFrame.ENT.HObj(run.Core.GetRStr()).GetValue<HFrame.ENT.HObj>("SdlpalProfileData");
+                    Check(actual.GetValue<int>("speed")==run.Engine.State.speed&&actual.GetValue<int>("battleSpeed")==run.Engine.State.battleSpeed&&
+                        actual.GetValue<int>("walkFrameMs")==run.Engine.State.walkFrameMs&&actual.GetValue<int>("fadeCycleMs")==run.Engine.State.fadeCycleMs,
+                        "exported runtime evidence retains every actual speed setting");
+                }
+                run.Core.Reset();run.Tick();
+                Check(run.Core.ActiveBestPath!=path&&observe().Gameplay.walk_frame_ms==100&&observe().FadeMilliseconds==1200,
+                    "reset selects the new starting-speed category without rewriting historical PB files");
+                var imported=Call(run.Core,"ValidateImport",exported,run.Core.CurrentSnapshot.IdentityKey);
+                Call(run.Core,"Restore",imported,run.Core.CurrentSnapshot);
+                Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==savedTime&&run.Assisted,
+                    "timeline from another starting speed restores its time and retains assisted pause semantics");
+                var foreign=Clone(run.Core.CurrentSnapshot);foreign.resourceHashes["DATA.MKF"]=new string('e',64);
+                Reject(()=>Call(run.Core,"ValidateImport",exported,foreign.IdentityKey),"timeline import still rejects changed resources");
+                reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(exported);reference["SdlpalRoute"]=new string('e',64);
+                Reject(()=>Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(reference),run.Core.CurrentSnapshot.IdentityKey),"timeline import still rejects a changed route across speeds");
+            }
+            finally {File.Delete(path);}
+        }
     }
     sealed class PluginTestCore : TimerCore
     {
@@ -521,8 +602,8 @@ internal static class SdlpalBehavior
             battle.SetTS(TimeSpan.FromSeconds(60));run.Engine.State.battle.active=true;run.Engine.State.battle.sequence++;run.Tick();
             Check(battle.IsRunning&&battle.CurrentTS<TimeSpan.FromSeconds(1),"a new battle starts its own subclock");
             battle.Stop();battle.SetTS(TimeSpan.FromSeconds(60));run.Engine.State.epoch++;run.Tick();
-            Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&battle.CurrentTS<TimeSpan.FromSeconds(1)&&battle.IsRunning==!excludePause,
-                "load epoch cannot carry the old battle time, even when the sequence is reused");
+            Check(!run.Core.IsUIPause&&run.Watch.IsRunning&&battle.CurrentTS<TimeSpan.FromSeconds(1)&&battle.IsRunning,
+                "ordinary load resumes and cannot carry the old battle time, even when the sequence is reused");
             run.Core.IsUIPause=false;run.Engine.State.completed=true;run.Tick();
             Check(!battle.IsRunning&&!run.Watch.IsRunning,"completion stops both clocks even if the battle flag remains set");
             run.Core.Reset();Check(!battle.IsRunning&&battle.CurrentTS==TimeSpan.Zero,"reset clears the battle subclock");
@@ -531,6 +612,136 @@ internal static class SdlpalBehavior
             Check(!battle.IsRunning,"title screen cannot count a leftover battle flag");
             run.Engine.State.started=true;run.Tick();Check(battle.IsRunning,"new game can start another battle");
             run.Core.Unload();Check(!battle.IsRunning&&!run.Watch.IsRunning,"unloading the core stops its clocks");
+        }
+    }
+    static void GameLoadResumeTests()
+    {
+        foreach(bool banana in new[]{false,true})
+        foreach(string transition in new[]{"load","death-load","load-then-restart"})
+        foreach(string pause in new[]{"none","F8","F9","relay"})
+        using(var run=new CompletionFixture(true))
+        {
+            string name=transition+", banana="+banana+", pause="+pause;
+            run.Engine.State.inventory=banana?new[]{new SdlpalInventory{slot=0,id=0x123,amount=1}}:new SdlpalInventory[0];
+            run.Form.btnPause=new GRender.GBtn(null);
+            run.StartNewGame();run.Watch.SetTS(TimeSpan.FromSeconds(20));
+            run.Engine.State.battleEvents=new[]{Victory(1)};run.Tick();
+            var completedSplit=run.Core.CheckPoints[0].Current;
+            if(pause=="F8")run.Core.OnFunctionKey(8);
+            if(pause=="F9")run.Form.UIPause();
+            if(pause=="relay")Call(run.Core,"PauseForLoad");
+            run.Tick();
+            if(transition=="death-load")
+            {
+                run.Engine.State.battle.active=false;
+                run.Engine.State.battleEvents=new[]{Victory(1),Victory(2,1,1)};run.Tick();
+                Check(run.Core.CurrentStep==1&&!run.Core.CurrentSnapshot.completed,name+": defeat is not a completion");
+            }
+            // The game publishes ordinary/death loads in the SAME process,
+            // still started, with a new epoch. Focus may return one tick later.
+            run.Engine.State.epoch++;run.Engine.State.loadedFrom=3;
+            run.Engine.State.battleEvents=new SdlpalBattleEvent[0];run.Engine.State.focused=false;run.Tick();
+            Check(!run.Watch.IsRunning&&run.Core.IsUIPause==(pause!="none"),name+": load preserves the chosen pause without inventing one");
+            run.Engine.State.focused=true;run.Tick();
+            Check(run.Watch.IsRunning==(pause=="none")&&run.Core.IsUIPause==(pause!="none"),name+": loaded gameplay resumes only when not explicitly paused");
+            if(transition=="load-then-restart")
+            {
+                run.Engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(run.Core,"OnTick");
+                run.Core.CurrentSnapshot.Pid++;
+                run.Engine.State.started=false;run.Engine.State.epoch=0;run.Tick();
+                Check(!run.Watch.IsRunning&&run.Core.IsUIPause==(pause!="none"),name+": closed game and replacement title wait automatically");
+                run.Engine.State.epoch=1;run.Engine.State.started=true;run.Tick();
+                Check(run.Watch.IsRunning==(pause=="none"),name+": restart after a prior load is not stuck paused");
+            }
+            Check(run.Core.GetMainWatch()>=TimeSpan.FromSeconds(20)&&run.Core.CurrentStep==1&&
+                run.Core.CheckPoints[0].Current==completedSplit&&run.Statuses(CheckPointStatus.Completed,CheckPointStatus.InProgress),
+                name+": elapsed time and completed splits survive");
+            var observation=new CompetitionObservation();run.Core.CaptureCompetitionGameplay(observation);
+            Check(observation.LiveTimingValid==true&&observation.ValidationError=="游戏已读档或重启"&&
+                run.Form.ManualPauseCount==((pause=="F8"||pause=="F9")?1:0),
+                name+": live validity, restart evidence and manual pause count remain distinct");
+        }
+    }
+    static void ReconnectTests()
+    {
+        foreach(bool reusedPid in new[]{false,true}) foreach(bool titleFirst in new[]{false,true})
+        foreach(string pause in new[]{"none","F9","relay"}) using(var run=new CompletionFixture(true))
+        {
+            run.StartNewGame();run.Watch.SetTS(TimeSpan.FromSeconds(20));
+            if(pause=="F9")run.Core.IsUIPause=true;
+            if(pause=="relay")Call(run.Core,"PauseForLoad");
+            run.Engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(run.Core,"OnTick");
+            Check(!run.Watch.IsRunning,"unavailable game stops timing before reconnect");
+            // The isolated MMF keeps its real process identity; model the prior
+            // game's identity without launching/discovering any user's game.
+            if(reusedPid)run.Core.CurrentSnapshot.Created--;
+            else run.Core.CurrentSnapshot.Pid++;
+            if(titleFirst)
+            {
+                run.Engine.State.started=false;run.Engine.State.epoch=1;run.Tick();run.Tick();
+                Check(!run.Watch.IsRunning&&run.Core.IsUIPause==(pause!="none"),"replacement title waits without adding or clearing a pause");
+            }
+            run.Engine.State.started=true;run.Engine.State.loadedFrom=3;run.Engine.State.epoch++;run.Tick();
+            Check(run.Watch.IsRunning==(pause=="none")&&run.Core.IsUIPause==(pause!="none")&&run.Core.GetMainWatch()>=TimeSpan.FromSeconds(20),
+                "reconnect preserves time and selected pause: reused PID="+reusedPid+", title="+titleFirst+", pause="+pause);
+            var observation=new CompetitionObservation();run.Core.CaptureCompetitionGameplay(observation);
+            Check(observation.LiveTimingValid==true&&observation.ValidationError=="游戏已读档或重启",
+                "reconnected live timing is valid while score restart evidence remains");
+            run.Core.IsUIPause=false;run.Engine.State.epoch++;run.Tick();
+            Check(!run.Core.IsUIPause&&run.Watch.IsRunning,"later same-process load also continues after reconnect");
+        }
+        using(var run=new CompletionFixture(true))
+        {
+            run.StartNewGame();
+            Func<CompetitionObservation> observe=()=>{var value=new CompetitionObservation();run.Core.CaptureCompetitionGameplay(value);return value;};
+            Check(observe().LiveTimingValid==true,"fresh ordinary run has a valid live timing observation");
+            run.Engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(run.Core,"OnTick");
+            Check(observe().LiveTimingValid==false,"stale native snapshot invalidates live timing");
+            run.Tick();run.Engine.View.Write(0,(byte)0);Call(run.Core,"OnTick");
+            Check(observe().LiveTimingValid==false,"malformed native snapshot invalidates live timing");
+            run.Engine.State.walkFrameMs=0;run.Tick();Check(observe().LiveTimingValid==false,"missing runtime speed invalidates live timing");
+            run.Engine.State.walkFrameMs=90;run.Engine.State.diagnostic=true;run.Tick();
+            Check(observe().LiveTimingValid==false,"diagnostic snapshot cannot claim valid live timing");
+        }
+    }
+    static void OnlineSnapshotBridgeTests()
+    {
+        // Load only pure mapping methods from the freshly built pair. Never
+        // initialize the online module, authenticate, or open a timer window.
+        var host=Assembly.LoadFrom(Path.Combine(root,"Pal98Timer.exe"));
+        var online=Assembly.LoadFrom(Path.Combine(root,"PalTimerOnline.dll"));
+        var observationType=host.GetType("Pal98Timer.CompetitionObservation",true);
+        var flags=BindingFlags.NonPublic|BindingFlags.Instance;
+        var read=online.GetType("Pal98Timer.OnlineModule",true).GetMethod("ReadSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
+        var create=host.GetType("Pal98Timer.GForm",true).GetMethod("CreateCompetitionSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
+        foreach(string family in new[]{"sdlpal-geshi-easy","standard"}) foreach(bool? valid in new bool?[]{null,false,true})
+        {
+            var value=Activator.CreateInstance(observationType,true);
+            var gameplay=Activator.CreateInstance(host.GetType("Pal98Timer.GameplayIdentity",true),true);
+            gameplay.GetType().GetProperty("family").SetValue(gameplay,family);
+            observationType.GetField("Gameplay",flags).SetValue(value,gameplay);
+            observationType.GetField("LiveTimingValid",flags).SetValue(value,valid);
+            observationType.GetField("ValidationError",flags).SetValue(value,"游戏已读档或重启");
+            observationType.GetField("Splits",flags).SetValue(value,Array.CreateInstance(host.GetType("Pal98Timer.CompetitionSplit",true),0));
+            var snapshot=create.Invoke(null,new[]{value});
+            var extensions=(IReadOnlyDictionary<string,string>)snapshot.GetType().GetProperty("Extensions").GetValue(snapshot);
+            var decoded=read.Invoke(null,new[]{snapshot});
+            bool? expected=family=="sdlpal-geshi-easy"?valid:null;
+            Check(extensions.ContainsKey("sdlpal.live_timing_valid")==expected.HasValue&&
+                (bool?)decoded.GetType().GetField("LiveTimingValid",flags).GetValue(decoded)==expected&&
+                (string)decoded.GetType().GetField("ValidationError",flags).GetValue(decoded)=="游戏已读档或重启",
+                "actual host/module bridge preserves score evidence and optional SDL live validity: "+family+"/"+valid);
+        }
+        var snapshotType=host.GetType("Pal98Timer.OnlineSnapshotV1",true);
+        var game=Activator.CreateInstance(host.GetType("Pal98Timer.OnlineGameplayV1",true),new object[]{null,null,null,null,"sdlpal-geshi-easy",800,0});
+        foreach(string malformed in new[]{null,"","TRUE","1","valid"})
+        {
+            var snapshot=Activator.CreateInstance(snapshotType,new object[]{"fixture","SDLPAL_GESHI_EASY",null,null,null,null,null,game,null,null,
+                0,800,0,0L,DateTimeOffset.UtcNow,false,false,Array.CreateInstance(host.GetType("Pal98Timer.OnlineSplitV1",true),0),
+                new Dictionary<string,string>{{"sdlpal.live_timing_valid",malformed}}});
+            bool rejected=false;
+            try{read.Invoke(null,new[]{snapshot});}catch(TargetInvocationException error){if(error.InnerException is ArgumentException)rejected=true;else throw;}
+            Check(rejected,"malformed live validity extension is rejected: "+(malformed??"null"));
         }
     }
     static void BestReferenceTests()
@@ -564,10 +775,10 @@ internal static class SdlpalBehavior
                 File.WriteAllText(path,complete);run.Core.RefreshBestReference();
                 Check(run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(20)&&run.Core.CheckPoints[1].Best==TimeSpan.FromSeconds(120)&&
                     run.Core.CheckPoints[0].NickName=="Reference A 0","category A loads both reference values and edited labels");
-                run.Engine.State.walkFrameMs=80;run.Tick();
+                run.Engine.State.resourceHashes["DATA.MKF"]=new string('e',64);run.Tick();
                 Check(path!=run.Core.ActiveBestPath&&!File.Exists(run.Core.ActiveBestPath),"category B has no reference file");
                 assertCleared();
-                run.Engine.State.walkFrameMs=90;run.Tick();
+                run.Engine.State.resourceHashes["DATA.MKF"]=new string('b',64);run.Tick();
                 Check(run.Core.CheckPoints[1].Best==TimeSpan.FromSeconds(120)&&run.Core.CheckPoints[1].NickName=="Reference A 1",
                     "switching back restores category A's reference");
                 reference["CheckPoints"]=new[]{new{name=run.Core.CheckPoints[0].Name,des="Partial",time="00:00:30.000"}};
@@ -707,6 +918,40 @@ internal static class SdlpalBehavior
             }
         }
     }
+    static void PauseHotkeyTests()
+    {
+        var previousHotkey=SoundConfig.ins.ToggleHotkey;
+        SoundConfig.ins.ToggleHotkey=System.Windows.Forms.Keys.None;
+        try
+        {
+            foreach(var first in new[]{System.Windows.Forms.Keys.F8,System.Windows.Forms.Keys.F9})
+            using(var run=new CompletionFixture(true))
+            {
+                var second=first==System.Windows.Forms.Keys.F8?System.Windows.Forms.Keys.F9:System.Windows.Forms.Keys.F8;
+                Set(run.Form,"startupCompleted",true);
+                run.Form.btnPause=new GRender.GBtn(null);
+                run.Form.SetUIPause(false);run.StartNewGame();
+                Action<System.Windows.Forms.Keys,int> send=(key,flags)=>{
+                    bool blocked;
+                    run.Form.OnKeyPress(new KeyboardLib.HookStruct{vkCode=(int)key,flags=flags},out blocked);
+                    Check(!blocked,key+" retains SDL key passthrough");
+                };
+                send(first,0);send(first,0);run.Tick();
+                Check(!run.Core.IsUIPause&&run.Watch.IsRunning&&run.Form.ManualPauseCount==0&&run.Form.btnPause.IsWhite(),
+                    first+" keydown/repeat does not pause");
+                send(first,128);run.Tick();
+                Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Form.ManualPauseCount==1&&run.Form.btnPause.IsRed(),
+                    first+" keyup pauses exactly once");
+                send(second,0);send(second,0);run.Tick();
+                Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Form.ManualPauseCount==1&&run.Form.btnPause.IsRed(),
+                    second+" keydown/repeat does not resume");
+                send(second,128);run.Tick();
+                Check(!run.Core.IsUIPause&&run.Watch.IsRunning&&run.Form.ManualPauseCount==1&&run.Form.btnPause.IsWhite(),
+                    second+" keyup resumes without incrementing pause count");
+            }
+        }
+        finally {SoundConfig.ins.ToggleHotkey=previousHotkey;}
+    }
     [STAThread] static int Main(string[] args)
     {
         try
@@ -732,7 +977,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

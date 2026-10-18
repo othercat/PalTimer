@@ -125,10 +125,10 @@ namespace Pal98Timer
                     equipment[id].Add(string.IsNullOrEmpty(role.name) ? "角色 " + role.id : role.name);
                 }
             var totals = ids.ToDictionary(id => id, id => Get(stock, id) + (equipment.ContainsKey(id) ? equipment[id].Count : 0));
-            bool changed = baseline == null || pid != s.Pid || created != s.Created || epoch != s.epoch || identity != s.IdentityKey;
+            bool changed = baseline == null || pid != s.Pid || created != s.Created || epoch != s.epoch || identity != s.ResourceEngineIdentity;
             if (changed) baseline = new Dictionary<int, int>(totals);
             foreach (int id in ids) if (!baseline.ContainsKey(id)) baseline[id] = 0;
-            pid = s.Pid; created = s.Created; epoch = s.epoch; identity = s.IdentityKey;
+            pid = s.Pid; created = s.Created; epoch = s.epoch; identity = s.ResourceEngineIdentity;
             // Keep previously observed IDs visible when their last item is lost.
             ids.UnionWith(baseline.Keys);
             var rows = ids.OrderBy(id => id).Select(id => new SdlpalItemRow(id,

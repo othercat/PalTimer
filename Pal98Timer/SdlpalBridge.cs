@@ -87,7 +87,8 @@ namespace Pal98Timer
         internal int Pid;
         internal ulong Created, Published;
         // Online categories describe gameplay, not the executable or its UI.
-        // Keep IdentityKey below strict for in-flight observation/relay safety.
+        // IdentityKey retains the historical serialized/PB format. Speed is a
+        // normal Geshi control, so runtime/relay checks use ResourceEngineIdentity.
         internal Dictionary<string, string> RankingFacts()
         {
             var facts = new Dictionary<string, string>(StringComparer.Ordinal) {
@@ -101,9 +102,35 @@ namespace Pal98Timer
             foreach (var pair in resourceHashes) facts["resource." + pair.Key] = pair.Value;
             return facts;
         }
-        internal string IdentityKey => profile + "|" + exeHash + "|" + build + "|" +
-            string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
-            "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
+        internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
+            string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value));
+        internal string IdentityKey => ResourceEngineIdentity + "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
+        internal SdlpalSnapshot WithSpeedConfiguration(SdlpalSnapshot source)
+        {
+            var copy = (SdlpalSnapshot)MemberwiseClone();
+            copy.walkFrameMs = source.walkFrameMs; copy.fadeCycleMs = source.fadeCycleMs;
+            copy.speed = source.speed; copy.battleSpeed = source.battleSpeed;
+            return copy;
+        }
+        internal static bool SameResourceEngineIdentity(string left, string right)
+        {
+            string first = WithoutSpeedConfiguration(left), second = WithoutSpeedConfiguration(right);
+            return first != null && second != null && first == second;
+        }
+        private static string WithoutSpeedConfiguration(string identity)
+        {
+            if (string.IsNullOrEmpty(identity)) return null;
+            string[] fields = identity.Split('|');
+            if (fields.Length < 11) return null; // profile, EXE, build, four resources, four speeds
+            int[] limits = { 1000000, 86400000, 100, 100 };
+            for (int i = 0; i < limits.Length; i++)
+            {
+                string field = fields[fields.Length - 4 + i];
+                if (!int.TryParse(field, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int value) ||
+                    value > limits[i] || field != value.ToString(System.Globalization.CultureInfo.InvariantCulture)) return null;
+            }
+            return string.Join("|", fields.Take(fields.Length - 4));
+        }
     }
 
     // No OpenProcess/RPM/WPM, injection or PALDLL addresses. A mapping may only

@@ -61,6 +61,7 @@ namespace Pal98Timer
                 ValidationError = value.ValidationError, TimelineId = value.TimelineId, GameTitle = value.GameTitle,
                 Step = value.Step, FadeMilliseconds = value.Fade, MapSpeedTicks = value.Speed, TotalMilliseconds = value.Total,
                 RestartMilliseconds = restartMilliseconds,
+                LiveTimingValid = ReadLiveTimingValid(value),
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
@@ -75,6 +76,14 @@ namespace Pal98Timer
             };
         }
         public void PublishClock(string token, long elapsed, bool running, long observedTick) => client.PublishClock(token, elapsed, running, observedTick);
+        private static bool? ReadLiveTimingValid(OnlineSnapshotV1 value)
+        {
+            string text;
+            if (value.Gameplay?.Family != "sdlpal-geshi-easy" || !value.Extensions.TryGetValue("sdlpal.live_timing_valid", out text)) return null;
+            if (text == "true") return true;
+            if (text == "false") return false;
+            throw new ArgumentException("Invalid sdlpal.live_timing_valid extension.");
+        }
         private static int? ReadWalkFrame(OnlineSnapshotV1 value)
         {
             string text; int number;

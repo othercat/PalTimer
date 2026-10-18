@@ -270,8 +270,13 @@ namespace Pal98Timer
             bool hasGame = !gameManaged || observedGame != null;
             long? restart = observation?.RestartMilliseconds;
             bool restartInRange = !restart.HasValue || restart >= 0 && restart <= CompetitionProtocol.MaxMilliseconds;
-            string state = !hasGame ? "no_game" : observation == null ? "waiting" : !restartInRange ? "invalid" : observation.Finished ? "finished" :
-                !string.IsNullOrEmpty(observation.ValidationError) || hasClock && !fresh ? "invalid" : fresh && clock.Running ? "running" :
+            // SDL assisted runs can have a valid live clock while retaining all
+            // score-review evidence. Older cores keep their existing semantics.
+            bool hasLiveValidity = observation?.Gameplay?.family == "sdlpal-geshi-easy" && observation.LiveTimingValid.HasValue;
+            bool timingValid = hasLiveValidity ? observation.LiveTimingValid.Value : string.IsNullOrEmpty(observation?.ValidationError);
+            bool invalidTiming = !timingValid || hasClock && !fresh;
+            string state = !hasGame ? "no_game" : observation == null ? "waiting" : !restartInRange || hasLiveValidity && invalidTiming ? "invalid" : observation.Finished ? "finished" :
+                invalidTiming ? "invalid" : fresh && clock.Running ? "running" :
                 (hasClock ? clock.Elapsed : observation.TotalMilliseconds) > 0 ? "paused" : "waiting";
             return new CompetitionLiveObservation {
                 run_id = runId, run_generation = liveGeneration, state = state,

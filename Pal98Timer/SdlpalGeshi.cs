@@ -60,6 +60,11 @@ namespace Pal98Timer
         internal bool BeganHere, Started, EpochChanged;
         private ulong lastBattle;
         private string initialIdentity;
+        private SdlpalSnapshot speedBaseline;
+        // The existing online contract compares initial/final facts exactly.
+        // Keep the run's starting speed category, while retaining current engine,
+        // resources and raw speed observations in Snapshot and exported evidence.
+        internal SdlpalSnapshot ConfigurationSnapshot => Snapshot?.WithSpeedConfiguration(speedBaseline ?? Snapshot);
         internal void Observe(SdlpalSnapshot next, SdlpalSplitRule[] rules)
         {
             EpochChanged = Snapshot != null && (Snapshot.Pid != next.Pid || Snapshot.Created != next.Created || Snapshot.epoch != next.epoch);
@@ -69,15 +74,16 @@ namespace Pal98Timer
             {
                 lastBattle = next.battleEvents.Length == 0 ? (next.battle.active && next.battle.sequence > 0 ? next.battle.sequence - 1 : next.battle.sequence) : next.battleEvents.Last().seq;
                 if (Started) { Issue = "游戏已读档或重启"; Reached.Clear(); }
-                else if (freshStart) { BeganHere = true; initialIdentity = next.IdentityKey; }
-                else if (next.started) { Issue = "中途连接或载入存档"; BeganHere = false; initialIdentity = next.IdentityKey; }
+                else if (freshStart) { BeganHere = true; initialIdentity = next.ResourceEngineIdentity; }
+                else if (next.started) { Issue = "中途连接或载入存档"; BeganHere = false; initialIdentity = next.ResourceEngineIdentity; }
             }
             if (next.started && !Started)
             {
                 Started = true;
-                if (!first && !EpochChanged && !Snapshot.started) { BeganHere = true; initialIdentity = next.IdentityKey; }
+                speedBaseline = next.WithSpeedConfiguration(next);
+                if (!first && !EpochChanged && !Snapshot.started) { BeganHere = true; initialIdentity = next.ResourceEngineIdentity; }
             }
-            if (Started && initialIdentity != next.IdentityKey) Issue = "计时期间资源、引擎或速度配置变化";
+            if (Started && initialIdentity != next.ResourceEngineIdentity) Issue = "计时期间资源或引擎配置变化";
             if (!first && !EpochChanged)
             {
                 var pending = next.battleEvents.Where(e => e.seq > lastBattle).ToArray();
@@ -98,7 +104,8 @@ namespace Pal98Timer
         internal void MarkImported(SdlpalSnapshot snapshot)
         {
             Snapshot = snapshot; Started = snapshot.started; BeganHere = false; EpochChanged = false;
-            initialIdentity = snapshot.IdentityKey; lastBattle = snapshot.battleEvents.Length == 0 ? 0 : snapshot.battleEvents.Last().seq;
+            initialIdentity = snapshot.ResourceEngineIdentity; speedBaseline = snapshot.WithSpeedConfiguration(snapshot);
+            lastBattle = snapshot.battleEvents.Length == 0 ? 0 : snapshot.battleEvents.Last().seq;
             Reached.Clear(); Issue = "接力或时间线导入";
         }
     }
@@ -178,7 +185,7 @@ namespace Pal98Timer
         internal override bool CompetitionPublicationAllowed => observer.Snapshot != null && !observer.Snapshot.diagnostic;
         internal SdlpalSnapshot CurrentSnapshot => observer.Snapshot;
         private string RouteIdentity => SdlpalSplitRule.Identity(rules);
-        private string BestCategory => observer.Snapshot == null ? "unbound" : CompetitionProtocol.Hash(observer.Snapshot.IdentityKey).Substring(0, 16);
+        private string BestCategory => observer.Snapshot == null ? "unbound" : CompetitionProtocol.Hash(observer.ConfigurationSnapshot.IdentityKey).Substring(0, 16);
         public override string ActiveBestPath => TimerUserSettings.BestPath("best" + CoreName + "-" + BestCategory + "-" + RouteIdentity.Substring(0, 16) + ".txt");
         // This edition always displays simplified names, including legacy Big5
         // snapshots and traditional Windows locales. Other cores keep their choice.
@@ -257,12 +264,12 @@ namespace Pal98Timer
         }
         internal override void CaptureCompetitionIdentity(out string hash, out string version, out int fade, out int speed, out string error)
         {
-            var s = observer.Snapshot; hash = s?.exeHash ?? ""; version = "1.0.0.0"; fade = s?.fadeCycleMs ?? 0;
+            var s = observer.ConfigurationSnapshot; hash = s?.exeHash ?? ""; version = "1.0.0.0"; fade = s?.fadeCycleMs ?? 0;
             speed = 0; error = GetScoreValidationError();
         }
         internal override void CaptureCompetitionGameplay(CompetitionObservation observation)
         {
-            var s = observer.Snapshot; if (s == null) return;
+            var s = observer.ConfigurationSnapshot; if (s == null) return;
             var facts = s.RankingFacts();
             string digest = RankingConfiguration.Digest(facts);
             observation.Gameplay = new GameplayIdentity { content_id = s.profile, content_sha256 = facts["content"], rules_sha256 = digest,
@@ -271,6 +278,8 @@ namespace Pal98Timer
             observation.Hardcore = new CompetitionHardcore();
             observation.TimelineId = TimelineIdentity.Create(digest, CompetitionProtocol.RouteHash(CheckPoints.Select(p => p.Name)), false);
             observation.ValidationError = GetScoreValidationError();
+            var current = observer.Snapshot;
+            observation.LiveTimingValid = freshSnapshot && !current.diagnostic && current.fadeCycleMs > 0 && current.walkFrameMs > 0;
         }
         protected override void OnTick()
         {
@@ -289,7 +298,6 @@ namespace Pal98Timer
                     if (bridge != null && (bridge.Process == null || bridge.Process.HasExited)) { bridge.Dispose(); bridge = null; }
                     return;
                 }
-                bool wasStarted = observer.Started;
                 freshSnapshot = true;
                 observer.Observe(snapshot, rules);
                 items.Observe(snapshot); PublishItemPlugins();
@@ -300,7 +308,11 @@ namespace Pal98Timer
                     catch (Exception ex) { warning = "最佳时间线读取失败：" + ex.Message; }
                 }
                 if (!observer.BeganHere) competitionImportedRun = observer.Started;
-                if (observer.EpochChanged && wasStarted && !busyRelay) PauseForLoad();
+                // Ordinary loads, including the death script's automatic load,
+                // continue the existing clock. Epoch changes retain audit evidence
+                // and reset the battle clock; they must not synthesize a manual
+                // pause that then persists across subsequent process restarts.
+                // F8/F9 and explicit relay/timeline imports still own IsUIPause.
                 if (observer.EpochChanged || snapshot.battle.sequence != battleSequence) { battleSequence = snapshot.battle.sequence; battleTimer.Reset(); }
                 bool running = snapshot.started && snapshot.focused && !IsUIPause && !busyRelay;
                 status = !snapshot.started ? "等待新游戏" : busyRelay ? "接力存读档中" : IsUIPause ? "已暂停（F9继续）" : !snapshot.focused ? "游戏失去焦点" : "计时中";
@@ -353,7 +365,11 @@ namespace Pal98Timer
         public override string GetAAction() => "";
         public override string GetCriticalError() { string value = warning; warning = ""; return value; }
         public override string GetRuntimeIntegrityStatus() => GetScoreValidationError();
-        public override void OnFunctionKey(int number) { if (number == 11) OpenKeyConfig(); }
+        public override void OnFunctionKey(int number)
+        {
+            if (number == 8) form.UIPause(); // F8 aliases the existing F9 release action for this core.
+            else if (number == 11) OpenKeyConfig();
+        }
         internal ProcessStartInfo CreateKeyConfigStartInfo()
         {
             lock (gate)
@@ -482,8 +498,13 @@ namespace Pal98Timer
         private ImportedTimer ValidateImport(string json, string identity)
         {
             if (json == null || json.Length > 262144) throw new InvalidDataException("时间线容量无效");
-            var data = new HObj(json); ValidateBestReference(data);
-            if (data.GetValue<string>("TimerCore") != CoreName || data.GetValue<string>("SdlpalIdentity") != identity) throw new InvalidDataException("时间线资源或引擎身份不匹配");
+            var data = new HObj(json);
+            if (data.GetValue<string>("SdlpalRoute") != RouteIdentity || data.GetValue<string>("SdlpalProfile") != "geshi-easy-v1")
+                throw new InvalidDataException("时间线不属于当前隔世追凶节点规则");
+            // PB categories include the starting speed; a relay may legitimately
+            // arrive at another speed, but never another engine/resource/route.
+            if (data.GetValue<string>("TimerCore") != CoreName || !SdlpalSnapshot.SameResourceEngineIdentity(data.GetValue<string>("SdlpalIdentity"), identity))
+                throw new InvalidDataException("时间线资源或引擎身份不匹配");
             var points = data.GetValue<HObj>("CheckPoints")?.ToList(); var states = data.GetValue<HObj>("SdlpalStatuses")?.ToList();
             var result = new ImportedTimer { Current = ParseTime(data.GetValue<string>("Current")), Idle = ParseTime(data.GetValue<string>("SdlpalIdle")),
                 Step = data.GetValue<int>("Step"), Times = new TimeSpan[rules.Length], Statuses = new CheckPointStatus[rules.Length] };

@@ -383,6 +383,11 @@ internal static class CompetitionBehavior
         value.Gameplay.family="sdlpal-geshi-easy";value.Gameplay.content_id="geshi-easy-v1";value.Gameplay.walk_frame_ms=90;
         var facts=value.Ranking.rules;facts["family"]=value.Gameplay.family;facts["walk_frame_ms"]="90";
         facts["engine_sha256"]=value.DllHash;facts["route_rules_sha256"]=new string('e',64);
+        facts["engine_build"]="offline-test";facts["profile"]=value.Gameplay.content_id;facts["speed"]="0";facts["battle_speed"]="0";
+        var resources=new[]{"DATA.MKF","M.MSG","SSS.MKF","WORD.DAT"};
+        foreach(string resource in resources)facts["resource."+resource]=new string('b',64);
+        facts["content"]=CompetitionProtocol.Hash(string.Join("\n",resources.Select(resource=>resource+"="+facts["resource."+resource])));
+        value.Gameplay.content_sha256=facts["content"];
         value.Ranking.configuration_id=RankingConfiguration.Digest(facts);value.Gameplay.rules_sha256=value.Ranking.configuration_id;
         value.Splits[0].checkpoint_id="geshi-eight-headed-serpent";value.Splits[1].checkpoint_id="geshi-ending";
         value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(p=>p.checkpoint_id)),false);
@@ -409,6 +414,16 @@ internal static class CompetitionBehavior
         Check(run.ranking.rules["engine_sha256"]==run.pal_dll_sha256&&run.ranking.configuration_id==SdlpalObservation("sdlpal",2).Ranking.configuration_id,
             "engine digest and ranking rule digest survive seal and upload");
         Check(CompetitionProtocol.Validate(run)=="","SDL v2 record passes producer format validation");
+        var assisted=SdlpalObservation("sdlpal-assisted",0);assisted.BeganHere=false;
+        assisted.LiveTimingValid=true;assisted.ValidationError="游戏已读档或重启";
+        client.Invalidate(assisted.Token);client.Publish(assisted);
+        var finished=SdlpalObservation(assisted.Token,2);finished.BeganHere=false;
+        finished.LiveTimingValid=true;finished.ValidationError=assisted.ValidationError;client.Publish(finished);
+        await Until(()=>wire.Posts==2,"SDL assisted run with valid live timing still uploads for server review");
+        var review=CompetitionProtocol.Json().Deserialize<CompetitionRun>(wire.Payloads.Last());
+        Check(!review.observations.began_here&&review.observations.issues.Contains("start-evidence-missing")&&
+            review.observations.issues.Contains("timing-validation: "+assisted.ValidationError),
+            "SDL live validity cannot erase start evidence or score-review issues from the sealed result");
         await client.CloseAsync();
     }
     static async Task GameplayCases() {
