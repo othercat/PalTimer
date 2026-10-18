@@ -331,6 +331,21 @@ internal static class SdlpalBehavior
             }
         }
     }
+    static void IsolationTests()
+    {
+        Check(SdlpalBridge.Prefix.StartsWith("Local\\SDLPAL.GeshiFixture.",StringComparison.Ordinal),
+            "synthetic host refuses the production discovery namespace");
+        using(var engine=new Engine())
+            foreach(var suffix in new[]{"v1.","Control.v1."})
+            {
+                // Split the literal so the runner cannot rewrite this assertion.
+                string productionName="Local\\"+"SDLPAL."+"LostEdit."+suffix+engine.Process.Id;
+                bool absent=false;
+                try {using(var unexpected=MemoryMappedFile.OpenExisting(productionName,MemoryMappedFileRights.Read)) { }}
+                catch(FileNotFoundException) {absent=true;}
+                Check(absent,"fixture exposes no production mapping: "+suffix);
+            }
+    }
     sealed class CompletionFixture : IDisposable
     {
         internal readonly Engine Engine=new Engine();
@@ -644,7 +659,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            IsolationTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

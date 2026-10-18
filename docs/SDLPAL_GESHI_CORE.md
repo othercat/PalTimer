@@ -161,3 +161,5 @@ r7 整包 ZIP 为 303039279 字节，SHA-256 `6047c678e5b3fb3ff2b21eff59b677cf45
 北京时间 11:07 使用现有 `www.pallab.top` 设备凭据核对两个真实发布组合，EXE/Online/Auth 均匹配各自公开证书。3.39.0.0（EXE `904dd611…4d0963`，key `7024d83310514059bf8bb1efbb425a12`）为 `approved=true`；r9 的 3.39.2.0（EXE `bd201528…692d93`，key `bb2fcd012fef4cd096110ee0a88d6d48`）为 `approved=false`。3.39.2 候选登记返回 202/pending，上传挑战预检返回 403/`build_not_approved`。没有发送 `/runs` 或合成成绩，没有新建设备，原凭据文件哈希不变。公开配置/日常榜/比赛仍为 11/8/3 项，均未出现隔世类别。脱敏证据为 `artifacts/production-b463cf6f`、`artifacts/production-47800692`。
 
 随后用户要求统一回 3.38.3、撤销 3.39.0/3.39.2 申请并重新登记，后续按 [Issue #24](https://github.com/othercat/PalTimer/issues/24) 执行；上面的版本身份仅为已发生的历史证据。完整「荣耀的传承」路线和前置身位手感由用户安排速通高手验收，不以本地 HTTP 夹具代替。
+
+Issue #25 修复 SDL 合成状态宿主与已打开工具共享生产映射名的问题。首次重建回归在同 PID 的下一份夹具创建时遇到映射名称冲突（`artifacts/sdlpal-tests-20261018-111212-145`）；日志不能确定具体持有进程。现在 `run_sdlpal_tests.ps1` 仅在本次忽略目录的三份临时源副本中，把快照、控制映射和控制互斥量名称改为每次唯一的 GUID 前缀；解析、计时、发现和接力逻辑不变，产品源码及游戏协议不改。宿主拒绝未隔离的前缀，并确认生产快照和控制映射不存在；三项新检查及原有回归共 229 项通过（`artifacts/sdlpal-tests-20261018-111540-681`，`-NoGui`）。没有为测试关闭用户工具。
