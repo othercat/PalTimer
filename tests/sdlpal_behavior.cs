@@ -84,6 +84,10 @@ internal static class SdlpalBehavior
             json=File.ReadAllBytes(path); state=SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(new UTF8Encoding(false,true).GetString(json));
             var actual=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);
             Check(actual.profile=="geshi-easy-v1"&&actual.diagnostic,"real native diagnostic snapshot decodes: "+Path.GetFileName(path));
+            var metadata=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(json));
+            if(metadata.ContainsKey("rankingConfigurationId"))
+                Check((string)metadata["rankingConfigurationId"]==RankingConfiguration.Digest(actual.RankingFacts()),
+                    "native title configuration ID matches timer ranking rules: "+Path.GetFileName(path));
             var items=new SdlpalItemTracker();items.Observe(actual);
             Check(items.View.Available&&items.View.Rows.Any(row=>row.Id==585)&&!items.View.Rows.Any(row=>row.Id==571||row.Id==575),"native item catalog includes modified items and excludes initial magics: "+Path.GetFileName(path));
             Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&new[]{"銅錢鏢","铜钱镖"}.Contains(items.View.Rows.Single(row=>row.Id==344).Name),"native item names/prices come from current resources");

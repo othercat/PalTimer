@@ -123,6 +123,17 @@ internal static class LiveBehavior
     }
     static async Task Run(string root)
     {
+        string gameRoot=Path.Combine(root,"geshi-root");Directory.CreateDirectory(Path.Combine(gameRoot,"palmod"));
+        string settingsFile=Path.Combine(gameRoot,"palmod","common-tools.v1.json");
+        File.WriteAllText(settingsFile,"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://www.pallab.top\"}}}");
+        var native=new SdlpalSnapshot {verified=true,profile="geshi-easy-v1",gamePath=Path.Combine(gameRoot,"PAL")};
+        foreach(string exe in new[]{"pal.exe","sdlpal.exe"}) {
+            var selected=CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,exe),native);
+            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+exe);
+        }
+        native.diagnostic=true;bool denied=false;
+        try {CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,"pal.exe"),native);}catch(InvalidDataException){denied=true;}
+        Check(denied,"diagnostic game never enables automatic upload");
         long now = Stopwatch.GetTimestamp();
         var status = new CompetitionLiveConnection();
         Check(status.Caption(false,now) == "" && status.Caption(true,now) == " [连接中]", "disabled/first connection title");
