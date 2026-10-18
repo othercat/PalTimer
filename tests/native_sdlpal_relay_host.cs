@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Uses the published timer assembly and two native diagnostic game processes.
-// No game-memory writes, synthetic MMF replies, cloud client or score uploads.
+// No arbitrary game-memory writes, synthetic MMF replies, production cloud
+// client or score uploads. --cloud exercises an offline file transport.
 using Pal98Timer;
 using System;
 using System.Collections.Generic;
@@ -17,7 +18,7 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-internal static class NativeSdlpalRelayHost
+internal static partial class NativeSdlpalRelayHost
 {
     const BindingFlags Members = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     static readonly Assembly Product = typeof(SdlpalGeshi).Assembly;
@@ -68,6 +69,7 @@ internal static class NativeSdlpalRelayHost
         internal Process Process;
         internal SdlpalGeshi Core;
         internal GRender Renderer;
+        internal GForm Ui;
         internal string DirectoryPath;
         readonly Form controlState = new Form();
         internal Endpoint(string directory, int slot, int step, TimeSpan elapsed)
@@ -92,7 +94,7 @@ internal static class NativeSdlpalRelayHost
                 Check(state != null && (bool)state["diagnostic"] && (bool)state["canControl"], "native endpoint " + slot + " is diagnostic and ready");
                 // Do not run GForm's startup, cloud, hotkeys or networking. Donate
                 // an unshown Control window field for IsHandleCreated checks.
-                var form = (GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+                var form = Ui = (GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
                 var window = typeof(Control).GetField("window", BindingFlags.NonPublic | BindingFlags.Instance);
                 window.SetValue(form, window.GetValue(controlState));
                 Core = new SdlpalGeshi(form);
@@ -201,16 +203,19 @@ internal static class NativeSdlpalRelayHost
             Check(a.Process.WaitForExit(25000) && b.Process.WaitForExit(25000) && a.Process.ExitCode == 0 && b.Process.ExitCode == 0, "both real native fixtures exit successfully");
         }
     }
-    [STAThread] static int Main()
+    [STAThread] static int Main(string[] args)
     {
+        bool cloudMode = args.Contains("--cloud");
         bool passed = false;
-        try { Run(); passed = true; return 0; }
+        try { if (cloudMode) RunCloud(); else Run(); passed = true; return 0; }
         catch (Exception error) { Evidence["error"] = error.ToString(); Console.Error.WriteLine(error); return 1; }
         finally
         {
             Evidence["schema"] = "PalTimer.NativeGeshiRelayAcceptance.v1"; Evidence["passed"] = passed; Evidence["checks"] = Checks;
             Evidence["timerExeSha256"] = Hash(File.ReadAllBytes(Product.Location));
-            Evidence["scope"] = "Published SavePackage/LoadPackage/RunRelay with real diagnostic engines on one host; not GUI dialogs, two physical computers or cloud transport.";
+            Evidence["scope"] = cloudMode
+                ? "Published CloudSave/CloudLoad operation delegates, GForm and CloudSessionRunner with two real diagnostic engines and offline file transport; no production cloud, credentials, outer dialogs or score uploads."
+                : "Published SavePackage/LoadPackage/RunRelay with real diagnostic engines on one host; not GUI dialogs, two physical computers or cloud transport.";
             File.WriteAllText(Path.Combine(Root, "result.json"), Json.Serialize(Evidence), new UTF8Encoding(false));
             Console.WriteLine("Checks=" + Checks.Count + " passed=" + passed);
         }

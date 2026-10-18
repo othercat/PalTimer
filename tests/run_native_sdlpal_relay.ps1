@@ -1,10 +1,11 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PackageDirectory)
+param([Parameter(Mandatory)][string]$PackageDirectory,[switch]$Cloud)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $package = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $timer = Join-Path $package 'Tools\Timer'
-foreach ($file in @('sdlpal.exe','SDL2.dll','save\1.rpg','save\2.rpg','Tools\Timer\Pal98Timer.exe')) {
+$gameName = if (Test-Path -LiteralPath (Join-Path $package 'pal.exe')) { 'pal.exe' } else { 'sdlpal.exe' }
+foreach ($file in @($gameName,'SDL2.dll','save\1.rpg','save\2.rpg','Tools\Timer\Pal98Timer.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $package $file) -PathType Leaf)) { throw "Missing package file: $file" }
 }
 $out = Join-Path $repo ('artifacts\native-relay-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
@@ -15,7 +16,8 @@ $originalHashes = @{}
 foreach ($side in @('game-a','game-b')) {
     $directory = Join-Path $out $side
     New-Item -ItemType Directory -Path $directory,(Join-Path $directory 'save') | Out-Null
-    Copy-Item -LiteralPath (Join-Path $package 'sdlpal.exe'),(Join-Path $package 'SDL2.dll') -Destination $directory
+    Copy-Item -LiteralPath (Join-Path $package $gameName) -Destination (Join-Path $directory 'sdlpal.exe')
+    Copy-Item -LiteralPath (Join-Path $package 'SDL2.dll') -Destination $directory
     foreach ($slot in 1..5) {
         $source = Join-Path $package "save\$slot.rpg"
         Copy-Item -LiteralPath $source -Destination (Join-Path $directory 'save')
@@ -29,7 +31,7 @@ if (-not $csc) { throw 'VS 2026 Roslyn compiler not found' }
 $exe = Join-Path $out 'NativeSdlpalRelayHost.exe'
 $references = @('/reference:System.dll','/reference:System.Core.dll','/reference:System.Drawing.dll','/reference:System.Windows.Forms.dll')
 foreach ($name in @('Pal98Timer.exe','TimerPluginBase.dll','System.Web.Script.Serialization.dll')) { $references += '/reference:' + (Join-Path $out $name) }
-& $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" $references (Join-Path $PSScriptRoot 'native_sdlpal_relay_host.cs') *> (Join-Path $out 'host-build.log')
+& $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" $references (Join-Path $PSScriptRoot 'native_sdlpal_relay_host.cs') (Join-Path $PSScriptRoot 'native_sdlpal_cloud_host.cs') *> (Join-Path $out 'host-build.log')
 if ($LASTEXITCODE -ne 0) { throw "Native relay host build failed: $out" }
 Copy-Item -LiteralPath (Join-Path $out 'Pal98Timer.exe.config') -Destination ($exe + '.config')
 @{
@@ -37,10 +39,15 @@ Copy-Item -LiteralPath (Join-Path $out 'Pal98Timer.exe.config') -Destination ($e
     TimerSha256=(Get-FileHash -LiteralPath (Join-Path $out 'Pal98Timer.exe')).Hash
     EngineSha256=(Get-FileHash -LiteralPath (Join-Path $out 'game-a\sdlpal.exe')).Hash
     HostSourceSha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'native_sdlpal_relay_host.cs')).Hash
+    CloudHostSourceSha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'native_sdlpal_cloud_host.cs')).Hash
+    CloudTransport=$(if ($Cloud) { 'offline file store; no production requests' } else { 'none' })
     OriginalSaveHashes=$originalHashes
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $out 'identity.json') -Encoding utf8
 Push-Location -LiteralPath $out
-try { & $exe 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt'); $result = $LASTEXITCODE }
+try {
+    $hostArguments = @(); if ($Cloud) { $hostArguments += '--cloud' }
+    & $exe @hostArguments 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt'); $result = $LASTEXITCODE
+}
 finally { Pop-Location }
 foreach ($side in @('game-a','game-b')) {
     foreach ($slot in 1..5) {
