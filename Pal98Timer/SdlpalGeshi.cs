@@ -435,20 +435,38 @@ namespace Pal98Timer
         public override Keys GetCustomToggleHotkey() => overlay?.ConfiguredToggleHotkey ?? Dx9OverlaySettings.LoadLayout(OverlayLayout).ToggleHotkey;
         public override bool TryHandleCustomHotkey(Keys hotkey)
         { if (hotkey == Keys.None || hotkey != GetCustomToggleHotkey()) return false; ToggleOverlay(); return true; }
+        internal static string OverlayIdentity(int cloudId, string caption)
+        {
+            string cloud = cloudId >= 0 ? cloudId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "未激活";
+            string state = (caption ?? "").Trim().Trim('[', ']');
+            string id = "--";
+            foreach (string prefix in new[] { "已连接:", "不完全连接:" })
+                if (state.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    string value = state.Substring(prefix.Length);
+                    if (value.Length > 0 && value.Length <= 18 && value[0] != '0' && value.All(c => c >= '0' && c <= '9'))
+                    { id = value; state = prefix.TrimEnd(':'); }
+                    else state = "未连接";
+                    break;
+                }
+            if (state.Length == 0) state = "未连接";
+            return "云ID:" + cloud + "  连接ID:" + id + "（" + state + "）";
+        }
         private Dx9OverlaySnapshot OverlaySnapshot()
         {
             lock (gate)
             {
-                var entries = new Dx9OverlayTimelineEntry[3];
-                int start = Math.Max(0, Math.Min(CurrentStep - 1, CheckPoints.Count - 3));
-                for (int i = 0; i < 3 && start + i < CheckPoints.Count; i++)
+                var entries = new Dx9OverlayTimelineEntry[2];
+                int start = Math.Max(0, Math.Min(CurrentStep - 1, CheckPoints.Count - 2));
+                for (int i = 0; i < 2 && start + i < CheckPoints.Count; i++)
                 { var p = CheckPoints[start + i]; entries[i] = new Dx9OverlayTimelineEntry(T(p.GetNickName()), TItem.TimeSpanToString(p.Best), TItem.TimeSpanToString(p.Current), p.GetCHA(), p.Index == CurrentStep, p.Status == CheckPointStatus.Completed); }
                 IntPtr handle = IntPtr.Zero; try { handle = bridge?.Process?.MainWindowHandle ?? IntPtr.Zero; } catch { }
                 string plugin = string.Join("  ", new[] { GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR),
                     GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL) }.Where(text => !string.IsNullOrEmpty(text)));
                 return new Dx9OverlaySnapshot(handle, overlay?.ConfiguredFontFamily, TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
-                    GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], entries[2], T(status), false, !MT.IsRunning,
-                    "SDLPAL / " + observer.Snapshot?.profile, "", "", T(GetScoreValidationError()), form.CloudID(), plugin);
+                    GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], new Dx9OverlayTimelineEntry(), T(status), false, !MT.IsRunning,
+                    "SDLPAL / " + observer.Snapshot?.profile, "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
+                    OverlayIdentity(form.CloudID(), form.CompetitionOverlayCaption));
             }
         }
         public override void UnloadUI() { if (itemsForm != null) { itemsForm.Dispose(); itemsForm = null; } if (overlay != null) { overlay.Stop(); overlay.Dispose(); overlay = null; } base.UnloadUI(); }

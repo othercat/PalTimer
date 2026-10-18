@@ -16,6 +16,7 @@ namespace Pal98Timer
         private bool competitionCloseReady, competitionClosing;
         private string onlineLoadStatus = "正在准备联机组件，本地计时可正常使用。";
         private volatile string onlineCaption = "";
+        internal string CompetitionOverlayCaption => competition == null ? "" : onlineCaption;
         private async void InitializeCompetition()
         {
             var item = new ToolStripMenuItem("联机与排名…");

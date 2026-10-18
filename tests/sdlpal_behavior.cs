@@ -168,6 +168,7 @@ internal static class SdlpalBehavior
                 } } finally {Thread.CurrentThread.CurrentCulture=oldCulture;Thread.CurrentThread.CurrentUICulture=oldUiCulture;}
                 var overlay=(Dx9OverlaySnapshot)Call(core,"OverlaySnapshot");
                 Check(overlay.FooterText.Contains("钱12345")&&overlay.FooterText.Contains("音乐播放器×4"),"OBS wrapping footer includes both Fujia and selected item output");
+                Check(overlay.TimelineFirst.HasValue&&overlay.TimelineSecond.HasValue&&!overlay.TimelineThird.HasValue&&overlay.IdentityLine.Contains("云ID:")&&overlay.IdentityLine.Contains("连接ID:"),"dedicated OBS reserves third timeline position for cloud and connection identities");
                 core.Jump(0);
                 var payload=GForm.BuildCloudPayload(core,false,2);
                 Check(payload.SuppressScores&&payload.Lite==""&&payload.Big==""&&payload.Plugins["BR"].Contains("12345")&&payload.Plugins["BL"].Contains("音乐播放器×4"),"cloud preparation carries assisted-run item display without enabling its old score stream");
@@ -669,6 +670,42 @@ internal static class SdlpalBehavior
             }
         }
     }
+    static void OverlayIdentityTests()
+    {
+        Check(SdlpalGeshi.OverlayIdentity(-1,"")=="云ID:未激活  连接ID:--（未连接）","unavailable cloud and live connection never show an invented ID");
+        Check(SdlpalGeshi.OverlayIdentity(42," [已连接:123456]")=="云ID:42  连接ID:123456（已连接）","OBS displays acknowledged public live ID beside cloud ID");
+        Check(SdlpalGeshi.OverlayIdentity(42," [不完全连接:234567]").Contains("连接ID:234567（不完全连接）"),"OBS preserves incomplete connection state");
+        Check(SdlpalGeshi.OverlayIdentity(42," [连接失败]").EndsWith("连接ID:--（连接失败）"),"disconnect clears displayed public ID without claiming connection");
+        Check(SdlpalGeshi.OverlayIdentity(42," [系统时间不同步]").Contains("系统时间不同步"),"OBS retains authentication clock warning");
+        Check(SdlpalGeshi.OverlayIdentity(42," [已连接:abc]").EndsWith("连接ID:--（未连接）"),"malformed caption cannot manufacture a connected ID");
+        var first=new Dx9OverlayTimelineEntry("八头蛇胜利","01:00:00.00","00:58:10.50",-110,false,true);
+        var second=new Dx9OverlayTimelineEntry("通关","01:20:00.00","01:02:03.45",0,true,false);
+        var legacy=new Dx9OverlaySnapshot(IntPtr.Zero,"Microsoft YaHei UI","01:02:03.45","12.3s","00:02:01.00","金钱 10000",1,first,second,first,"暂停",false,true,"旧核心","","","",42,"道具107种");
+        Check(legacy.IdentityLine==null&&legacy.TimelineThird.HasValue&&legacy.FooterText.Contains("云ID:42"),"original cores retain third timeline row and constructor/footer behavior");
+        foreach(var size in new[]{9f,18f})
+        {
+            string identity=SdlpalGeshi.OverlayIdentity(int.MaxValue," [不完全连接:999999999999999999]");
+            var snapshot=new Dx9OverlaySnapshot(IntPtr.Zero,"Microsoft YaHei UI","01:02:03.45","12.3s","00:02:01.00","隔世追凶 简单  金钱 10000",1,first,second,new Dx9OverlayTimelineEntry(),"暂停",false,true,"SDLPAL / geshi-easy-v1","","","",int.MaxValue,"钱10000 道具107种 / 458件  监测 铜钱镖×99",identity);
+            Check(!snapshot.FooterText.Contains("云ID")&&snapshot.IdentityLine.Contains("999999999999999999"),"identity moves out of plug-in footer without truncating long public ID at font "+size);
+            var layout=Dx9OverlayLayoutSettings.CreateDefault();layout.FontFamily="Microsoft YaHei UI";layout.FontSize=size;
+            using(var overlay=new Dx9OverlayForm(()=>snapshot,layout,_=>{}))
+            {
+                Set(overlay,"CurrentSnapshot",snapshot);
+                float line=(float)Call(overlay,"GetInfoHeightLogicalPixels"),identityHeight=(float)Call(overlay,"GetIdentityHeightLogicalPixels");
+                float height=(float)Call(overlay,"GetOverlayHeightLogicalPixels");
+                Set(overlay,"CurrentSnapshot",legacy);float legacyHeight=(float)Call(overlay,"GetOverlayHeightLogicalPixels");Set(overlay,"CurrentSnapshot",snapshot);
+                Check(identityHeight>line&&height>legacyHeight,"long identity row expands canvas instead of overlapping plug-in footer at font "+size);
+                overlay.ClientSize=new System.Drawing.Size(340,(int)Math.Ceiling(height));
+                using(var bitmap=new System.Drawing.Bitmap(overlay.ClientSize.Width,overlay.ClientSize.Height))
+                using(var graphics=System.Drawing.Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(System.Drawing.Color.FromArgb(40,43,45));
+                    Call(overlay,"OnPaint",new System.Windows.Forms.PaintEventArgs(graphics,overlay.ClientRectangle));
+                    bitmap.Save(Path.Combine(root,"obs-identities-font-"+size.ToString(System.Globalization.CultureInfo.InvariantCulture)+".png"));
+                }
+            }
+        }
+    }
     [STAThread] static int Main(string[] args)
     {
         try
@@ -694,7 +731,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }
