@@ -138,6 +138,6 @@ r7 整包 ZIP 为 303039279 字节，SHA-256 `6047c678e5b3fb3ff2b21eff59b677cf45
 
 公开 configurations/daily-boards/custom-competitions 均返回 HTTP 200，分别 11/8/3 项，暂无 `sdlpal-geshi-easy`。配置在真实签封记录或真实通关事实审核时建档，默认不公开；公开列表为空不代表后台没有该配置。管理员应先查 `GET /api/v1/timer/admin/configurations`，找到后用既有配置更新入口设置标题「隔世追凶-简单」、`published: true` 和原因；确实不存在时，等待真实成绩或审核已有真实通关记录，不能上传合成成绩创建榜单。
 
-匿名 `auth/status` 返回 401，本机没有 pallab.top 的既有设备凭据，故 **r7 构建批准状态未知**。维护者应使用已有认证核对服务版本及本节 3.39.2.0 的 EXE/Online/Auth 组合，key ID 为 `bb2fcd012fef4cd096110ee0a88d6d48`，公开证书在 r7 的 `Tools/Timer/PalCompetitionRegistration.public.json`。服务合并说明中的 3.39.1/r6 身份不能替代 r7 的批准。真实玩家绑定、批准后的成绩回执和榜单显示继续由 [PalServer #23](https://github.com/othercat/PalServer/issues/23) 与本仓 #18 跟踪；本次未创建凭据、登记设备或上传成绩。
+匿名 `auth/status` 返回 401，本机没有 pallab.top 的既有设备凭据，故 **r7 构建批准状态未知**。维护者应使用已有认证核对服务版本及本节 3.39.2.0 的 EXE/Online/Auth 组合，key ID 为 `bb2fcd012fef4cd096110ee0a88d6d48`，公开证书在 r7 的 `Tools/Timer/PalCompetitionRegistration.public.json`。服务合并说明中的 3.39.1/r6 身份不能替代 r7 的批准。[PalServer #23](https://github.com/othercat/PalServer/issues/23) 随代码合并关闭，真实玩家绑定、批准后的成绩回执和榜单显示继续由 [游戏 #5](https://github.com/othercat/sdlpal-lostedit/issues/5) 与本仓 #18 跟踪；本次未创建凭据、登记设备或上传成绩。
 
 本轮完整路线选定「荣耀的传承」；游戏原仓提供 `scripts/record-geshi-route.ps1` 记录新故事、读档、场景、战斗和真实完成信号。诊断记录不会作为正常跑次交给计时器。该入口及结局尾段验证不能替代从新游戏到结局的正常计时验收。
