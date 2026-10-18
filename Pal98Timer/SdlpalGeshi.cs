@@ -117,7 +117,7 @@ namespace Pal98Timer
         private ulong battleSequence;
         private ulong nextDiscovery;
         private string status = "等待 SDLPAL 隔世追凶简单版", warning = "";
-        private bool busyRelay, unloaded, traditional;
+        private bool busyRelay, unloaded;
         private long relayRun;
         private SdlpalBridge relayBridge;
         private bool freshSnapshot;
@@ -127,10 +127,9 @@ namespace Pal98Timer
         private readonly SdlpalItemTracker items = new SdlpalItemTracker();
         private SdlpalItemSettings itemSettings = new SdlpalItemSettings();
         private ToolStripMenuItem cloudSave, cloudLoad, overlayMenu;
-        private readonly List<ToolStripMenuItem> translatedMenus = new List<ToolStripMenuItem>();
         public SdlpalGeshi(GForm form) : base(form)
         {
-            CoreName = "SDLPAL_GESHI_EASY"; CheckInterval = 70; traditional = Dx9TimingCategory.Traditional;
+            CoreName = "SDLPAL_GESHI_EASY"; CheckInterval = 70;
             try { itemSettings = SdlpalItemSettings.Load(); }
             catch (Exception ex) { warning = "物品监测配置读取失败，使用默认值；原文件保留：" + ex.Message; }
         }
@@ -181,8 +180,10 @@ namespace Pal98Timer
         private string RouteIdentity => SdlpalSplitRule.Identity(rules);
         private string BestCategory => observer.Snapshot == null ? "unbound" : CompetitionProtocol.Hash(observer.Snapshot.IdentityKey).Substring(0, 16);
         public override string ActiveBestPath => TimerUserSettings.BestPath("best" + CoreName + "-" + BestCategory + "-" + RouteIdentity.Substring(0, 16) + ".txt");
-        private string T(string text) => Microsoft.VisualBasic.Strings.StrConv(text, traditional ?
-            Microsoft.VisualBasic.VbStrConv.TraditionalChinese : Microsoft.VisualBasic.VbStrConv.SimplifiedChinese, 0x0804);
+        // This edition always displays simplified names, including legacy Big5
+        // snapshots and traditional Windows locales. Other cores keep their choice.
+        private string T(string text) => Microsoft.VisualBasic.Strings.StrConv(text,
+            Microsoft.VisualBasic.VbStrConv.SimplifiedChinese, 0x0804);
         protected override void InitCheckPoints()
         {
             lock (gate)
@@ -380,7 +381,7 @@ namespace Pal98Timer
         {
             var item = cloud ? form.NewCloudMenuItem() : form.NewMenuItem();
             item.Text = T(text); item.Tag = text; item.Click += (sender, args) => { try { action(); } catch (Exception ex) { form.Error(ex.Message); } };
-            translatedMenus.Add(item); return item;
+            return item;
         }
         public override void InitUI()
         {
@@ -392,14 +393,6 @@ namespace Pal98Timer
             Menu("接力－载入…", LoadRelay);
             Menu("按键配置（F11）", OpenKeyConfig);
             Menu("实时物品检测 / 富甲设置…", ShowItems);
-            Menu("简体 / 繁體", () => {
-                traditional = !traditional;
-                foreach (var item in translatedMenus) item.Text = T((string)item.Tag);
-                for (int i = 0; i < CheckPoints.Count; i++) CheckPoints[i].SetBestReference(new CheckPointNewer { Name = CheckPoints[i].Name, NickName = T(rules[i].Name), BestTS = CheckPoints[i].Best });
-                lock (gate) PublishItemPlugins();
-                itemsForm?.RefreshLanguage();
-                form.Invalidate();
-            });
             cloudSave = Menu("云存档（隔世追凶）", CloudSave, true); cloudSave.Enabled = false;
             cloudLoad = Menu("云读档（隔世追凶）", CloudLoad, true); cloudLoad.Enabled = false;
             overlayMenu = Menu("OBS 独立遮罩", ToggleOverlay);

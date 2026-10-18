@@ -86,7 +86,7 @@ internal static class SdlpalBehavior
             Check(actual.profile=="geshi-easy-v1"&&actual.diagnostic,"real native diagnostic snapshot decodes: "+Path.GetFileName(path));
             var items=new SdlpalItemTracker();items.Observe(actual);
             Check(items.View.Available&&items.View.Rows.Any(row=>row.Id==585)&&!items.View.Rows.Any(row=>row.Id==571||row.Id==575),"native item catalog includes modified items and excludes initial magics: "+Path.GetFileName(path));
-            Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&items.View.Rows.Single(row=>row.Id==344).Name=="銅錢鏢","native item names/prices come from current resources");
+            Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&new[]{"銅錢鏢","铜钱镖"}.Contains(items.View.Rows.Single(row=>row.Id==344).Name),"native item names/prices come from current resources");
             Check(actual.scene==227 ? items.View.Cash==31265&&items.View.Kinds==80&&items.View.Quantity==355 :
                 actual.scene==93&&items.View.Cash==9817&&items.View.Kinds==107&&items.View.Quantity==458,"native save ownership/cash totals (all six equipment slots, active party only)");
         }
@@ -153,9 +153,15 @@ internal static class SdlpalBehavior
                 Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音乐播放器×4"),"production watch output uses live modified names and counts");
                 engine.State.catalog[585].name="音樂播放器";engine.Publish();Call(core,"OnTick");
                 Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音乐播放器×4"),"simplified mode converts native traditional item names");
-                Set(core,"traditional",true);Call(core,"PublishItemPlugins");
-                Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音樂播放器×4"),"traditional mode uses same live item counts");
-                Set(core,"traditional",false);Call(core,"PublishItemPlugins");
+                var oldCulture=Thread.CurrentThread.CurrentCulture;var oldUiCulture=Thread.CurrentThread.CurrentUICulture;
+                try { foreach(string culture in new[]{"zh-CN","zh-TW","zh-HK"}) {
+                    Thread.CurrentThread.CurrentCulture=new System.Globalization.CultureInfo(culture);
+                    Thread.CurrentThread.CurrentUICulture=new System.Globalization.CultureInfo(culture);
+                    Call(core,"PublishItemPlugins");
+                    Check(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL).Contains("音乐播放器×4") &&
+                        ((Dx9OverlaySnapshot)Call(core,"OverlaySnapshot")).FooterText.Contains("音乐播放器") &&
+                        (string)Call(core,"T","隔世追兇 銅錢鏢")=="隔世追凶 铜钱镖",culture+" keeps dedicated recognition and OBS simplified");
+                } } finally {Thread.CurrentThread.CurrentCulture=oldCulture;Thread.CurrentThread.CurrentUICulture=oldUiCulture;}
                 var overlay=(Dx9OverlaySnapshot)Call(core,"OverlaySnapshot");
                 Check(overlay.FooterText.Contains("钱12345")&&overlay.FooterText.Contains("音乐播放器×4"),"OBS wrapping footer includes both Fujia and selected item output");
                 core.Jump(0);
@@ -186,11 +192,11 @@ internal static class SdlpalBehavior
                     Check(!core.ItemSettings.FujiaEnabled&&core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR)=="","plugin manager checkbox updates actual SDL plugin immediately");
                 }
                 core.ApplyItemSettings(config);
-                using(var dialog=new SdlpalItemsForm(()=>core.ItemView,()=>core.ItemSettings,core.ApplyItemSettings,core.RebaseItems,text=>text))
+                using(var dialog=new SdlpalItemsForm(()=>core.ItemView,()=>core.ItemSettings,core.ApplyItemSettings,core.RebaseItems,text=>(string)Call(core,"T",text)))
                 {
                     var grid=(System.Windows.Forms.DataGridView)typeof(SdlpalItemsForm).GetField("grid",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(dialog);
                     var music=grid.Rows.Cast<System.Windows.Forms.DataGridViewRow>().Single(row=>(int)row.Tag==585);
-                    Check(grid.Rows.Count==242&&(string)music.Cells[2].Value=="音樂播放器"&&(int)music.Cells[6].Value==6,"real item window displays full audited catalog and live modified item quantities");
+                    Check(grid.Rows.Count==242&&(string)music.Cells[2].Value=="音乐播放器"&&(int)music.Cells[6].Value==6,"real item window displays simplified audited catalog and live modified item quantities");
                     music.Cells[0].Value=false;
                     Check(!core.ItemSettings.WatchedIds.Contains(585),"real checkbox operation persists watch removal");
                 if(showUi) using(var host=new RenderHost())
