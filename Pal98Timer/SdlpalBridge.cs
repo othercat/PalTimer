@@ -86,6 +86,21 @@ namespace Pal98Timer
         internal string ItemDataError;
         internal int Pid;
         internal ulong Created, Published;
+        // Online categories describe gameplay, not the executable or its UI.
+        // Keep IdentityKey below strict for in-flight observation/relay safety.
+        internal Dictionary<string, string> RankingFacts()
+        {
+            var facts = new Dictionary<string, string>(StringComparer.Ordinal) {
+                ["family"] = "sdlpal-geshi-easy", ["profile"] = profile,
+                ["content"] = CompetitionProtocol.Hash(string.Join("\n", resourceHashes.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value))),
+                ["fade_ms"] = fadeCycleMs.ToString(System.Globalization.CultureInfo.InvariantCulture), ["map_speed_ticks"] = "0",
+                ["walk_frame_ms"] = walkFrameMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["battle_speed"] = battleSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            };
+            foreach (var pair in resourceHashes) facts["resource." + pair.Key] = pair.Value;
+            return facts;
+        }
         internal string IdentityKey => profile + "|" + exeHash + "|" + build + "|" +
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
             "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;

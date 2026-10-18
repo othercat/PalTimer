@@ -92,11 +92,27 @@ SAVE 必须收到对应 request ID 的成功确认，才复制已经关闭的 `2
 | gameplay.map_speed_ticks | 0，明确不套用 PALDLL 9/10 tick |
 | gameplay.walk_frame_ms | 新增可选字段，仅新 family 使用，等于实际 walkFrameMs |
 | pal_dll_sha256 | 旧传输字段在此 family 下承载实际游戏 EXE SHA256 |
-| game_version | `1.0.0.0`，桥接契约版本；实际引擎 git revision 在规则中保留 |
+| game_version | `1.0.0.0`，桥接契约版本；实际引擎版本保留在本地快照/接力证据中 |
 
-`ranking.rules` 含 `family`、`content`、`profile`、`engine_sha256`、`engine_build`、`fade_ms`、`map_speed_ticks="0"`、`walk_frame_ms`、`speed`、`battle_speed`、`route_rules_sha256`，以及 `resource.SSS.MKF`、`resource.DATA.MKF`、`resource.WORD.DAT`、`resource.M.MSG`。`configuration_id` 和 `gameplay.rules_sha256` 都用现有 `RankingConfiguration.Digest(rules)` 计算。`route_rules_sha256` 是 `SDLPAL.GeshiSplits.v1\n` 加顺序规则行的 SHA256（每行为 JSON 转义的 ID、Kind、Team、Scene、Enemy，以冒号分隔；空筛选为 `-`，每行含末尾 LF）。显示名称不进入身份；节点顺序/筛选条件属于身份。原核心的签封 JSON 不增加 walk_frame_ms=null 字段。
+Issue #27 起，`ranking.rules` 精确包含 12 键：`family`、`content`、`profile`、`fade_ms`、`map_speed_ticks="0"`、`walk_frame_ms`、`speed`、`battle_speed`，以及 `resource.SSS.MKF`、`resource.DATA.MKF`、`resource.WORD.DAT`、`resource.M.MSG`。`configuration_id` 和 `gameplay.rules_sha256` 都用现有 `RankingConfiguration.Digest(rules)` 计算。按键、音乐、分辨率、窗口位置、高清图像、引擎 EXE/编译版本和节点筛选不再拆分线上配置。实际速度和玩法文字/脚本/数据资源变化才产生新配置；节点顺序仍由独立 `route_sha256` 区分。计时器哈希继续保留在已验签的生产者身份中，仅记录上传版本，不参与配置摘要。
+
+历史 15 键规则（额外包含 `engine_sha256`、`engine_build`、`route_rules_sha256`）仍可读取，不重写原签封或已有 ID。PalServer #25 同时兼容两种精确键集合。原有接力/在途观察的严格身份保护与本地 PB 文件命名保持不变；这次修改只调整线上配置粒度，未改变计时、暂停、节点推进、内存读取或普通核心。
 
 服务端需接受新 family、独立 walk_frame_ms、上述规则与实际资源/引擎身份，决定成绩准入及榜单发布。线上状态必须以真实批准与回执为准，离线模拟成功不代表已激活。中途连接、读档、手动跳过节点等观察会保留给服务器判定，不伪造反作弊证明。
+
+### 明确调用的配置初始化（Issue #27）
+
+用户授权后台建档时，可对成套签发计时器显式执行：
+
+```text
+Pal98Timer.exe --initialize-geshi-configuration <真实资源身份快照的绝对路径> <新建或原有初始化目录的绝对路径>
+```
+
+此入口使用既有设备凭据、原生 Auth、正常构建审批与上传挑战；不启动游戏、联机心跳或普通成绩队列，也不自动创建/替换设备凭据。生成的 v2 记录始终为零时长、所有节点 `in_progress`、`began_here=false`、`finished=false`，并带有“人工合成、仅配置初始化、非真实通关、禁止排名”的不可改写签封标记。诊断快照只提供资源/速度元数据，不被宣称为通关证据。管理员只需命名并发布配置，不要批准这条合成记录；可另行驳回记录，配置不会删除。
+
+原始 run_id、时间戳和签封在首个网络请求前保存到独立初始化目录；丢失回执时重试同一记录，已收到回执则不再发送。换输入/换签封构建不能重写原记录。目录含设备标识和签封，只保留本机，不进入源码或发布包。`initialization.result.json` 为脱敏结果；退出 0 表示已核对 `pending_review` 且不具榜单资格的回执，2 表示待审批或可重试，1 表示失败。该记录不替代真实玩家从新故事到结局的上传验收。
+
+本机验证：245 项 SDL 核心检查通过（`-NoGui` 跳过显示截图/对应过滤两项）；实际原生签封及生产服务 loopback HTTP 的 33 项服务检查、21 项客户端检查通过，覆盖未批准时只申请构建、批准后初始化、201/200 幂等重试、发布配置后仍为空榜及变更输入拒绝。使用隔离测试身份/数据库，不是生产回执。证据 `artifacts/sdlpal-tests-20261018-133320-532`、`artifacts/http-aab85809`。
 
 ## 构建与验证
 

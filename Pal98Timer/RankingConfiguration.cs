@@ -28,8 +28,27 @@ namespace Pal98Timer
             return Value("content") == game.content_sha256 && Value("family") == game.family &&
                 Value("fade_ms") == game.fade_ms.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
                 Value("map_speed_ticks") == game.map_speed_ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
-                (game.family != "sdlpal-geshi-easy" || Value("walk_frame_ms") == game.walk_frame_ms?.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
-                    CompetitionProtocol.Digest(Value("engine_sha256")) && CompetitionProtocol.Digest(Value("route_rules_sha256")));
+                (game.family != "sdlpal-geshi-easy" || ValidSdlRules(game));
+        }
+        private bool ValidSdlRules(GameplayIdentity game)
+        {
+            var resources = new[] { "DATA.MKF", "M.MSG", "SSS.MKF", "WORD.DAT" };
+            var keys = new HashSet<string>(new[] { "family", "content", "profile", "fade_ms", "map_speed_ticks", "walk_frame_ms", "speed", "battle_speed" }, StringComparer.Ordinal);
+            foreach (var resource in resources) keys.Add("resource." + resource);
+            bool legacy = rules.ContainsKey("engine_sha256") || rules.ContainsKey("engine_build") || rules.ContainsKey("route_rules_sha256");
+            if (legacy)
+            {
+                keys.UnionWith(new[] { "engine_sha256", "engine_build", "route_rules_sha256" });
+                if (!CompetitionProtocol.Digest(Value("engine_sha256")) || !CompetitionProtocol.Digest(Value("route_rules_sha256")) ||
+                    string.IsNullOrWhiteSpace(Value("engine_build")) || Value("engine_build").Length > 128 || Value("engine_build").Any(char.IsControl)) return false;
+            }
+            int speed, battle;
+            return keys.SetEquals(rules.Keys) && Value("profile") == "geshi-easy-v1" && Value("profile") == game.content_id &&
+                Value("walk_frame_ms") == game.walk_frame_ms?.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+                int.TryParse(Value("speed"), out speed) && speed >= 0 && speed <= 100 && Value("speed") == speed.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+                int.TryParse(Value("battle_speed"), out battle) && battle >= 0 && battle <= 100 && Value("battle_speed") == battle.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+                resources.All(r => CompetitionProtocol.Digest(Value("resource." + r))) &&
+                Value("content") == CompetitionProtocol.Hash(string.Join("\n", resources.Select(r => r + "=" + Value("resource." + r))));
         }
         internal string Value(string key) => rules != null && rules.TryGetValue(key, out var value) ? value : null;
         internal RankingConfiguration Copy() => new RankingConfiguration { schema = schema, configuration_id = configuration_id,

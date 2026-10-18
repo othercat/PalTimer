@@ -138,18 +138,29 @@ def main():
         check(any(call['path'].endswith('/live/sessions') and call['status'] == 200 for call in wire),
               'native live challenge proof created real HTTP session')
         with store.lock:
-            check(store.db.execute('SELECT COUNT(*) FROM timer_runs').fetchone()[0] == 2,
-                  'only two distinct fixture results persisted')
+            check(store.db.execute('SELECT COUNT(*) FROM timer_runs').fetchone()[0] == 3,
+                  'two fixture results and one initialization persisted, despite retries')
+        seed_receipt = json.loads((evidence / 'initialization' / 'initialization.receipt.json').read_text(encoding='utf-8-sig'))
+        seed_config = seed_receipt['configuration_id']
+        seed_review = store.online_review(seed_receipt['receipt_id'])
+        check(seed_receipt['http_status'] == 200 and seed_review['status'] == 'pending' and not seed_review['board_eligible'],
+              'initialization retry receives 200 and remains pending, never ranked')
+        check({'zero_total', 'late_start', 'unfinished_observation', 'client_reported_issues'}.issubset(seed_review['issues']),
+              'server independently excludes synthetic configuration initialization')
+        store.publish(seed_config, ConfigurationPublication(title='隔世追凶-简单 CONFIG INIT FIXTURE', published=True,
+                      reason='LOCAL HTTP FIXTURE ONLY'), now())
+        seed_board = get('standings?configuration_id=' + seed_config)
+        check(seed_board['published'] and seed_board['entries'] == [], 'publishing initialized configuration never publishes its seed score')
         after = get('standings?configuration_id=' + config)
         check(after['entries'] == before['entries'], 'assisted run excluded from public standings')
         summary = dict(schema='PalTimer.GeshiHttpAcceptance.v1', fixtureOnly=True, origin=origin,
                        frozenReleaseTested=False, productionServiceTested=False, checks=checks,
                        client=json.loads((evidence / 'client-result.json').read_text(encoding='utf-8-sig')),
-                       uploadStatuses=[call['status'] for call in uploads], acceptedRows=1, reviewRows=1,
+                       uploadStatuses=[call['status'] for call in uploads], acceptedRows=1, reviewRows=2,
                        diagnosticGate='Not exercised by this observation host; covered by real-core SDL tests.',
                        hostSha256=hashlib.sha256((root / 'GeshiHttpProbe.exe').read_bytes()).hexdigest())
         (root / 'result.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        print(f'PASS {len(checks)} service checks; HTTP 201/200/201; one ranked, one held for review. Local fixture only.')
+        print(f'PASS {len(checks)} service checks; one ranked, one assisted and one initialization held for review. Local fixture only.')
     finally:
         if process is not None and process.poll() is None:
             # Only this newly created bounded test host, never a player's timer.

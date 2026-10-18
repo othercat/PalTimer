@@ -23,6 +23,7 @@ $sources = @($names | ForEach-Object {
     if (Test-Path -LiteralPath $path) { $path } else { Join-Path $repo ('Pal98Timer\' + $_) }
 })
 $sources += Join-Path $repo 'Pal98Timer\SdlpalBridge.cs'
+$sources += Join-Path $repo 'PalTimerOnline\GeshiConfigurationInitialization.cs'
 $sources += Join-Path $shared 'PalUserData.cs'
 $sources += Join-Path $PSScriptRoot 'geshi_http_host.cs'
 $exe = Join-Path $out 'GeshiHttpProbe.exe'

@@ -262,14 +262,7 @@ namespace Pal98Timer
         internal override void CaptureCompetitionGameplay(CompetitionObservation observation)
         {
             var s = observer.Snapshot; if (s == null) return;
-            var facts = new Dictionary<string, string>(StringComparer.Ordinal) {
-                ["family"] = Family, ["content"] = CompetitionProtocol.Hash(string.Join("\n", s.resourceHashes.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value))),
-                ["profile"] = s.profile, ["engine_sha256"] = s.exeHash, ["engine_build"] = s.build,
-                ["fade_ms"] = s.fadeCycleMs.ToString(CultureInfo.InvariantCulture), ["map_speed_ticks"] = "0",
-                ["walk_frame_ms"] = s.walkFrameMs.ToString(CultureInfo.InvariantCulture), ["speed"] = s.speed.ToString(CultureInfo.InvariantCulture),
-                ["battle_speed"] = s.battleSpeed.ToString(CultureInfo.InvariantCulture), ["route_rules_sha256"] = RouteIdentity
-            };
-            foreach (var pair in s.resourceHashes) facts["resource." + pair.Key] = pair.Value;
+            var facts = s.RankingFacts();
             string digest = RankingConfiguration.Digest(facts);
             observation.Gameplay = new GameplayIdentity { content_id = s.profile, content_sha256 = facts["content"], rules_sha256 = digest,
                 family = Family, fade_ms = s.fadeCycleMs, map_speed_ticks = 0, walk_frame_ms = s.walkFrameMs };

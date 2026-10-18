@@ -39,6 +39,30 @@ internal static class SdlpalBehavior
         BitConverter.GetBytes(created).CopyTo(header,32); BitConverter.GetBytes(value.epoch).CopyTo(header,40); BitConverter.GetBytes(now).CopyTo(header,56); return header;
     }
     static SdlpalSnapshot Clone(SdlpalSnapshot value) => SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(SdlpalBridge.Json().Serialize(value));
+    static void RankingTests()
+    {
+        var initial=Snapshot();
+        Func<SdlpalSnapshot,string> category=s=>RankingConfiguration.Digest(s.RankingFacts());
+        string original=category(initial);
+        var changed=Clone(initial);changed.exeHash=new string('f',64);changed.build="another-engine-build";
+        changed.gamePath="another-window-location";changed.savePath="other-saves";
+        Check(original==category(changed),"online configuration survives engine update and installation paths");
+        foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.fadeCycleMs++,s=>s.walkFrameMs++,s=>s.speed++,s=>s.battleSpeed++})
+        {changed=Clone(initial);edit(changed);Check(original!=category(changed),"actual speed change partitions online configuration");}
+        foreach(string name in initial.resourceHashes.Keys)
+        {changed=Clone(initial);changed.resourceHashes[name]=new string('e',64);Check(original!=category(changed),"gameplay resource change partitions configuration: "+name);}
+        var facts=initial.RankingFacts();
+        Check(facts.Count==12&&!facts.ContainsKey("engine_sha256")&&!facts.ContainsKey("engine_build")&&!facts.ContainsKey("route_rules_sha256")&&!facts.ContainsKey("timer_exe_sha256"),
+            "only content and speed enter ranking facts; signatures and node routes remain independent");
+        var game=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=initial.profile,content_sha256=facts["content"],rules_sha256=original,fade_ms=800,map_speed_ticks=0,walk_frame_ms=90};
+        Func<bool> valid=()=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(game);
+        Check(valid(),"content-speed ranking validates");
+        facts["WindowWidth"]="1920";Check(!valid(),"display setting cannot leak into accepted ranking facts");facts.Remove("WindowWidth");
+        facts["engine_sha256"]=initial.exeHash;Check(!valid(),"partial legacy identity is rejected");
+        facts["engine_build"]=initial.build;facts["route_rules_sha256"]=new string('e',64);
+        Check(valid(),"complete old configuration remains readable without rewriting its digest");
+        facts["resource.DATA.MKF"]=new string('e',64);Check(!valid(),"mismatched resource aggregate rejected");
+    }
     static void DecodeTests(string[] paths)
     {
         var state=Snapshot(); byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state)); var header=Header(state,json.Length);
@@ -321,6 +345,7 @@ internal static class SdlpalBehavior
             Check(!core.CompetitionPublicationAllowed&&core.GetScoreValidationError().Contains("诊断"),"diagnostic runtime cannot publish competition observations");
             var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);
             Check(observation.Gameplay.Valid&&observation.Ranking.Valid(observation.Gameplay)&&observation.Gameplay.map_speed_ticks==0&&observation.Gameplay.walk_frame_ms==90,"independent SDL family uses milliseconds without PALDLL ticks");
+            Check(observation.Ranking.rules.Count==12&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes content-speed category");
             Set(core,"relayRun",core.ScoreRunSequence);Set(core,"relayBridge",bridge);Call(core,"CheckRelayOwner");
             core.SetTS(TimeSpan.FromSeconds(1));Reject(()=>Call(core,"CheckRelayOwner"),"manual time/reset cancels an earlier relay transaction lease");
             Check(!core.CanBeginCompetitionHere(0),"manual time change cannot claim a fresh competition start");
@@ -659,7 +684,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            IsolationTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
+            IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();BattleClockTests();CompletionTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

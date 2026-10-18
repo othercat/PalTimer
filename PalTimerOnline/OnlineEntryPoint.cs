@@ -9,6 +9,8 @@ namespace Pal98Timer
 {
     public static class OnlineEntryPoint
     {
+        public static int InitializeGeshiConfiguration(string snapshotFile, string outputDirectory) =>
+            GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory);
         public static IPalTimerOnlineV1 Create(int apiVersion, string timerVersion)
         {
             if (apiVersion != 1) throw new NotSupportedException("Unsupported online host API.");

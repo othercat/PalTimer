@@ -119,10 +119,21 @@ internal static class GeshiHttpHost
         var storage = new CompetitionStorage(Path.Combine(root,"client"));
         var wire = new Wire(origin);
         var client = new CompetitionClient(storage,wire,auth);
+        var seed=Observation("seed",0,true);
+        var snapshot=new SdlpalSnapshot {schema=1,verified=true,diagnostic=true,profile="geshi-easy-v1",exeHash=seed.DllHash,
+            resourceHashes=seed.Ranking.rules.Where(p=>p.Key.StartsWith("resource.")).ToDictionary(p=>p.Key.Substring(9),p=>p.Value),
+            fadeCycleMs=800,walkFrameMs=90,speed=2,battleSpeed=1};
+        string seedRoot=Path.Combine(root,"initialization");
         try
         {
             client.Configure(new CompetitionSettings { Enabled=true,Server=origin });
             await Until(()=>client.ActivationText=="未激活，仅本地保存", "unapproved build remains inactive");
+            using(var seedWire=new CompetitionHttpTransport())
+                Check(await GeshiConfigurationInitialization.Upload(snapshot,seedRoot,origin,storage.Credential(origin),auth,seedWire)==2,
+                    "unapproved initializer registers its real candidate without sending a score");
+            var seedStatus=CompetitionProtocol.Json().Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(seedRoot,"initialization.result.json")));
+            Check(Equals(seedStatus["status"],"awaiting_build_approval")&&Equals(seedStatus["candidate_http_status"],202)&&Equals(seedStatus["score_uploaded"],false),
+                "initialization candidate response is pending and explicitly reports no score upload");
             await Publish(client,Guid.NewGuid().ToString("D"),false);
             await Until(()=>client.View.Pending==1,"completed test observation persisted while unapproved");
             Check(wire.Uploads==0,"no score POST before build approval");
@@ -142,6 +153,25 @@ internal static class GeshiHttpHost
             Check(await client.CloseAsync(),"client drained and closed");
         }
         finally { client.Dispose(); wire.Save(root); }
+        // Exercise the explicit configuration bootstrap with the SAME native
+        // signing/proof implementation, but no live client or finished heartbeat.
+        using(var seedWire=new CompetitionHttpTransport())
+        {
+            var credential=storage.Credential(origin);
+            Check(await GeshiConfigurationInitialization.Upload(snapshot,seedRoot,origin,credential,auth,seedWire)==0,"native configuration initialization receives unranked receipt");
+            string payload=File.ReadAllText(Path.Combine(seedRoot,"initialization.pending.json"));
+            var record=CompetitionProtocol.Json().Deserialize<CompetitionPending>(payload);
+            Check(record.Run.total_ms==0&&!record.Run.observations.began_here&&!record.Run.observations.finished&&
+                record.Run.observations.issues.SequenceEqual(new[]{GeshiConfigurationInitialization.Marker})&&record.Run.splits.All(s=>s.status=="in_progress"&&s.elapsed_ms==null),
+                "initialization never claims a real start, completed node, elapsed time or finish");
+            File.Delete(Path.Combine(seedRoot,"initialization.receipt.json"));
+            Check(await GeshiConfigurationInitialization.Upload(snapshot,seedRoot,origin,credential,auth,seedWire)==0&&
+                payload==File.ReadAllText(Path.Combine(seedRoot,"initialization.pending.json")),"missing receipt retries exactly the persisted seal and run id");
+            Check(await GeshiConfigurationInitialization.Upload(snapshot,seedRoot,origin,credential,auth,seedWire)==0,"existing receipt makes re-execution idempotent without another run");
+            snapshot.speed++;
+            bool denied=false;try{await GeshiConfigurationInitialization.Upload(snapshot,seedRoot,origin,credential,auth,seedWire);}catch(InvalidDataException){denied=true;}
+            Check(denied,"changed initialization input cannot rewrite the original signed record");
+        }
         File.WriteAllText(Path.Combine(root,"client-result.json"),CompetitionProtocol.Json().Serialize(new { checks, fixtureOnly=true, frozenReleaseTested=false }));
     }
     static int Main(string[] args)

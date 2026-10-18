@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="CompetitionProtocol.cs"/>
     <Compile Include="CompetitionAuth.cs"/>
+    <Compile Include="GeshiConfigurationInitialization.cs"/>
     <Compile Include="CompetitionBuildRegistration.cs"/>
     <Compile Include="CompetitionTransport.cs"/>
     <Compile Include="CompetitionStorage.cs"/>

@@ -24,21 +24,31 @@ namespace Pal98Timer
                 AppContext.SetSwitch("Switch.System.IO.BlockLongPaths", false);
                 Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
                 bool startupCheck = System.Array.IndexOf(Environment.GetCommandLineArgs(), "--startup-check") >= 0;
+                var arguments = Environment.GetCommandLineArgs();
+                bool initializeConfiguration = arguments.Length > 1 && arguments[1] == "--initialize-geshi-configuration";
                 StartupDependencies.WriteLog("start version=" + typeof(Program).Assembly.GetName().Version + " os=" + Environment.OSVersion + " clr=" + Environment.Version + " x64=" + Environment.Is64BitProcess);
                 if (!StartupDependencies.Check(AppDomain.CurrentDomain.BaseDirectory, (message, fatal) => {
                     string log = StartupDependencies.WriteLog(message);
-                    if (!startupCheck) MessageBox.Show(message + "\n\n启动日志：" + log, "计时器依赖文件缺失", MessageBoxButtons.OK,
+                    if (!startupCheck && !initializeConfiguration) MessageBox.Show(message + "\n\n启动日志：" + log, "计时器依赖文件缺失", MessageBoxButtons.OK,
                         fatal ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
                 })) { Environment.ExitCode = 1; return; }
                 if (startupCheck) {
                     CheckStartupComposition(); return;
+                }
+                if (initializeConfiguration)
+                {
+                    if (arguments.Length != 4) { Environment.ExitCode = 1; return; }
+                    using (var lease = OnlineModuleLoader.LoadVerified(AppDomain.CurrentDomain.BaseDirectory, false))
+                        Environment.ExitCode = (int)lease.OnlineAssembly.GetType("Pal98Timer.OnlineEntryPoint", true)
+                            .GetMethod("InitializeGeshiConfiguration").Invoke(null, new object[] { arguments[2], arguments[3] });
+                    return;
                 }
                 TimerUserSettings.Store.Initialize();
                 StartupDependencies.WriteLog("settings-directory=" + TimerUserSettings.Store.DirectoryPath);
                 RunApplication();
             } catch (Exception ex) {
                 string log = StartupDependencies.WriteLog(ex.ToString());
-                if (!(ex is TimerSettingsException))
+                if (!(ex is TimerSettingsException) && Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-geshi-configuration") < 0)
                     TimerUserSettings.ShowError("计时器启动失败：" + ex.GetType().Name + "\n" + ex.Message + "\n\n请提供启动日志：" + log, "计时器启动失败");
                 // A failed constructor can leave worker threads alive. Do not
                 // resume its message loop or leave an invisible timer process.
