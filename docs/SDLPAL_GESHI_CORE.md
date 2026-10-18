@@ -138,6 +138,26 @@ r7 整包 ZIP 为 303039279 字节，SHA-256 `6047c678e5b3fb3ff2b21eff59b677cf45
 
 公开 configurations/daily-boards/custom-competitions 均返回 HTTP 200，分别 11/8/3 项，暂无 `sdlpal-geshi-easy`。配置在真实签封记录或真实通关事实审核时建档，默认不公开；公开列表为空不代表后台没有该配置。管理员应先查 `GET /api/v1/timer/admin/configurations`，找到后用既有配置更新入口设置标题「隔世追凶-简单」、`published: true` 和原因；确实不存在时，等待真实成绩或审核已有真实通关记录，不能上传合成成绩创建榜单。
 
-匿名 `auth/status` 返回 401，本机没有 pallab.top 的既有设备凭据，故 **r7 构建批准状态未知**。维护者应使用已有认证核对服务版本及本节 3.39.2.0 的 EXE/Online/Auth 组合，key ID 为 `bb2fcd012fef4cd096110ee0a88d6d48`，公开证书在 r7 的 `Tools/Timer/PalCompetitionRegistration.public.json`。服务合并说明中的 3.39.1/r6 身份不能替代 r7 的批准。[PalServer #23](https://github.com/othercat/PalServer/issues/23) 随代码合并关闭，真实玩家绑定、批准后的成绩回执和榜单显示继续由 [游戏 #5](https://github.com/othercat/sdlpal-lostedit/issues/5) 与本仓 #18 跟踪；本次未创建凭据、登记设备或上传成绩。
+早期匿名 `auth/status` 返回 401，当时未核对 `www` 主机名下的既有设备凭据，因此“本机无凭据”的结论不成立。下节以 `https://www.pallab.top` 的实际认证响应为准。[PalServer #23](https://github.com/othercat/PalServer/issues/23) 随代码合并关闭，真实玩家绑定、批准后的成绩回执和榜单显示继续由 [游戏 #5](https://github.com/othercat/sdlpal-lostedit/issues/5) 与本仓 #18 跟踪。
 
 本轮完整路线选定「荣耀的传承」；游戏原仓提供 `scripts/record-geshi-route.ps1` 记录新故事、读档、场景、战斗和真实完成信号。诊断记录不会作为正常跑次交给计时器。该入口及结局尾段验证不能替代从新游戏到结局的正常计时验收。
+
+### 原生认证与真实 HTTP 链路（Issue #18，2026-10-18）
+
+`tests/run_geshi_http_tests.ps1` 编译独立测试宿主，调用未改动的生产 `CompetitionClient`、传输、存储与原生 Auth；服务器使用实际 PalServer ASGI 应用及新建 SQLite，通过绑定的 `127.0.0.1` socket 运行 Uvicorn。测试宿主使用独立测试发布者签发，配套 Online DLL；它不是冻结发布 EXE，也不是实际游玩的完整跑次。输入只允许本机隔离目录，没有生产地址、现有数据库或管理员账户参数。
+
+在已构建 Release x64 的本 worktree 中运行，三个源目录均显式给出：
+
+```powershell
+./tests/run_geshi_http_tests.ps1 -PalServerRoot '<PalServer checkout>' -AuthSourceRoot '<private Auth checkout>' -PalSharedSourceRoot '<PALDLL_DX9/shared>'
+```
+
+原生 Auth 的私有签名输入始终留在其原工作区；本仓忽略目录只接收测试 DLL 与公开登记文件。测试完成后仅关闭本次创建的宿主和服务，不操作玩家游戏、计时器或现有凭据。
+
+本机 `artifacts/http-f90296cf/result.json`：29 项服务检查和 14 项客户端检查通过。真实 HTTP 上传返回 201，故意丢失已提交的回执后以新挑战重试返回 200、同一 run_id/replayed，数据库仅保存一条；未公开类别不出榜，公开后正常夹具入榜。辅助夹具返回 201 并保留待审核，说明 late_start/skipped_nodes，公开榜单不变；原生实时会话连接成功。所有合成数据只在 loopback 新库内。诊断模式闸门由既有核心测试覆盖，本宿主未重验。初次运行误将实时会话成功状态预期为 201；按生产接口的 200 修正断言后重跑通过，失败证据保留在 `artifacts/http-274897d0`。
+
+服务器工作区 HEAD 为 `fa92ee5`，其 `src` 与已合并 `9eb6bc1` 无差异。测试记录包含宿主、源码、Online 文件哈希；当前冻结包没有重编或替换。
+
+北京时间 11:07 使用现有 `www.pallab.top` 设备凭据核对两个真实发布组合，EXE/Online/Auth 均匹配各自公开证书。3.39.0.0（EXE `904dd611…4d0963`，key `7024d83310514059bf8bb1efbb425a12`）为 `approved=true`；r9 的 3.39.2.0（EXE `bd201528…692d93`，key `bb2fcd012fef4cd096110ee0a88d6d48`）为 `approved=false`。3.39.2 候选登记返回 202/pending，上传挑战预检返回 403/`build_not_approved`。没有发送 `/runs` 或合成成绩，没有新建设备，原凭据文件哈希不变。公开配置/日常榜/比赛仍为 11/8/3 项，均未出现隔世类别。脱敏证据为 `artifacts/production-b463cf6f`、`artifacts/production-47800692`。
+
+随后用户要求统一回 3.38.3、撤销 3.39.0/3.39.2 申请并重新登记，后续按 [Issue #24](https://github.com/othercat/PalTimer/issues/24) 执行；上面的版本身份仅为已发生的历史证据。完整「荣耀的传承」路线和前置身位手感由用户安排速通高手验收，不以本地 HTTP 夹具代替。
