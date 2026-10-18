@@ -163,3 +163,22 @@ r7 整包 ZIP 为 303039279 字节，SHA-256 `6047c678e5b3fb3ff2b21eff59b677cf45
 随后用户要求统一回 3.38.3、撤销 3.39.0/3.39.2 申请并重新登记，后续按 [Issue #24](https://github.com/othercat/PalTimer/issues/24) 执行；上面的版本身份仅为已发生的历史证据。完整「荣耀的传承」路线和前置身位手感由用户安排速通高手验收，不以本地 HTTP 夹具代替。
 
 Issue #25 修复 SDL 合成状态宿主与已打开工具共享生产映射名的问题。首次重建回归在同 PID 的下一份夹具创建时遇到映射名称冲突（`artifacts/sdlpal-tests-20261018-111212-145`）；日志不能确定具体持有进程。现在 `run_sdlpal_tests.ps1` 仅在本次忽略目录的三份临时源副本中，把快照、控制映射和控制互斥量名称改为每次唯一的 GUID 前缀；解析、计时、发现和接力逻辑不变，产品源码及游戏协议不改。宿主拒绝未隔离的前缀，并确认生产快照和控制映射不存在；三项新检查及原有回归共 229 项通过（`artifacts/sdlpal-tests-20261018-111540-681`，`-NoGui`）。没有为测试关闭用户工具。
+
+### 3.38.3 发布与线上批准（Issue #24，2026-10-18）
+
+当前产品源提交 `977bc79`，只调整产品显示及程序集版本为 3.38.3 / 3.38.3.0，保留所有功能和修复。Release x64 同时重新生成 EXE 与引用它的 Online DLL，再重新签发配套 Auth；Online 自身版本仍为 1.0.0.5。历史 3.39.x 不再是本包的申请身份。
+
+| 文件 / 身份 | 当前值 |
+| --- | --- |
+| Pal98Timer.exe SHA-256 | `d03a99ddb2d2de4a6d27c3560573d71f623dd4df89da0296f34fe7bfdbb1c818` |
+| PalTimerOnline.dll SHA-256 | `bf3f9d5d8303b4e300b701f37eb21dcc43cb03460eda48ebc3e5e76e7e82cf90` |
+| PalCompetitionAuth.dll SHA-256 | `ee207410f8955cc809197a448eb18e6c7f2882de6ff8654496e722fac92da813` |
+| key ID | `f8d7acd6645548f486c93ae7100e067c` |
+
+229 项 SDL 核心回归、7 项实际组件加载/拒绝检查通过，冻结 EXE 的 `--startup-check` 退出 0。证据分别为 `artifacts/sdlpal-tests-20261018-111540-681`、`artifacts/online-module-20261018-111633-126`、`artifacts/issue24-release.json`。新的独立 3.38.3.18 测试宿主重新执行真实 loopback HTTP，29 项服务和 14 项客户端检查通过（`artifacts/http-517e8190`）；该测试身份没有申请生产批准。
+
+用户撤销旧申请后，北京时间 11:19 以原设备凭据复查：3.39.0.0 与 3.39.2.0 均 `approved=false`；3.38.3.0 为 `approved=true`，身份和服务 origin 均匹配。新构建的 `/api/v1/timer/auth/challenges` 从 403/`build_not_approved` 变为 200，证明已可获取上传挑战；这一步没有提交签封跑次或生产成绩，不能作为 `/runs` 成功回执。旧凭据未改写。脱敏响应保留在 `artifacts/production-4ce694c6`。
+
+11:21 公开 configurations/daily-boards/custom-competitions 仍为 HTTP 200、11/8/3 项，没有隔世条目（`artifacts/issue24-public-boards.json`）。实际完整跑次的签封上传回执、玩家绑定与公开榜单仍由 #18 / 游戏 #5 跟踪；完整路线及前置身位由速通高手验收，未上传合成成绩创建榜单。
+
+配套完整包为 `GeshiEasy-Speedrun-Win10-20261018-r10.zip`，303044138 字节，SHA-256 `2c4a50bf4b5339aa8c4873f520a000bf17fc0e0c59677e4ece6e801b05b24346`。176 文件、110 首 MP3、五份原存档和 ZIP 逐项校验通过；相对 r9 只更新四个计时器发布文件、说明及 manifest。游戏沿用 r9 的 `d26a11c` 原字节，资源、浏览器、改键工具不变，不新增 SDLPAL 正式版/测试版验收；r9 保留用于回退。
