@@ -9,8 +9,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-[assembly:System.Reflection.AssemblyVersion("3.39.2.18")]
-[assembly:System.Reflection.AssemblyFileVersion("3.39.2.18")]
+[assembly:System.Reflection.AssemblyVersion("3.38.3.18")]
+[assembly:System.Reflection.AssemblyFileVersion("3.38.3.18")]
 
 internal static class GeshiHttpHost
 {
@@ -114,7 +114,7 @@ internal static class GeshiHttpHost
     {
         var auth = new NativeCompetitionAuth();
         var identity = auth.Identity();
-        Check(identity != null && identity.Valid && identity.timer_version == "3.39.2.18", "exact test host and Native Auth identity");
+        Check(identity != null && identity.Valid && identity.timer_version == "3.38.3.18", "exact test host and Native Auth identity");
         Check(auth.Registration() != null && auth.Registration().Matches(identity), "paired test build public registration");
         var storage = new CompetitionStorage(Path.Combine(root,"client"));
         var wire = new Wire(origin);
