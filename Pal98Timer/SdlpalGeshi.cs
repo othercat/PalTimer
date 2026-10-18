@@ -116,7 +116,7 @@ namespace Pal98Timer
         private readonly PTimer battleTimer = new PTimer(), idleTimer = new PTimer();
         private ulong battleSequence;
         private ulong nextDiscovery;
-        private string status = "等待 SDLPAL 隔世追凶简单版", warning = "";
+        private string status = "等待隔世追凶-简单", warning = "";
         private bool busyRelay, unloaded;
         private long relayRun;
         private SdlpalBridge relayBridge;
@@ -465,7 +465,7 @@ namespace Pal98Timer
                     GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL) }.Where(text => !string.IsNullOrEmpty(text)));
                 return new Dx9OverlaySnapshot(handle, overlay?.ConfiguredFontFamily, TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
                     GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], new Dx9OverlayTimelineEntry(), T(status), false, !MT.IsRunning,
-                    "SDLPAL / " + observer.Snapshot?.profile, "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
+                    GameplayName, "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
                     OverlayIdentity(form.CloudID(), form.CompetitionOverlayCaption));
             }
         }

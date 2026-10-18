@@ -118,7 +118,7 @@ namespace Pal98Timer
         internal Process Process { get; private set; }
         internal ulong Created { get; private set; }
         internal string ExeHash { get; private set; }
-        internal string Error { get; private set; } = "等待 SDLPAL 隔世追凶简单版";
+        internal string Error { get; private set; } = "等待隔世追凶-简单";
         [DllImport("kernel32.dll")] internal static extern ulong GetTickCount64();
         internal static bool Digest(string text) => text != null && text.Length == 64 && text.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer { MaxJsonLength = Capacity, RecursionLimit = 32 };
@@ -136,16 +136,16 @@ namespace Pal98Timer
                 BitConverter.ToUInt32(header, 16) != Capacity || (BitConverter.ToUInt32(header, 20) & 1) != 0 ||
                 BitConverter.ToUInt32(header, 24) != payload.Length || payload.Length < 2 || payload.Length > Capacity - HeaderSize ||
                 BitConverter.ToUInt32(header, 28) != pid || BitConverter.ToUInt64(header, 32) != created)
-                throw new InvalidDataException("SDLPAL 快照头或进程身份无效");
+                throw new InvalidDataException("游戏快照头或进程身份无效");
             ulong published = BitConverter.ToUInt64(header, 56);
-            if (published > now || now - published > 2000) throw new InvalidDataException("SDLPAL 快照已过期");
+            if (published > now || now - published > 2000) throw new InvalidDataException("游戏快照已过期");
             string json = new UTF8Encoding(false, true).GetString(payload);
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(json);
             string[] required = { "schema", "profile", "verified", "diagnostic", "resourceHash", "resourceHashes", "build", "exeHash",
                 "gamePath", "savePath", "started", "focused", "busy", "canControl", "completed", "epoch", "frame", "loadedFrom",
                 "speed", "battleSpeed", "walkFrameMs", "fadeCycleMs", "scene", "map", "battle", "battleEvents" };
-            if (fields == null || required.Any(k => !fields.ContainsKey(k))) throw new InvalidDataException("SDLPAL 快照缺少必要字段");
+            if (fields == null || required.Any(k => !fields.ContainsKey(k))) throw new InvalidDataException("游戏快照缺少必要字段");
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
             if (value.schema != 1 || value.profile != "geshi-easy-v1" || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||
@@ -155,7 +155,7 @@ namespace Pal98Timer
                 value.walkFrameMs < 0 || value.walkFrameMs > 1000000 || value.fadeCycleMs < 0 || value.fadeCycleMs > 86400000 ||
                 value.speed < 0 || value.speed > 100 || value.battleSpeed < 0 || value.battleSpeed > 100 ||
                 value.battleEvents.Any(e => e == null || e.epoch != value.epoch || e.enemies == null || e.enemies.Length > 16))
-                throw new InvalidDataException("SDLPAL 资源或状态身份无效");
+                throw new InvalidDataException("游戏资源或状态身份无效");
             for (int i = 1; i < value.battleEvents.Length; i++)
                 if (value.battleEvents[i].seq <= value.battleEvents[i - 1].seq) throw new InvalidDataException("战斗事件顺序无效");
             value.Pid = pid; value.Created = created; value.Published = published;
@@ -233,7 +233,7 @@ namespace Pal98Timer
         }
         internal static SdlpalBridge Discover(out string error)
         {
-            error = "等待 SDLPAL 隔世追凶简单版";
+            error = "等待隔世追凶-简单";
             SdlpalBridge found = null;
             foreach (var process in System.Diagnostics.Process.GetProcesses())
             {
@@ -241,7 +241,7 @@ namespace Pal98Timer
                 try
                 {
                     candidate.Attach(process);
-                    if (found != null) { found.Dispose(); candidate.Dispose(); error = "检测到多个 SDLPAL 游戏，请只保留一个"; return null; }
+                    if (found != null) { found.Dispose(); candidate.Dispose(); error = "检测到多个隔世游戏，请只保留一个"; return null; }
                     found = candidate;
                 }
                 catch { candidate.Dispose(); process.Dispose(); }

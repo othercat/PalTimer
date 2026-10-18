@@ -169,6 +169,7 @@ internal static class SdlpalBehavior
                 var overlay=(Dx9OverlaySnapshot)Call(core,"OverlaySnapshot");
                 Check(overlay.FooterText.Contains("钱12345")&&overlay.FooterText.Contains("音乐播放器×4"),"OBS wrapping footer includes both Fujia and selected item output");
                 Check(overlay.TimelineFirst.HasValue&&overlay.TimelineSecond.HasValue&&!overlay.TimelineThird.HasValue&&overlay.IdentityLine.Contains("云ID:")&&overlay.IdentityLine.Contains("连接ID:"),"dedicated OBS reserves third timeline position for cloud and connection identities");
+                Check(core.GetGameVersion()=="隔世追凶-简单"&&overlay.TimingModeLabel=="隔世追凶-简单"&&!overlay.State.Contains("SDLPAL")&&!overlay.FooterText.Contains("SDLPAL"),"timer and overlay display gameplay name without engine branding");
                 core.Jump(0);
                 var payload=GForm.BuildCloudPayload(core,false,2);
                 Check(payload.SuppressScores&&payload.Lite==""&&payload.Big==""&&payload.Plugins["BR"].Contains("12345")&&payload.Plugins["BL"].Contains("音乐播放器×4"),"cloud preparation carries assisted-run item display without enabling its old score stream");
@@ -685,7 +686,7 @@ internal static class SdlpalBehavior
         foreach(var size in new[]{9f,18f})
         {
             string identity=SdlpalGeshi.OverlayIdentity(int.MaxValue," [不完全连接:999999999999999999]");
-            var snapshot=new Dx9OverlaySnapshot(IntPtr.Zero,"Microsoft YaHei UI","01:02:03.45","12.3s","00:02:01.00","隔世追凶 简单  金钱 10000",1,first,second,new Dx9OverlayTimelineEntry(),"暂停",false,true,"SDLPAL / geshi-easy-v1","","","",int.MaxValue,"钱10000 道具107种 / 458件  监测 铜钱镖×99",identity);
+            var snapshot=new Dx9OverlaySnapshot(IntPtr.Zero,"Microsoft YaHei UI","01:02:03.45","12.3s","00:02:01.00","隔世追凶 简单  金钱 10000",1,first,second,new Dx9OverlayTimelineEntry(),"暂停",false,true,"隔世追凶-简单","","","",int.MaxValue,"钱10000 道具107种 / 458件  监测 铜钱镖×99",identity);
             Check(!snapshot.FooterText.Contains("云ID")&&snapshot.IdentityLine.Contains("999999999999999999"),"identity moves out of plug-in footer without truncating long public ID at font "+size);
             var layout=Dx9OverlayLayoutSettings.CreateDefault();layout.FontFamily="Microsoft YaHei UI";layout.FontSize=size;
             using(var overlay=new Dx9OverlayForm(()=>snapshot,layout,_=>{}))
