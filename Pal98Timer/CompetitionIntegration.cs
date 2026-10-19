@@ -16,6 +16,7 @@ namespace Pal98Timer
         private bool competitionCloseReady, competitionClosing;
         private string onlineLoadStatus = "正在准备联机组件，本地计时可正常使用。";
         private volatile string onlineCaption = "";
+        internal string CompetitionOverlayCaption => competition == null ? "" : onlineCaption;
         private async void InitializeCompetition()
         {
             var item = new ToolStripMenuItem("联机与排名…");
@@ -59,6 +60,9 @@ namespace Pal98Timer
             var g = o.Gameplay; var r = o.Ranking; var h = o.Hardcore;
             var extensions = new System.Collections.Generic.Dictionary<string, string>();
             if (o.RestartMilliseconds.HasValue) extensions["restart_ms"] = o.RestartMilliseconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (g?.walk_frame_ms.HasValue == true) extensions["sdlpal.walk_frame_ms"] = g.walk_frame_ms.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (g?.family == SdlpalGeshi.Family && o.LiveTimingValid.HasValue)
+                extensions["sdlpal.live_timing_valid"] = o.LiveTimingValid.Value ? "true" : "false";
             return new OnlineSnapshotV1(o.Token, o.Core, o.DllHash, o.GameVersion, o.ValidationError, o.TimelineId, o.GameTitle,
                 g == null ? null : new OnlineGameplayV1(g.schema, g.rules_sha256, g.content_id, g.content_sha256, g.family, g.fade_ms, g.map_speed_ticks),
                 r == null ? null : new OnlineRankingV1(r.schema, r.configuration_id, r.covered, r.rules),

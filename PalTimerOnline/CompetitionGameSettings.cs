@@ -50,12 +50,36 @@ namespace Pal98Timer
             // the timer's own directory or accept a previous machine preference.
             long created = process.StartTime.ToUniversalTime().ToFileTimeUtc();
             string path = process.MainModule.FileName;
-            if (!Path.GetFileName(path).Equals("PAL.exe", StringComparison.OrdinalIgnoreCase) || process.HasExited)
-                throw new InvalidDataException("当前目标不是运行中的 PAL.exe。");
-            var result = LoadDirectory(Path.GetDirectoryName(path));
+            CompetitionSettings result = null;
+            // The selected process's bridge identifies SDL even when named pal.exe.
+            // Only classic PAL without this mapping uses PALDLL configuration locks.
+            using (var candidate = Process.GetProcessById(process.Id))
+            using (var bridge = new SdlpalBridge())
+            {
+                bool attached = false;
+                try { bridge.Attach(candidate); attached = true; }
+                catch (FileNotFoundException) when (Path.GetFileName(path).Equals("PAL.exe", StringComparison.OrdinalIgnoreCase)) { }
+                if (attached)
+                {
+                    SdlpalSnapshot snapshot;
+                    if (!bridge.TryRead(out snapshot)) throw new InvalidDataException("SDLPAL 运行时身份无效");
+                    result = LoadSdlpal(path, snapshot);
+                }
+            }
+            if (result == null) result = LoadDirectory(Path.GetDirectoryName(path));
             if (process.HasExited || created != process.StartTime.ToUniversalTime().ToFileTimeUtc())
                 throw new InvalidDataException("读取配置期间游戏已退出。");
             return result;
+        }
+        internal static CompetitionSettings LoadSdlpal(string executable, SdlpalSnapshot snapshot)
+        {
+            if (snapshot == null || !snapshot.verified || snapshot.profile != "geshi-easy-v1" || snapshot.diagnostic)
+                throw new InvalidDataException("SDLPAL 运行时身份无效或处于诊断模式");
+            // GamePath points to resources (normally PAL), never upload settings.
+            // The dedicated tool writes the root file; PALDLL user-data/lock state
+            // must not replace it or silently disable this edition's defaults.
+            string file = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(executable)), PathInGame);
+            return Parse(File.Exists(file) ? CompetitionStorage.ReadBounded(file, 1024 * 1024) : null);
         }
         internal static CompetitionSettings LoadDirectory(string root)
         {

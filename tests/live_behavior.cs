@@ -121,8 +121,57 @@ internal static class LiveBehavior
         client.Configure(new CompetitionSettings { Enabled = true, Server = "https://fixture.invalid" });
         return client;
     }
+    static async Task LiveValidityTests(string root)
+    {
+        var wire=new Transport();var client=Client(root,"sdlpal-live-validity",wire,new Auth());
+        await Until(()=>client.Enabled,"SDL live validity fixture is enabled");
+        var assisted=Observe("assisted",0);assisted.Gameplay.family="sdlpal-geshi-easy";
+        assisted.LiveTimingValid=true;assisted.ValidationError="游戏已读档或重启";assisted.BeganHere=false;
+        client.Publish(assisted);client.PublishClock(assisted.Token,1200,true,Stopwatch.GetTimestamp());
+        await Until(()=>wire.Last?.observation?.state=="running","SDL assisted run streams a valid running clock");
+        Check(assisted.Context.Issues.Contains("timing-validation: "+assisted.ValidationError)&&!assisted.Context.BeganHere,
+            "live validity preserves score review issues and missing start evidence");
+        await client.CloseAsync();
+        // With the worker stopped, exercise the exact live-state projection
+        // deterministically without network timing or a real game process.
+        var flags=BindingFlags.Instance|BindingFlags.NonPublic;
+        var clock=new CompetitionLiveClock{Token=assisted.Token,Elapsed=1200,Running=true,ObservedTick=Stopwatch.GetTimestamp()};
+        typeof(CompetitionClient).GetField("current",flags).SetValue(client,assisted);
+        typeof(CompetitionClient).GetField("liveClock",flags).SetValue(client,clock);
+        Func<string> state=()=>((CompetitionLiveObservation)typeof(CompetitionClient).GetMethod("CaptureLiveObservation",flags).Invoke(client,null)).state;
+        clock.Running=false;Check(state()=="paused","SDL manual pause remains paused despite score-review evidence");
+        clock.Running=true;assisted.LiveTimingValid=false;
+        Check(state()=="invalid","bad SDL snapshot cannot be advertised as running");
+        assisted.Finished=true;Check(state()=="invalid","bad SDL snapshot cannot be advertised as finished");
+        assisted.LiveTimingValid=true;clock.ObservedTick=Stopwatch.GetTimestamp()-5*Stopwatch.Frequency;
+        Check(state()=="invalid","stale SDL clock remains invalid even after finish");
+        clock.ObservedTick=Stopwatch.GetTimestamp();Check(state()=="finished","fresh assisted finish remains visible without clearing score evidence");
+        assisted.Finished=false;assisted.LiveTimingValid=null;
+        Check(state()=="invalid","old SDL host without extension keeps validation fallback");
+        assisted.LiveTimingValid=true;assisted.Gameplay.family="standard";
+        Check(state()=="invalid","SDL extension cannot override another core's validation");
+        assisted.LiveTimingValid=null;assisted.ValidationError="";
+        Check(state()=="running","legacy core with a fresh valid clock keeps running behavior");
+        assisted.ValidationError="legacy review";assisted.Finished=true;
+        Check(state()=="finished","legacy finish precedence remains compatible");
+        assisted.Gameplay.family="sdlpal-geshi-easy";assisted.LiveTimingValid=true;
+        assisted.RestartMilliseconds=CompetitionProtocol.MaxMilliseconds+1;
+        Check(state()=="invalid","live validity cannot bypass restart bounds");
+    }
     static async Task Run(string root)
     {
+        await LiveValidityTests(root);
+        string gameRoot=Path.Combine(root,"geshi-root");Directory.CreateDirectory(Path.Combine(gameRoot,"palmod"));
+        string settingsFile=Path.Combine(gameRoot,"palmod","common-tools.v1.json");
+        File.WriteAllText(settingsFile,"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://www.pallab.top\"}}}");
+        var native=new SdlpalSnapshot {verified=true,profile="geshi-easy-v1",gamePath=Path.Combine(gameRoot,"PAL")};
+        foreach(string exe in new[]{"pal.exe","sdlpal.exe"}) {
+            var selected=CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,exe),native);
+            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+exe);
+        }
+        native.diagnostic=true;bool denied=false;
+        try {CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,"pal.exe"),native);}catch(InvalidDataException){denied=true;}
+        Check(denied,"diagnostic game never enables automatic upload");
         long now = Stopwatch.GetTimestamp();
         var status = new CompetitionLiveConnection();
         Check(status.Caption(false,now) == "" && status.Caption(true,now) == " [连接中]", "disabled/first connection title");

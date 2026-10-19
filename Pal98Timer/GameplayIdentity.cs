@@ -19,9 +19,11 @@ namespace Pal98Timer
         public string family { get; set; }
         public int fade_ms { get; set; }
         public int map_speed_ticks { get; set; }
+        public int? walk_frame_ms { get; set; }
         internal bool Valid => schema == "PAL98.GameplayIdentity.v1" && CompetitionProtocol.Digest(rules_sha256) &&
             CompetitionProtocol.Digest(content_sha256) && CompetitionProtocol.Identifier(content_id) &&
-            (family == "standard" || family == "drawcard") && (fade_ms == 800 || fade_ms == 1200) && (map_speed_ticks == 9 || map_speed_ticks == 10);
+            ((family == "standard" || family == "drawcard") && (fade_ms == 800 || fade_ms == 1200) && (map_speed_ticks == 9 || map_speed_ticks == 10) && !walk_frame_ms.HasValue ||
+             family == "sdlpal-geshi-easy" && fade_ms > 0 && fade_ms <= 86400000 && map_speed_ticks == 0 && walk_frame_ms > 0 && walk_frame_ms <= 1000000);
         internal GameplayIdentity Copy() => (GameplayIdentity)MemberwiseClone();
     }
     internal sealed class CompetitionHardcore

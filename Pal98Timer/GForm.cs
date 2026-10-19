@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.38.2";
+        public const string CurrentVersion = "3.38.3";
         public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -134,7 +134,9 @@ namespace Pal98Timer
                 mnMain.Items.Add(ti);
                 CoreBtns.Add(cn, ti);
             }
-            try
+            if (!string.IsNullOrEmpty(AutomationArgs.Current.RequestedCore))
+                LoadCore(TimerCore.GetCoreIns(AutomationArgs.Current.RequestedCore, this));
+            else try
             {
                 string lastCorePath = TimerUserSettings.GetPath("LastCore");
                 if (File.Exists(lastCorePath))
@@ -223,24 +225,31 @@ namespace Pal98Timer
             SyncContext.Send(delegate(object ignored) {
                 if (IsDisposed || !ReferenceEquals(core, boundCore) || boundRun != boundCore.ScoreRunSequence) return;
                 try {
-                    payload = new CloudPayload { IsC = rr.IsC };
-                    // The personal file session remains usable for any local
-                    // configuration; the old score stream retains its gate.
-                    if (!string.IsNullOrEmpty(boundCore.GetScoreValidationError())) {
-                        payload.SuppressScores = true;
-                        payload.Lite = payload.Big = "";
-                        return;
-                    }
-                    foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
-                        TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
-                        if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = boundCore.GetPluginResult(position);
-                    if ((nextDo == 0 || nextDo == 2) && !boundCore.CustomCloudLiteData())
-                        payload.Lite = boundCore.ForCloudLiteData();
-                    if ((nextDo == 1 || nextDo == 2) && !boundCore.CustomCloudBigData())
-                        payload.Big = boundCore.ForCloudBigData();
+                    payload = BuildCloudPayload(boundCore, rr.IsC, nextDo);
                 } catch (Exception ex) { error = ex; }
             }, null);
             if (error != null) throw error;
+            return payload;
+        }
+
+        internal static CloudPayload BuildCloudPayload(TimerCore boundCore, bool isC, int nextDo)
+        {
+            var payload = new CloudPayload { IsC = isC };
+            // Cache SDL display state, including explicit empty/unavailable output.
+            // PalCloudLib transmits this cache only with a nonempty BigData POST;
+            // suppressed scores cannot independently update or clear cloud display.
+            bool sdlpal = boundCore is SdlpalGeshi;
+            bool hideDiagnostic = sdlpal && !boundCore.CompetitionPublicationAllowed;
+            bool allowed = string.IsNullOrEmpty(boundCore.GetScoreValidationError());
+            if (allowed || sdlpal)
+                foreach (var position in new[] { TimerPluginBase.TimerPlugin.EPluginPosition.BL,
+                    TimerPluginBase.TimerPlugin.EPluginPosition.BR, TimerPluginBase.TimerPlugin.EPluginPosition.Title })
+                    if (boundCore.HasPlugin(position)) payload.Plugins[position.ToString()] = hideDiagnostic ? "" : boundCore.GetPluginResult(position);
+            // The personal file session remains usable for any local
+            // configuration; the old score stream retains its gate.
+            if (!allowed) { payload.SuppressScores = true; payload.Lite = payload.Big = ""; return payload; }
+            if ((nextDo == 0 || nextDo == 2) && !boundCore.CustomCloudLiteData()) payload.Lite = boundCore.ForCloudLiteData();
+            if ((nextDo == 1 || nextDo == 2) && !boundCore.CustomCloudBigData()) payload.Big = boundCore.ForCloudBigData();
             return payload;
         }
 
@@ -349,6 +358,7 @@ namespace Pal98Timer
 
         public void LoadCore(TimerCore core)
         {
+            if (core is SdlpalGeshi) { KeyChangerDel.Disable(); KeyChangerDel.Close(); }
             //Success(core.GetType().Name);
             if (this.core != null)
             {
@@ -396,6 +406,7 @@ namespace Pal98Timer
                 rr.IsForceRefreshAll = true;
             }
             core.Start();
+            if (pmf != null && !pmf.IsDisposed) pmf.RefreshPlugins();
             WriteAutomationSnapshot("core_loaded");
         }
 
@@ -663,6 +674,12 @@ namespace Pal98Timer
                     handle = core.NeedBlockFunctionKey(10);
                     break;
                 case Keys.F11:
+                    if (core is SdlpalGeshi)
+                    {
+                        if (hookStruct.flags >= 128) core.OnFunctionKey(11);
+                        handle = true;
+                        break;
+                    }
                     if (KeyChangerDel.IsHardcoreBlocked)
                     {
                         KeyChangerDel.RefreshHardcoreProtection();
@@ -806,8 +823,7 @@ namespace Pal98Timer
         private void tmMain_Tick(object sender, EventArgs e)
         {
             if (!startupCompleted) return;
-            KeyChangerDel.RefreshHardcoreProtection();
-            KeyChangerDel.TryAutoOpen();
+            if (!(core is SdlpalGeshi)) { KeyChangerDel.RefreshHardcoreProtection(); KeyChangerDel.TryAutoOpen(); }
             ShowKCEnable();
             if (core != null)
             {
@@ -834,7 +850,7 @@ namespace Pal98Timer
                 rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
                 var dx9Core = core as 仙剑98柔情DX9;
-                string windowTitle = "自动计时器" + (dx9Core == null ? "" : dx9Core.GameplayWindowTitleSuffix) +
+                string windowTitle = "自动计时器" + (core is SdlpalGeshi ? " " + SdlpalGeshi.GameplayName : dx9Core == null ? "" : dx9Core.GameplayWindowTitleSuffix) +
                     (integrityTitle.Length == 0 ? "" : " " + integrityTitle) + onlineSuffix;
                 if (Text != windowTitle) Text = windowTitle;
                 rr.SetHardcoreDisplay(dx9Core == null ? HardcoreDisplaySnapshot.Empty : dx9Core.GetHardcoreDisplay());
@@ -869,7 +885,7 @@ namespace Pal98Timer
                 string displayTitle = core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title)
                     ? core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title) : MConfig.ins.Title;
                 // The compact header remains visible when the small window clips the longer version row.
-                rr.SetTitle(dx9Core == null ? displayTitle : dx9Core.AppendGameplayCodes(displayTitle));
+                rr.SetTitle(core is SdlpalGeshi ? (displayTitle + " " + SdlpalGeshi.GameplayName).Trim() : dx9Core == null ? displayTitle : dx9Core.AppendGameplayCodes(displayTitle));
             }
             else
             {
@@ -913,6 +929,7 @@ namespace Pal98Timer
         
         private void btnKeyChange_Click(object sender, EventArgs e)
         {
+            if (core is SdlpalGeshi sdlpal) { sdlpal.OpenKeyConfig(); return; }
             if (KeyChangerDel.IsHardcoreBlocked) { ShowKCEnable(); return; }
             long keyChangerRequest = KeyChangerDel.BeginEnableRequest();
             /*IsKeyInEdit = true;
@@ -998,15 +1015,20 @@ namespace Pal98Timer
         PluginMgrForm pmf = null;
         private void btnPluginManage_Click(object sender, EventArgs e)
         {
-            if (pmf == null)
+            if (pmf == null || pmf.IsDisposed)
             {
-                pmf = new PluginMgrForm();
+                pmf = new PluginMgrForm(() => core);
                 this.CenterChild(pmf);
                 pmf.Show(this);
                 pmf.FormClosed += delegate(object sender1, FormClosedEventArgs e1) {
                     pmf.Dispose();
                     pmf = null;
                 };
+            }
+            else
+            {
+                pmf.RefreshPlugins();
+                pmf.Activate();
             }
         }
 

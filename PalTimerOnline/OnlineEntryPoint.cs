@@ -9,6 +9,8 @@ namespace Pal98Timer
 {
     public static class OnlineEntryPoint
     {
+        public static int InitializeGeshiConfiguration(string snapshotFile, string outputDirectory) =>
+            GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory);
         public static IPalTimerOnlineV1 Create(int apiVersion, string timerVersion)
         {
             if (apiVersion != 1) throw new NotSupportedException("Unsupported online host API.");
@@ -59,10 +61,12 @@ namespace Pal98Timer
                 ValidationError = value.ValidationError, TimelineId = value.TimelineId, GameTitle = value.GameTitle,
                 Step = value.Step, FadeMilliseconds = value.Fade, MapSpeedTicks = value.Speed, TotalMilliseconds = value.Total,
                 RestartMilliseconds = restartMilliseconds,
+                LiveTimingValid = ReadLiveTimingValid(value),
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
-                    family = value.Gameplay.Family, fade_ms = value.Gameplay.Fade, map_speed_ticks = value.Gameplay.Speed },
+                    family = value.Gameplay.Family, fade_ms = value.Gameplay.Fade, map_speed_ticks = value.Gameplay.Speed,
+                    walk_frame_ms = ReadWalkFrame(value) },
                 Ranking = value.Ranking == null ? null : new RankingConfiguration { schema = value.Ranking.Schema,
                     configuration_id = value.Ranking.Id, covered = value.Ranking.Covered,
                     rules = value.Ranking.Rules?.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal) },
@@ -72,6 +76,20 @@ namespace Pal98Timer
             };
         }
         public void PublishClock(string token, long elapsed, bool running, long observedTick) => client.PublishClock(token, elapsed, running, observedTick);
+        private static bool? ReadLiveTimingValid(OnlineSnapshotV1 value)
+        {
+            string text;
+            if (value.Gameplay?.Family != "sdlpal-geshi-easy" || !value.Extensions.TryGetValue("sdlpal.live_timing_valid", out text)) return null;
+            if (text == "true") return true;
+            if (text == "false") return false;
+            throw new ArgumentException("Invalid sdlpal.live_timing_valid extension.");
+        }
+        private static int? ReadWalkFrame(OnlineSnapshotV1 value)
+        {
+            string text; int number;
+            return value.Extensions != null && value.Extensions.TryGetValue("sdlpal.walk_frame_ms", out text) &&
+                int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) ? number : (int?)null;
+        }
         public void Invalidate(string token) => client.Invalidate(token);
         public void ShowSettings(IWin32Window owner)
         {

@@ -52,6 +52,8 @@ namespace Pal98Timer
         public readonly string State;
         public readonly string TimingModeLabel;
         public readonly string FooterText;
+        // Null retains the original three timeline rows and footer cloud ID.
+        public readonly string IdentityLine;
         public readonly string HardcoreStatus;
         public readonly string HardcoreDevice;
         public readonly string IntegrityStatus;
@@ -104,6 +106,16 @@ namespace Pal98Timer
             Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
             bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus,
             string hardcoreDevice, string integrityStatus, int cloudId, string pluginText)
+            : this(gameWindowHandle, fontFamily, mainTimer, battleTimer, idleTimer, resources, manualPauseCount,
+                timelineFirst, timelineSecond, timelineThird, state, isAntiCheatPaused, isPaused, timingModeLabel,
+                hardcoreStatus, hardcoreDevice, integrityStatus, cloudId, pluginText, null) { }
+
+        public Dx9OverlaySnapshot(
+            IntPtr gameWindowHandle, string fontFamily, string mainTimer, string battleTimer,
+            string idleTimer, string resources, int manualPauseCount, Dx9OverlayTimelineEntry timelineFirst,
+            Dx9OverlayTimelineEntry timelineSecond, Dx9OverlayTimelineEntry timelineThird, string state,
+            bool isAntiCheatPaused, bool isPaused, string timingModeLabel, string hardcoreStatus,
+            string hardcoreDevice, string integrityStatus, int cloudId, string pluginText, string identityLine)
         {
             GameWindowHandle = gameWindowHandle;
             FontFamily = fontFamily ?? "SimSun";
@@ -117,10 +129,11 @@ namespace Pal98Timer
             TimelineThird = timelineThird;
             State = state ?? "";
             TimingModeLabel = (timingModeLabel ?? "").Trim();
+            IdentityLine = identityLine;
             // BR plug-ins may pad their main-window output with full-width spaces.
             // Use their cached display value without introducing another Flush/read.
             StringBuilder footer = new StringBuilder((pluginText ?? "").Trim());
-            if (cloudId >= 0)
+            if (cloudId >= 0 && identityLine == null)
             {
                 if (footer.Length != 0) footer.Append(' ');
                 footer.Append("云ID:").Append(cloudId.ToString(CultureInfo.InvariantCulture));
@@ -167,18 +180,22 @@ namespace Pal98Timer
         }
 
         public static Dx9OverlayLayoutSettings LoadLayout()
+        { return LoadLayout("dx9_overlay_layout"); }
+
+        internal static Dx9OverlayLayoutSettings LoadLayout(string settingsName)
         {
+            string layoutPath = TimerUserSettings.GetPath(settingsName);
             Dx9OverlayLayoutSettings result = Dx9OverlayLayoutSettings.CreateDefault();
             bool hasWindowLeft = false;
             bool hasWindowTop = false;
             try
             {
-                if (!File.Exists(LayoutConfigFileName))
+                if (!File.Exists(layoutPath))
                 {
                     return result;
                 }
 
-                string[] lines = File.ReadAllLines(LayoutConfigFileName, Encoding.UTF8);
+                string[] lines = File.ReadAllLines(layoutPath, Encoding.UTF8);
                 foreach (string rawLine in lines)
                 {
                     int separator = rawLine.IndexOf('=');
@@ -245,6 +262,9 @@ namespace Pal98Timer
         }
 
         public static void SaveLayout(Dx9OverlayLayoutSettings settings)
+        { SaveLayout(settings, "dx9_overlay_layout"); }
+
+        internal static void SaveLayout(Dx9OverlayLayoutSettings settings, string settingsName)
         {
             if (settings == null)
             {
@@ -269,7 +289,7 @@ namespace Pal98Timer
                 text.AppendLine("window_left=" + value.WindowLeft.ToString(CultureInfo.InvariantCulture));
                 text.AppendLine("window_top=" + value.WindowTop.ToString(CultureInfo.InvariantCulture));
             }
-            TimerUserSettings.WriteText("dx9_overlay_layout", text.ToString(), new UTF8Encoding(false));
+            TimerUserSettings.WriteText(settingsName, text.ToString(), new UTF8Encoding(false));
         }
 
         public static string ValidateToggleHotkey(Keys hotkey, Keys soundToggleHotkey)
@@ -547,9 +567,12 @@ namespace Pal98Timer
         private float MeasuredFooterFontSize;
         private FontStyle MeasuredFooterFontStyle;
         private float MeasuredFooterHeight;
+        private string MeasuredIdentityKey;
+        private float MeasuredIdentityHeight;
 
         public event EventHandler EditModeChanged;
         public event Action<Exception> LayoutSaveFailed;
+        private readonly Action<Dx9OverlayLayoutSettings> saveLayout;
 
         public Dx9OverlayForm(Func<Dx9OverlaySnapshot> snapshotProvider)
             : this(snapshotProvider, Dx9OverlaySettings.LoadLayout())
@@ -559,6 +582,10 @@ namespace Pal98Timer
         internal Dx9OverlayForm(
             Func<Dx9OverlaySnapshot> snapshotProvider,
             Dx9OverlayLayoutSettings layoutSettings)
+            : this(snapshotProvider, layoutSettings, Dx9OverlaySettings.SaveLayout) { }
+
+        internal Dx9OverlayForm(Func<Dx9OverlaySnapshot> snapshotProvider,
+            Dx9OverlayLayoutSettings layoutSettings, Action<Dx9OverlayLayoutSettings> saveLayout)
         {
             if (snapshotProvider == null)
             {
@@ -566,6 +593,7 @@ namespace Pal98Timer
             }
 
             SnapshotProvider = snapshotProvider;
+            this.saveLayout = saveLayout ?? throw new ArgumentNullException("saveLayout");
             LayoutSettings = layoutSettings == null ? Dx9OverlayLayoutSettings.CreateDefault() : layoutSettings.Clone();
             LayoutSettings.Normalize();
             AutoScaleMode = AutoScaleMode.None;
@@ -749,7 +777,16 @@ namespace Pal98Timer
                 y += infoHeight + rowGap;
                 DrawTimelineEntry(e.Graphics, snapshot.TimelineSecond, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
                 y += infoHeight + rowGap;
-                DrawTimelineEntry(e.Graphics, snapshot.TimelineThird, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
+                if (snapshot.IdentityLine == null)
+                    DrawTimelineEntry(e.Graphics, snapshot.TimelineThird, smallFont, primaryBrush, secondaryBrush, currentBrush, fasterBrush, slowerBrush, shadowBrush, rightFormat, margin, y, contentWidth, infoHeight, scale);
+                else
+                {
+                    float identityHeight = GetIdentityHeightLogicalPixels() * scale;
+                    row = new RectangleF(margin, y, contentWidth, identityHeight);
+                    using (var identityFormat = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Near })
+                        DrawOutlinedText(e.Graphics, snapshot.IdentityLine, smallFont, primaryBrush, shadowBrush, row, identityFormat, scale);
+                    y += identityHeight - infoHeight;
+                }
 
                 y += infoHeight + rowGap;
                 float footerHeight = GetFooterHeightLogicalPixels() * scale;
@@ -905,7 +942,7 @@ namespace Pal98Timer
             LayoutSettings.Normalize();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -927,7 +964,7 @@ namespace Pal98Timer
             LayoutSettings.Normalize();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -943,7 +980,7 @@ namespace Pal98Timer
             LayoutSettings.ToggleHotkey = hotkey;
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -958,7 +995,7 @@ namespace Pal98Timer
             LayoutSettings = Dx9OverlayLayoutSettings.CreateDefault();
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch
             {
@@ -1148,9 +1185,31 @@ namespace Pal98Timer
             float infoHeight = GetInfoHeightLogicalPixels();
             float contentHeight = 7.0F + timerHeight + 2.0F + infoHeight + 5.0F * (infoHeight + 2.0F) + 9.0F;
             contentHeight += GetFooterHeightLogicalPixels() - infoHeight;
+            contentHeight += GetIdentityHeightLogicalPixels() - infoHeight;
             if (CurrentSnapshot != null && CurrentSnapshot.HardcoreStatus.Length != 0) contentHeight += 2.0F * (infoHeight + 2.0F);
             if (CurrentSnapshot != null && CurrentSnapshot.IntegrityStatus.Length != 0) contentHeight += GetIntegrityRows(CurrentSnapshot.IntegrityStatus) * (infoHeight + 2.0F);
             return contentHeight + (EditMode ? EditHeaderLogicalPixels : 0.0F);
+        }
+
+        private float GetIdentityHeightLogicalPixels()
+        {
+            float minimum = GetInfoHeightLogicalPixels();
+            if (CurrentSnapshot?.IdentityLine == null) return minimum;
+            string family = string.IsNullOrEmpty(LayoutSettings.FontFamily) ? CurrentSnapshot.FontFamily : LayoutSettings.FontFamily;
+            string key = CurrentSnapshot.IdentityLine + "\0" + family + "\0" + LayoutSettings.FontSize.ToString(CultureInfo.InvariantCulture) + "\0" + LayoutSettings.FontStyle;
+            if (key != MeasuredIdentityKey)
+            {
+                using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero))
+                using (Font font = new Font(family, LayoutSettings.FontSize, LayoutSettings.FontStyle, GraphicsUnit.Point))
+                using (var format = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Near })
+                {
+                    graphics.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+                    MeasuredIdentityHeight = Math.Max(minimum, (float)Math.Ceiling(graphics.MeasureString(
+                        CurrentSnapshot.IdentityLine, font, new SizeF(OverlayWidthLogicalPixels - 14.0F, float.MaxValue), format).Height) + 2.0F);
+                }
+                MeasuredIdentityKey = key;
+            }
+            return Math.Max(minimum, MeasuredIdentityHeight);
         }
 
         private float GetFooterHeightLogicalPixels()
@@ -1240,7 +1299,7 @@ namespace Pal98Timer
         {
             try
             {
-                Dx9OverlaySettings.SaveLayout(LayoutSettings);
+                saveLayout(LayoutSettings);
             }
             catch (Exception ex)
             {

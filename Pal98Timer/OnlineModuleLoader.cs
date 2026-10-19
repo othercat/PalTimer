@@ -13,6 +13,7 @@ namespace Pal98Timer
     internal sealed class OnlineModuleLease : IDisposable
     {
         internal IPalTimerOnlineV1 Module;
+        internal Assembly OnlineAssembly;
         internal readonly List<FileStream> Files = new List<FileStream>();
         public void Dispose() { try { Module?.Dispose(); } finally { foreach (var file in Files) file.Dispose(); Files.Clear(); } }
     }
@@ -40,7 +41,8 @@ namespace Pal98Timer
             public string online_component_version { get; set; }
             public int online_api_version { get; set; }
         }
-        internal static OnlineModuleLease Load(string directory)
+        internal static OnlineModuleLease Load(string directory) => LoadVerified(directory, true);
+        internal static OnlineModuleLease LoadVerified(string directory, bool createModule)
         {
             var lease = new OnlineModuleLease();
             try {
@@ -80,6 +82,8 @@ namespace Pal98Timer
                 var assembly = Assembly.LoadFrom(online);
                 if (assembly.GetName().Name != "PalTimerOnline" || assembly.GetName().Version.ToString(4) != b.online_component_version)
                     throw new InvalidDataException("Online component version failed.");
+                lease.OnlineAssembly = assembly;
+                if (!createModule) return lease;
                 var factory = assembly.GetType("Pal98Timer.OnlineEntryPoint", true).GetMethod("Create", BindingFlags.Public | BindingFlags.Static);
                 lease.Module = factory?.Invoke(null, new object[] { ApiVersion, b.timer_version }) as IPalTimerOnlineV1;
                 if (lease.Module == null || lease.Module.ApiVersion != ApiVersion) throw new InvalidDataException("Online API unavailable.");

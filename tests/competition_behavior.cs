@@ -377,6 +377,55 @@ internal static class CompetitionBehavior
         value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(p=>p.checkpoint_id)),hardcore);
         return value;
     }
+    static CompetitionObservation SdlpalObservation(string token, int step)
+    {
+        var value=Observation(token,step,800,0);value.Core="SDLPAL_GESHI_EASY";value.GameVersion="1.0.0.0";
+        value.Gameplay.family="sdlpal-geshi-easy";value.Gameplay.content_id="geshi-easy-v1";value.Gameplay.walk_frame_ms=90;
+        var facts=value.Ranking.rules;facts["family"]=value.Gameplay.family;facts["walk_frame_ms"]="90";
+        facts["engine_sha256"]=value.DllHash;facts["route_rules_sha256"]=new string('e',64);
+        facts["engine_build"]="offline-test";facts["profile"]=value.Gameplay.content_id;facts["speed"]="0";facts["battle_speed"]="0";
+        var resources=new[]{"DATA.MKF","M.MSG","SSS.MKF","WORD.DAT"};
+        foreach(string resource in resources)facts["resource."+resource]=new string('b',64);
+        facts["content"]=CompetitionProtocol.Hash(string.Join("\n",resources.Select(resource=>resource+"="+facts["resource."+resource])));
+        value.Gameplay.content_sha256=facts["content"];
+        value.Ranking.configuration_id=RankingConfiguration.Digest(facts);value.Gameplay.rules_sha256=value.Ranking.configuration_id;
+        value.Splits[0].checkpoint_id="geshi-eight-headed-serpent";value.Splits[1].checkpoint_id="geshi-ending";
+        value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(p=>p.checkpoint_id)),false);
+        return value;
+    }
+    static async Task SdlpalCases()
+    {
+        var value=SdlpalObservation("sdlpal",0);
+        Check(value.Gameplay.Valid&&value.Ranking.Valid(value.Gameplay),"SDLPAL family has independent walk milliseconds identity");
+        value.Gameplay.walk_frame_ms=null;Check(!value.Gameplay.Valid,"SDLPAL missing walk interval rejected");
+        value.Gameplay.walk_frame_ms=90;value.Gameplay.fade_ms=0;Check(!value.Gameplay.Valid,"SDLPAL unimplemented fade mode rejected");
+        value.Gameplay.fade_ms=800;value.Gameplay.map_speed_ticks=9;Check(!value.Gameplay.Valid,"SDLPAL cannot borrow PALDLL tick class");
+        var legacy=Observation("legacy",0);Check(legacy.Gameplay.Valid&&legacy.Ranking.Valid(legacy.Gameplay),"PAL98 identity validation unchanged");
+        var store=Store("sdlpal-online");var wire=new Fake{Approved=false};var auth=new FakeAuth();var client=new CompetitionClient(store,wire,auth);
+        client.Configure(Config());await Until(()=>wire.Registers>0,"SDLPAL online session registered through existing client");
+        client.Publish(SdlpalObservation("sdlpal",0));client.Publish(SdlpalObservation("sdlpal",1));
+        await Until(()=>wire.Urls.Any(u=>u.Contains("/standings?configuration_id="+SdlpalObservation("sdlpal",1).Ranking.configuration_id)),"SDLPAL standings query uses dedicated configuration ID");
+        client.Publish(SdlpalObservation("sdlpal",2));await Until(()=>store.LoadPending(Config()).Any(),"SDLPAL finish persists signed pending run");
+        Check(wire.Posts==0,"unapproved SDL build cannot upload a score");
+        wire.Approved=true;client.Retry();await Until(()=>wire.Posts==1,"approved SDL run uses normal challenge and upload flow");
+        var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(wire.Payloads.Single());
+        Check(run.protocol==CompetitionProtocol.OnlineV2&&run.gameplay.family=="sdlpal-geshi-easy"&&run.gameplay.walk_frame_ms==90&&run.gameplay.map_speed_ticks==0,
+            "uploaded SDL payload retains actual milliseconds and independent family");
+        Check(run.ranking.rules["engine_sha256"]==run.pal_dll_sha256&&run.ranking.configuration_id==SdlpalObservation("sdlpal",2).Ranking.configuration_id,
+            "engine digest and ranking rule digest survive seal and upload");
+        Check(CompetitionProtocol.Validate(run)=="","SDL v2 record passes producer format validation");
+        var assisted=SdlpalObservation("sdlpal-assisted",0);assisted.BeganHere=false;
+        assisted.LiveTimingValid=true;assisted.ValidationError="游戏已读档或重启";
+        client.Invalidate(assisted.Token);client.Publish(assisted);
+        var finished=SdlpalObservation(assisted.Token,2);finished.BeganHere=false;
+        finished.LiveTimingValid=true;finished.ValidationError=assisted.ValidationError;client.Publish(finished);
+        await Until(()=>wire.Posts==2,"SDL assisted run with valid live timing still uploads for server review");
+        var review=CompetitionProtocol.Json().Deserialize<CompetitionRun>(wire.Payloads.Last());
+        Check(!review.observations.began_here&&review.observations.issues.Contains("start-evidence-missing")&&
+            review.observations.issues.Contains("timing-validation: "+assisted.ValidationError),
+            "SDL live validity cannot erase start evidence or score-review issues from the sealed result");
+        await client.CloseAsync();
+    }
     static async Task GameplayCases() {
         var store=Store("v2");var fake=new Fake{V2=true};var auth=new FakeAuth();var client=new CompetitionClient(store,fake,auth);client.Configure(Config());
         await Until(()=>fake.Registers>0,"v2 server capability registered");
@@ -810,7 +859,7 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
-        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CompatibilityCases().GetAwaiter().GetResult(); CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
+        try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CompatibilityCases().GetAwaiter().GetResult(); CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); SdlpalCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
