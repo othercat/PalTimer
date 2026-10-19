@@ -50,7 +50,7 @@ namespace Pal98Timer
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
         private readonly Task worker;
         private readonly bool gameManaged;
-        private readonly Func<Process, CompetitionSettings> readGameSettings;
+        private readonly Func<Process, CompetitionGameResolution> resolveGame;
         private volatile Process observedGame;
         private volatile string gameSettingsError = "";
         private long gameGeneration;
@@ -58,13 +58,14 @@ namespace Pal98Timer
         private readonly string timerVersion;
         private long requestedTarget;
         private Process ownedTarget;
-        internal CompetitionClient(CompetitionStorage storage = null, ICompetitionTransport transport = null, ICompetitionAuth authentication = null, bool gameManaged = false, Func<Process, CompetitionSettings> readGameSettings = null, string timerVersion = null)
+        internal CompetitionClient(CompetitionStorage storage = null, ICompetitionTransport transport = null, ICompetitionAuth authentication = null, bool gameManaged = false, Func<Process, CompetitionSettings> readGameSettings = null, string timerVersion = null, Func<Process, CompetitionGameResolution> resolveGame = null)
         {
             this.storage = storage ?? new CompetitionStorage();
             this.transport = transport ?? new CompetitionHttpTransport();
             this.authentication = authentication ?? new NativeCompetitionAuth();
             this.gameManaged = gameManaged;
-            this.readGameSettings = readGameSettings ?? CompetitionGameSettings.Load;
+            this.resolveGame = resolveGame ?? (readGameSettings == null ? CompetitionGameSettings.Resolve :
+                new Func<Process, CompetitionGameResolution>(p => new CompetitionGameResolution { Settings = readGameSettings(p) }));
             this.timerVersion = timerVersion ?? System.Reflection.Assembly.GetEntryAssembly().GetName().Version.ToString(4);
             worker = Task.Run((Func<Task>)Loop);
         }
@@ -85,12 +86,18 @@ namespace Pal98Timer
                 Process next = null;
                 try { if (pid > 0) next = Process.GetProcessById(pid); } catch { }
                 var previous = ownedTarget; ownedTarget = next;
-                ObserveGame(next); previous?.Dispose();
+                ObserveGameCore(next, request); previous?.Dispose();
             });
         }
         internal void ObserveGame(Process process)
         {
             if (!gameManaged || observedGameOnce && ReferenceEquals(observedGame, process)) return;
+            ObserveGameCore(process, Interlocked.Increment(ref requestedTarget));
+        }
+        private void ObserveGameCore(Process process, long targetRequest)
+        {
+            if (!gameManaged) return;
+            identityTarget = null;
             observedGameOnce = true; observedGame = process; gameSettingsError = "";
             long epoch = Interlocked.Increment(ref gameGeneration);
             if (process == null) {
@@ -107,8 +114,8 @@ namespace Pal98Timer
             enabled = false; Interlocked.Increment(ref generation);
             commands.Enqueue(() => {
                 if (epoch != Interlocked.Read(ref gameGeneration)) return;
-                CompetitionSettings next; string error = "";
-                try { next = readGameSettings(process); }
+                CompetitionSettings next; CompetitionGameResolution resolved = null; string error = "";
+                try { resolved = resolveGame(process); next = resolved.Settings; }
                 catch (Exception ex) {
                     next = new CompetitionSettings();
                     error = ex is System.IO.InvalidDataException ? ex.Message : "联机配置无法读取，请检查游戏目录的访问权限及配套组件。";
@@ -117,7 +124,8 @@ namespace Pal98Timer
                 }
                 if (epoch != Interlocked.Read(ref gameGeneration)) return;
                 next.CopyAppearance(settings);
-                ApplyConfiguration(next, null, epoch);
+                if (ApplyConfiguration(next, null, epoch) && error.Length == 0)
+                    InstallIdentityTarget(resolved, epoch, targetRequest);
                 if (epoch == Interlocked.Read(ref gameGeneration)) gameSettingsError = error;
             });
         }
@@ -207,7 +215,7 @@ namespace Pal98Timer
             Interlocked.Increment(ref generation);
             commands.Enqueue(() => ApplyConfiguration(copy, replacementSecret));
         }
-        private void ApplyConfiguration(CompetitionSettings copy, string replacementSecret, long? gameEpoch = null)
+        private bool ApplyConfiguration(CompetitionSettings copy, string replacementSecret, long? gameEpoch = null)
         {
                 bool boardChanged = settings.ReferenceBoard != copy.ReferenceBoard || settings.ReferenceScope != copy.ReferenceScope;
                 bool networkChanged = settings.Server != copy.Server || settings.CustomCompetitionId != copy.CustomCompetitionId || settings.Enabled != copy.Enabled || replacementSecret != null;
@@ -224,11 +232,11 @@ namespace Pal98Timer
                     if (gameManaged) { stored.Enabled = false; stored.Server = new CompetitionSettings().Server; stored.Event = "wuqiang"; stored.Ruleset = "wuqiang-2026-v1"; stored.CustomCompetitionId = null; stored.ConfigurationId = null; }
                     storage.SaveSettings(stored);
                 }
-                catch { enabled = false; SetStatus("比赛设置未能保存，联机已停止；请检查本机记录目录权限", true); return; }
+                catch { enabled = false; SetStatus("比赛设置未能保存，联机已停止；请检查本机记录目录权限", true); return false; }
                 // Publish endpoint and credential together, only after all preparation succeeded.
                 lock (publication)
                 {
-                    if (gameEpoch.HasValue && gameEpoch != Interlocked.Read(ref gameGeneration)) return;
+                    if (gameEpoch.HasValue && gameEpoch != Interlocked.Read(ref gameGeneration)) return false;
                     settings = copy; credential = preparedCredential;
                     if (boardChanged) {
                         Interlocked.Increment(ref querySerial); nextQuery = DateTime.MinValue;
@@ -244,7 +252,7 @@ namespace Pal98Timer
                         view = new CompetitionView { Hwid = credential == null ? localDeviceId : credential.Hwid };
                     }
                 }
-                if (!networkChanged) return;
+                if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
                 serverSupportsV2 = serverSupportsRestartTime = false;
@@ -254,6 +262,7 @@ namespace Pal98Timer
                 ResetLiveConnection();
                 contextToken = ""; current = null; contextSettings = null; route = null; contextRunId = null; nextQuery = DateTime.MinValue;
                 SetStatus(copy.Enabled ? "已启用；从下一轮完整计时开始自动上传" : "联机未开启");
+                return true;
         }
         internal void Retry()
         {
@@ -314,6 +323,7 @@ namespace Pal98Timer
                         if (enabled && settings.Enabled)
                         {
                             if (credential == null) credential = storage.Credential(settings.Server);
+                            PrepareLocalIdentitySync();
                             if (await EnsureRegistered().ConfigureAwait(false))
                             {
                                 var identity = authentication.Identity();
@@ -439,12 +449,15 @@ namespace Pal98Timer
             string token = Volatile.Read(ref activeToken);
             if (registeredKey == cfg.Server + "|" + CompetitionProtocol.Scope && DateTime.UtcNow < capabilityExpires) return true;
             if (registrationRejected || DateTime.UtcNow < nextRegister) return false;
+            var identityRequest = CaptureIdentityRequest(cfg);
             var response = await transport.Send("POST", cfg.Endpoint + "/devices", credential.Hwid, credential.Secret,
                 CompetitionProtocol.Json().Serialize(new { protocol = CompetitionProtocol.Online, hwid = credential.Hwid }), 5000, stop.Token).ConfigureAwait(false);
             if (epoch != Interlocked.Read(ref generation)) return false;
             var reply = Parse(response, cfg);
             if (reply != null)
             {
+                identityBehaviorCapability = reply.supported_features?.Contains(IdentityBehaviorSnapshot.Feature) == true;
+                PublishLocalIdentity(identityRequest, response.Body);
                 registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5);
                 serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true;
                 serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
@@ -663,6 +676,7 @@ namespace Pal98Timer
                     url += "&checkpoint_id=" + Uri.EscapeDataString(CompetitionProtocol.CheckpointId(split.checkpoint_id)) + "&elapsed_ms=" + split.elapsed_ms.Value.ToString(CultureInfo.InvariantCulture);
                 if (observation.Finished && completed.Contains(observation.Token) && !pending.Any(p => p.Run.run_id == contextRunId)) url += "&run_id=" + contextRunId;
             }
+            var identityRequest = CaptureIdentityRequest(cfg);
             var response = await transport.Send("GET", url, credential.Hwid, credential.Secret, null, 3000, stop.Token).ConfigureAwait(false);
             nextQuery = DateTime.UtcNow.AddSeconds(Math.Max(30, response.RetryAfterSeconds));
             if (epoch != Interlocked.Read(ref generation) || serial != Interlocked.Read(ref querySerial) || token != Volatile.Read(ref activeToken)) return;
@@ -671,6 +685,7 @@ namespace Pal98Timer
                 split != null && split.status == "completed" && (reply.node == null || reply.node.checkpoint_id != CompetitionProtocol.CheckpointId(split.checkpoint_id) || reply.node.elapsed_ms != split.elapsed_ms))
             { storage.LogNetwork("standings-query-failed", response.Status); return; }
             if (!reply.published) { reply.node = null; reply.overall = null; reply.hardcore_top = null; }
+            PublishLocalIdentity(identityRequest, response.Body);
             PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "尚未绑定玩家", false, reply, split == null ? "" : split.checkpoint_id);
         }
         // Close never waits on HTTP. Let the already accepted disk work finish;

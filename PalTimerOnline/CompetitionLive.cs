@@ -309,13 +309,15 @@ namespace Pal98Timer
                     !pending.Any(p => p.Run.run_id == snapshot.run_id) ? snapshot.run_id : null,
                 board = settings.ReferenceBoard };
         }
-        private void AcceptLiveStandings(CompetitionReply reply, CompetitionLiveCompare compare, long epoch, long serial, string token)
+        private void AcceptLiveStandings(CompetitionReply reply, CompetitionLiveCompare compare, long epoch, long serial, string token,
+            IdentityRequest identityRequest, string responseBody)
         {
             if (reply == null || compare == null || reply.protocol != CompetitionProtocol.Online || reply.scope != CompetitionProtocol.Scope ||
                 reply.configuration_id != compare.configuration_id || reply.route_sha256 != compare.route_sha256 ||
                 reply.custom_competition_id != compare.custom_competition_id || (reply.board ?? "overall") != compare.board ||
                 compare.checkpoint_id != null && (reply.node == null || reply.node.checkpoint_id != compare.checkpoint_id || reply.node.elapsed_ms != compare.elapsed_ms)) return;
             if (!reply.published) { reply.node = null; reply.overall = null; reply.hardcore_top = null; }
+            PublishLocalIdentity(identityRequest, responseBody, true);
             PublishResponse(epoch, serial, token, reply.player?.bound == true ? "联机实时参考" : "尚未绑定玩家", false, reply, compare.checkpoint_id ?? "");
             nextQuery = DateTime.UtcNow.AddSeconds(30);
         }
@@ -338,6 +340,7 @@ namespace Pal98Timer
             if (!includeRestartTime) wireObservation.Remove("restart_ms");
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
                 session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
+            var identityRequest = CaptureIdentityRequest(cfg);
             var response = await transport.Send("POST", cfg.Endpoint + "/live/updates", credential.Hwid, credential.Secret, body, 3000, stop.Token).ConfigureAwait(false);
             if (!LiveCurrent(epoch, cfg.Server)) return;
             CompetitionLiveAck ack = null;
@@ -350,7 +353,7 @@ namespace Pal98Timer
             liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接", CompatibilityMode = !includeRestartTime };
             if (revision != Interlocked.Read(ref liveRevision)) { nextLiveDueTick = 0; return; }
             if (serial == Interlocked.Read(ref querySerial) && token == Volatile.Read(ref activeToken))
-                AcceptLiveStandings(ack.standings, compare, epoch, serial, token);
+                AcceptLiveStandings(ack.standings, compare, epoch, serial, token, identityRequest, response.Body);
         }
     }
 }

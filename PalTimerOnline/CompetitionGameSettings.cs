@@ -5,6 +5,13 @@ using System.Text;
 
 namespace Pal98Timer
 {
+    internal sealed class CompetitionGameResolution
+    {
+        internal CompetitionSettings Settings;
+        internal string IdentityRoot, Executable;
+        internal int ProcessId;
+        internal long CreatedAt;
+    }
     internal sealed class CompetitionGameEnvelope
     {
         public string schema { get; set; }
@@ -45,12 +52,17 @@ namespace Pal98Timer
         }
         internal static CompetitionSettings Load(Process process)
         {
-            if (process == null) return new CompetitionSettings();
+            return Resolve(process).Settings;
+        }
+        internal static CompetitionGameResolution Resolve(Process process)
+        {
+            if (process == null) return new CompetitionGameResolution { Settings = new CompetitionSettings() };
             // Only the selected PAL process owns this directory. Never search
             // the timer's own directory or accept a previous machine preference.
             long created = process.StartTime.ToUniversalTime().ToFileTimeUtc();
             string path = process.MainModule.FileName;
             CompetitionSettings result = null;
+            string identityRoot = null;
             // The selected process's bridge identifies SDL even when named pal.exe.
             // Only classic PAL without this mapping uses PALDLL configuration locks.
             using (var candidate = Process.GetProcessById(process.Id))
@@ -64,12 +76,14 @@ namespace Pal98Timer
                     SdlpalSnapshot snapshot;
                     if (!bridge.TryRead(out snapshot)) throw new InvalidDataException("SDLPAL 运行时身份无效");
                     result = LoadSdlpal(path, snapshot);
+                    identityRoot = Path.GetDirectoryName(Path.GetFullPath(path));
                 }
             }
             if (result == null) result = LoadDirectory(Path.GetDirectoryName(path));
             if (process.HasExited || created != process.StartTime.ToUniversalTime().ToFileTimeUtc())
                 throw new InvalidDataException("读取配置期间游戏已退出。");
-            return result;
+            return new CompetitionGameResolution { Settings = result, IdentityRoot = identityRoot,
+                ProcessId = process.Id, CreatedAt = created, Executable = path };
         }
         internal static CompetitionSettings LoadSdlpal(string executable, SdlpalSnapshot snapshot)
         {
