@@ -162,7 +162,8 @@ internal static class OnlineModuleLoaderBehavior
             if (accepted) {
                 var module = (IPalTimerOnlineV1)lease.GetType().GetField("Module", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(lease);
                 if (module.ApiVersion != 1) throw new Exception("Wrong API.");
-                ConfigurationReaders(module);
+                if (!args.Contains("composition-only")) ConfigurationReaders(module);
+                else Console.WriteLine("SKIP unrelated PALDLL signed-lock fixtures: composition-only check");
                 RestartBridge(module);
                 bool writeRejected = false;
                 try { using (File.Open("PalTimerOnline.dll", FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { } }

@@ -1,5 +1,5 @@
 param([Parameter(Mandatory=$true)][string]$AuthDirectory,
-    [string]$TimerDirectory = '', [string]$OnlineDll = '', [string]$OutputDirectory = '')
+    [string]$TimerDirectory = '', [string]$OnlineDll = '', [string]$OutputDirectory = '', [switch]$CompositionOnly)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $out=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $repo ('artifacts/online-module-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))}
@@ -33,7 +33,7 @@ foreach($case in @('valid','missing','online-changed','auth-changed','exe-change
         [IO.File]::WriteAllText($path,($doc|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
     }
     Push-Location -LiteralPath $dir
-    try { $expected=if($case -eq 'valid'){'valid'}else{'invalid'}; & (Join-Path $dir 'OnlineModuleLoaderBehavior.exe') $expected *> (Join-Path $out ($case+'.log')); $code=$LASTEXITCODE }
+    try { $expected=if($case -eq 'valid'){'valid'}else{'invalid'}; $arguments=@($expected); if($CompositionOnly){$arguments+='composition-only'}; & (Join-Path $dir 'OnlineModuleLoaderBehavior.exe') @arguments *> (Join-Path $out ($case+'.log')); $code=$LASTEXITCODE }
     finally { Pop-Location }
     Get-Content -LiteralPath (Join-Path $out ($case+'.log'))
     if($code){throw "Online module scenario failed: $case"}
