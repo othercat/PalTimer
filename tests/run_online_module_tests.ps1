@@ -1,8 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$AuthDirectory,
-    [string]$TimerDirectory = '', [string]$OnlineDll = '')
+    [string]$TimerDirectory = '', [string]$OnlineDll = '', [string]$OutputDirectory = '')
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$out=Join-Path $repo ('artifacts/online-module-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$out=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $repo ('artifacts/online-module-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))}
+if(Test-Path -LiteralPath $out){throw 'Choose a fresh output directory for the composition checks.'}
 $runtime=if($TimerDirectory){[IO.Path]::GetFullPath($TimerDirectory)}else{Join-Path $repo 'Pal98Timer/bin/x64/Release'}
 if(!$OnlineDll){$OnlineDll=Join-Path $repo 'PalTimerOnline/bin/x64/Release/PalTimerOnline.dll'}
 $valid=Join-Path $out 'valid'
