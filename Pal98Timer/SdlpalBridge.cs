@@ -55,6 +55,7 @@ namespace Pal98Timer
         public string profile { get; set; }
         public bool verified { get; set; }
         public bool diagnostic { get; set; }
+        public bool wuqiang { get; set; }
         public string resourceHash { get; set; }
         public Dictionary<string, string> resourceHashes { get; set; }
         public string build { get; set; }
@@ -100,10 +101,13 @@ namespace Pal98Timer
                 ["battle_speed"] = battleSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)
             };
             foreach (var pair in resourceHashes) facts["resource." + pair.Key] = pair.Value;
+            // Preserve ordinary categories and historical records byte-for-byte.
+            if (wuqiang) facts["wuqiang"] = "1";
             return facts;
         }
         internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
-            string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value));
+            string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
+            (wuqiang ? "|wuqiang=1" : "");
         internal string IdentityKey => ResourceEngineIdentity + "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
         internal SdlpalSnapshot WithSpeedConfiguration(SdlpalSnapshot source)
         {
@@ -173,6 +177,16 @@ namespace Pal98Timer
                 "gamePath", "savePath", "started", "focused", "busy", "canControl", "completed", "epoch", "frame", "loadedFrom",
                 "speed", "battleSpeed", "walkFrameMs", "fadeCycleMs", "scene", "map", "battle", "battleEvents" };
             if (fields == null || required.Any(k => !fields.ContainsKey(k))) throw new InvalidDataException("游戏快照缺少必要字段");
+            // Older engines omit this additive field and have no runtime no-wall
+            // switch. Do not let the JSON serializer coerce strings/numbers/null.
+            object wuqiang;
+            if (fields.TryGetValue("wuqiang", out wuqiang) && !(wuqiang is bool))
+                throw new InvalidDataException("游戏无墙状态必须为布尔值");
+            object nested, nestedWuqiang;
+            if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> identityFields &&
+                identityFields.TryGetValue("wuqiang", out nestedWuqiang) &&
+                (!(nestedWuqiang is bool) || !fields.ContainsKey("wuqiang") || !Equals(nestedWuqiang, wuqiang)))
+                throw new InvalidDataException("游戏无墙身份与状态不一致");
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
             if (value.schema != 1 || value.profile != "geshi-easy-v1" || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||

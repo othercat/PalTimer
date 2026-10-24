@@ -58,8 +58,10 @@ namespace Pal98Timer
         internal readonly HashSet<string> Reached = new HashSet<string>(StringComparer.Ordinal);
         internal string Issue = "";
         internal bool BeganHere, Started, EpochChanged;
+        internal bool WuQiangChanged;
         private ulong lastBattle;
         private string initialIdentity;
+        private bool initialWuQiang;
         private SdlpalSnapshot speedBaseline;
         // The existing online contract compares initial/final facts exactly.
         // Keep the run's starting speed category, while retaining current engine,
@@ -80,10 +82,12 @@ namespace Pal98Timer
             if (next.started && !Started)
             {
                 Started = true;
+                initialWuQiang = next.wuqiang;
                 speedBaseline = next.WithSpeedConfiguration(next);
                 if (!first && !EpochChanged && !Snapshot.started) { BeganHere = true; initialIdentity = next.ResourceEngineIdentity; }
             }
             if (Started && initialIdentity != next.ResourceEngineIdentity) Issue = "计时期间资源或引擎配置变化";
+            if (Started && initialWuQiang != next.wuqiang) WuQiangChanged = true;
             if (!first && !EpochChanged)
             {
                 var pending = next.battleEvents.Where(e => e.seq > lastBattle).ToArray();
@@ -101,9 +105,11 @@ namespace Pal98Timer
                 if (next.started && rule.Kind == "completion" && next.completed) Reached.Add(rule.Id);
             Snapshot = next;
         }
-        internal void MarkImported(SdlpalSnapshot snapshot)
+        internal void MarkImported(SdlpalSnapshot snapshot, bool wuqiangChanged = false)
         {
             Snapshot = snapshot; Started = snapshot.started; BeganHere = false; EpochChanged = false;
+            WuQiangChanged |= wuqiangChanged;
+            initialWuQiang = snapshot.wuqiang;
             initialIdentity = snapshot.ResourceEngineIdentity; speedBaseline = snapshot.WithSpeedConfiguration(snapshot);
             lastBattle = snapshot.battleEvents.Length == 0 ? 0 : snapshot.battleEvents.Last().seq;
             Reached.Clear(); Issue = "接力或时间线导入";
@@ -230,7 +236,11 @@ namespace Pal98Timer
                 }
             }
         }
-        protected override void ValidateBestSave() { }
+        protected override void ValidateBestSave()
+        {
+            if (observer.WuQiangChanged)
+                throw new InvalidOperationException("本跑次曾切换吴强无墙模式；请重置后再保存该模式最佳线。时间线仍可导出留作参考。");
+        }
         protected override void FillReferenceIdentity(HObj data) { data["SdlpalRoute"] = RouteIdentity; data["SdlpalProfile"] = "geshi-easy-v1"; data["SdlpalCategory"] = BestCategory; }
         protected override void ValidateBestReference(HObj data)
         {
@@ -244,8 +254,9 @@ namespace Pal98Timer
             if (observer.Snapshot != null)
             {
                 var s = observer.Snapshot;
-                data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
+                data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
             }
+            data["SdlpalWuQiangChanged"] = observer.WuQiangChanged;
             data["SdlpalIssue"] = GetScoreValidationError();
             data["SdlpalStatuses"] = new HObj(CheckPoints.Select(p => (object)p.Status.ToString()).ToArray());
             data["SdlpalIdle"] = idleTimer.ToFullString();
@@ -494,6 +505,7 @@ namespace Pal98Timer
             internal int Step;
             internal TimeSpan[] Times;
             internal CheckPointStatus[] Statuses;
+            internal bool WuQiangChanged;
         }
         private ImportedTimer ValidateImport(string json, string identity)
         {
@@ -505,9 +517,13 @@ namespace Pal98Timer
             // arrive at another speed, but never another engine/resource/route.
             if (data.GetValue<string>("TimerCore") != CoreName || !SdlpalSnapshot.SameResourceEngineIdentity(data.GetValue<string>("SdlpalIdentity"), identity))
                 throw new InvalidDataException("时间线资源或引擎身份不匹配");
+            object changed;
+            bool hasChanged = data.ToDic().TryGetValue("SdlpalWuQiangChanged", out changed);
+            if (hasChanged && !(changed is bool)) throw new InvalidDataException("时间线无墙模式变更记录无效");
             var points = data.GetValue<HObj>("CheckPoints")?.ToList(); var states = data.GetValue<HObj>("SdlpalStatuses")?.ToList();
             var result = new ImportedTimer { Current = ParseTime(data.GetValue<string>("Current")), Idle = ParseTime(data.GetValue<string>("SdlpalIdle")),
-                Step = data.GetValue<int>("Step"), Times = new TimeSpan[rules.Length], Statuses = new CheckPointStatus[rules.Length] };
+                Step = data.GetValue<int>("Step"), Times = new TimeSpan[rules.Length], Statuses = new CheckPointStatus[rules.Length],
+                WuQiangChanged = hasChanged && (bool)changed };
             if (points == null || states == null || points.Count != rules.Length || states.Count != rules.Length || result.Step < -1 || result.Step > rules.Length) throw new InvalidDataException("时间线节点数量或进度无效");
             TimeSpan last = TimeSpan.Zero;
             for (int i = 0; i < rules.Length; i++)
@@ -535,7 +551,7 @@ namespace Pal98Timer
             lock (gate)
             {
                 MT.Stop(); MT.SetTS(timer.Current); idleTimer.Stop(); idleTimer.SetTS(timer.Idle); battleTimer.Reset();
-                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot); freshSnapshot = true;
+                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot, timer.WuQiangChanged); freshSnapshot = true;
                 // Jump derives the interval and prediction from checkpoint times.
                 for (int i = 0; i < rules.Length; i++) CheckPoints[i].SetCurrentTSForLoad(timer.Times[i]);
                 Jump(timer.Step);

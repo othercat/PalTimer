@@ -99,6 +99,94 @@ internal static class SdlpalBehavior
                 actual.scene==93&&items.View.Cash==9817&&items.View.Kinds==107&&items.View.Quantity==458,"native save ownership/cash totals (all six equipment slots, active party only)");
         }
     }
+    static void WuQiangTests()
+    {
+        var normal=Snapshot();var enabled=Clone(normal);enabled.wuqiang=true;
+        string legacy=normal.profile+"|"+normal.exeHash+"|"+normal.build+"|"+
+            string.Join("|",normal.resourceHashes.OrderBy(p=>p.Key,StringComparer.Ordinal).Select(p=>p.Key+"="+p.Value));
+        Check(normal.ResourceEngineIdentity==legacy&&normal.RankingFacts().Count==12,
+            "ordinary identity and twelve ranking facts preserve historical categories");
+        Check(enabled.ResourceEngineIdentity==legacy+"|wuqiang=1"&&enabled.RankingFacts()["wuqiang"]=="1"&&
+            RankingConfiguration.Digest(enabled.RankingFacts())!=RankingConfiguration.Digest(normal.RankingFacts()),
+            "WuQiang partitions runtime identity and ranking facts without changing resources");
+        foreach(var state in new[]{normal,enabled})
+        {
+            var facts=state.RankingFacts();var game=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=state.profile,
+                content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=state.fadeCycleMs,
+                map_speed_ticks=0,walk_frame_ms=state.walkFrameMs};
+            Func<bool> valid=()=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(game);
+            Check(valid(),"ordinary/WuQiang ranking facts validate: "+state.wuqiang);
+            foreach(string invalid in new[]{"0","true","false","01","2","",null})
+            {facts["wuqiang"]=invalid;Check(!valid(),"only explicit wuqiang=1 is accepted: "+(invalid??"null"));}
+            var speed=Clone(state);speed.speed++;speed.battleSpeed++;speed.walkFrameMs++;
+            Check(SdlpalSnapshot.SameResourceEngineIdentity(state.IdentityKey,speed.IdentityKey),
+                "same-mode relay still accepts speed changes: "+state.wuqiang);
+        }
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            return SdlpalBridge.Decode(Header(normal,json.Length),json,777,123,10000);
+        };
+        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(normal));
+        var fields=original();fields.Remove("wuqiang");Check(!decode(fields).wuqiang,"legacy missing no-wall field decodes as ordinary");
+        foreach(bool mode in new[]{false,true})
+        {
+            fields=original();fields["wuqiang"]=mode;fields["identity"]=new Dictionary<string,object>{{"wuqiang",mode}};
+            Check(decode(fields).wuqiang==mode,"flattened and nested native boolean agree: "+mode);
+            fields["identity"]=new Dictionary<string,object>{{"wuqiang",!mode}};
+            Reject(()=>decode(fields),"conflicting native no-wall identities are rejected");
+        }
+        foreach(object invalid in new object[]{null,0,1,"true","false",new object[0],new Dictionary<string,object>()})
+        {
+            fields=original();fields["wuqiang"]=invalid;Reject(()=>decode(fields),"non-boolean flattened no-wall state is rejected");
+            fields=original();fields["identity"]=new Dictionary<string,object>{{"wuqiang",invalid}};
+            Reject(()=>decode(fields),"non-boolean nested no-wall identity is rejected");
+        }
+        fields=original();fields.Remove("wuqiang");fields["identity"]=new Dictionary<string,object>{{"wuqiang",true}};
+        Reject(()=>decode(fields),"nested no-wall identity cannot silently become legacy ordinary mode");
+        byte[] save=new byte[2048];
+        foreach(var origin in new[]{normal,enabled})
+        {
+            var package=new SdlpalRelayPackage{identity=origin.IdentityKey,timer="{}",saveBase64=Convert.ToBase64String(save),saveSha256=SdlpalRelayPackage.Hash(save)};
+            Check(package.Validate(origin.IdentityKey).SequenceEqual(save),"same-mode relay package remains readable: "+origin.wuqiang);
+            Reject(()=>package.Validate(origin.wuqiang?normal.IdentityKey:enabled.IdentityKey),"cross-mode relay package is rejected before control");
+        }
+        using(var engine=new Engine()) using(var bridge=new SdlpalBridge())
+        {
+            bridge.Attach(Process.GetProcessById(engine.Process.Id));SdlpalSnapshot before;bridge.TryRead(out before);
+            string slot=Path.Combine(engine.State.savePath,"250.rpg");File.WriteAllBytes(slot,save);
+            ulong request=engine.Control.ReadUInt64(40);engine.State.wuqiang=true;engine.Publish();
+            Reject(()=>SdlpalControl.Execute(bridge,2,before,new byte[4096]),"mode change before LOAD is rejected");
+            Check(engine.Control.ReadUInt64(40)==request&&File.ReadAllBytes(slot).SequenceEqual(save),
+                "rejected cross-mode LOAD preserves command and reserved save bytes");
+        }
+        foreach(bool initial in new[]{false,true}) using(var run=new CompletionFixture(true))
+        {
+            run.Engine.State.wuqiang=initial;run.StartNewGame();string path=run.Core.ActiveBestPath;
+            try
+            {
+                run.Core.SaveBest();byte[] saved=File.ReadAllBytes(path);string legacyTimer=run.Core.GetRStr();
+                var reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(legacyTimer);reference.Remove("SdlpalWuQiangChanged");
+                Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(reference),run.Core.CurrentSnapshot.IdentityKey);
+                Check(true,"older ordinary-mode change metadata remains optional for references");
+                run.Engine.State.wuqiang=!initial;run.Engine.State.epoch++;run.Tick();
+                Check(run.Watch.IsRunning&&!run.Core.IsUIPause&&run.Core.ActiveBestPath!=path&&run.Core.GetScoreValidationError().Length>0,
+                    "restart changing no-wall mode partitions PB and preserves running clock: "+initial);
+                Reject(()=>Call(run.Core,"ValidateImport",legacyTimer,run.Core.CurrentSnapshot.IdentityKey),"cross-mode timeline import is rejected");
+                Reject(()=>run.Core.SaveBest(),"mixed-mode run cannot become the other mode PB");
+                run.Engine.State.wuqiang=initial;run.Engine.State.epoch++;run.Tick();
+                Check(run.Core.ActiveBestPath==path&&run.Watch.IsRunning,"returning to starting mode restores reference without pausing");
+                Reject(()=>run.Core.SaveBest(),"returning to original mode cannot erase mixed-run PB protection");
+                Check(File.ReadAllBytes(path).SequenceEqual(saved),"rejected mixed-mode PB save leaves historical reference byte-identical");
+                string mixed=run.Core.GetRStr();var imported=Call(run.Core,"ValidateImport",mixed,run.Core.CurrentSnapshot.IdentityKey);
+                var snapshot=run.Core.CurrentSnapshot;run.Core.Reset();Call(run.Core,"Restore",imported,snapshot);
+                Reject(()=>run.Core.SaveBest(),"export and import retain mixed-mode PB protection");
+                Check(run.Core.IsUIPause,"mixed reference import keeps existing pause semantics");
+                run.Core.Reset();run.Tick();run.Core.SaveBest();
+                Check(File.Exists(path),"explicit reset permits new local references in the selected mode");
+            }
+            finally {File.Delete(path);}
+        }
+    }
     static void ItemTests()
     {
         var s=Snapshot();s.started=true;s.cash=uint.MaxValue;s.party=new[]{0,1};
@@ -977,7 +1065,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

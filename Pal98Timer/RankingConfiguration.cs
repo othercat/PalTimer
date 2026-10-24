@@ -35,6 +35,11 @@ namespace Pal98Timer
             var resources = new[] { "DATA.MKF", "M.MSG", "SSS.MKF", "WORD.DAT" };
             var keys = new HashSet<string>(new[] { "family", "content", "profile", "fade_ms", "map_speed_ticks", "walk_frame_ms", "speed", "battle_speed" }, StringComparer.Ordinal);
             foreach (var resource in resources) keys.Add("resource." + resource);
+            if (rules.ContainsKey("wuqiang"))
+            {
+                if (Value("wuqiang") != "1") return false;
+                keys.Add("wuqiang");
+            }
             bool legacy = rules.ContainsKey("engine_sha256") || rules.ContainsKey("engine_build") || rules.ContainsKey("route_rules_sha256");
             if (legacy)
             {
