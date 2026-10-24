@@ -56,6 +56,7 @@ namespace Pal98Timer
         public bool verified { get; set; }
         public bool diagnostic { get; set; }
         public bool wuqiang { get; set; }
+        public string releaseRevision { get; set; }
         public string resourceHash { get; set; }
         public Dictionary<string, string> resourceHashes { get; set; }
         public string build { get; set; }
@@ -187,7 +188,19 @@ namespace Pal98Timer
                 identityFields.TryGetValue("wuqiang", out nestedWuqiang) &&
                 (!(nestedWuqiang is bool) || !fields.ContainsKey("wuqiang") || !Equals(nestedWuqiang, wuqiang)))
                 throw new InvalidDataException("游戏无墙身份与状态不一致");
+            // Optional display metadata never changes timing/relay identity.
+            object release;
+            string label = fields.TryGetValue("releaseRevision", out release) ? release as string : null;
+            if (release != null && !(release is string))
+                throw new InvalidDataException("游戏发行版本必须为文本");
+            bool validLabel = label != null && label.Length >= 2 && label.Length <= 10 && label[0] == 'r' &&
+                label[1] >= '1' && label[1] <= '9' && label.Skip(2).All(c => c >= '0' && c <= '9');
+            object nestedRelease;
+            if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> releaseIdentity &&
+                releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
+                validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
+            value.releaseRevision = validLabel ? label : null;
             if (value.schema != 1 || value.profile != "geshi-easy-v1" || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||
                 value.resourceHashes["SSS.MKF"] != value.resourceHash || string.IsNullOrWhiteSpace(value.build) || value.build.Length > 128 ||

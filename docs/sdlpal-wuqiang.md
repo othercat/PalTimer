@@ -10,4 +10,10 @@ Refs #34；Refs othercat/sdlpal-lostedit#66。本地测试版 3.38.3.1。
 
 新主程序与旧冻结 Online/Auth/公开登记并非已签发组合；保留原字节与原校验，实际加载器拒绝这一组合后本地秒表可用。没有重签、修改校验或连接正式服务器。重新构建的 Online DLL 仅用于合成测试，不能混入交付包。
 
-当前源分支 `codex/feat/66-sdlpal-wuqiang`，基线 `8be45d1d8031f27e5956d2d2b09fbad0579e07b4`。未提交、未合并、未推送。当前主机证据在 `C:\Workspace\PALWork\artifacts\so-lostedit-issue-66\timer`。
+原打包源分支 `codex/feat/66-sdlpal-wuqiang`，基线 `8be45d1d8031f27e5956d2d2b09fbad0579e07b4`。2026-10-24 已将与 r47 冻结快照完全一致的六个文件提交为 `1e09321394b486980c8aad4dee091ef5e2eb6495`；655 项隔离行为检查再次通过。既有证据位于 `PALWork/artifacts/so-lostedit-issue-66/timer/`。
+
+## r48 标题（Refs othercat/sdlpal-lostedit#1）
+
+计时器版本 3.38.3.2 从有效游戏快照读取实际 `wuqiang` 与可选 `releaseRevision`。吴强模式显示“（吴强）”，窗口标题、紧凑标题及 OBS 显示检测到的发行版本；主窗口将 `r48` 放在其他状态之后。断线、快照过期或连接不提供版本的旧引擎时，不保留旧标签。发行标签只影响显示，不加入排名事实、接力身份、最佳线分组或计时语义。
+
+旧引擎缺少版本字段时继续兼容；非文本字段拒绝快照，格式不合法或内外冲突的文本不显示。此版本保持冻结 Online/Auth 的拒绝校验，只用于本地计时测试，未进行线上签发/审批。

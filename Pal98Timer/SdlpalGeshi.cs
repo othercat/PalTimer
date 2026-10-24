@@ -370,7 +370,20 @@ namespace Pal98Timer
         public override bool IsMainWatchStar() => IsUIPause;
         public override string GetSmallWatch() => battleTimer.CurrentTS.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + "s";
         public override string GetSecondWatch() => idleTimer.ToFullString();
-        public override string GetGameVersion() => GameplayName;
+        internal string GameplayDisplayName
+        {
+            get { lock (gate) return GameplayName + (freshSnapshot && observer.Snapshot?.wuqiang == true ? "（吴强）" : ""); }
+        }
+        internal string ReleaseSuffix
+        {
+            get { lock (gate) return freshSnapshot && !string.IsNullOrEmpty(observer.Snapshot?.releaseRevision) ? " " + observer.Snapshot.releaseRevision : ""; }
+        }
+        public override string GetGameVersion() => GameplayDisplayName + ReleaseSuffix;
+        internal string GetWindowTitle(string integrityTitle, string onlineSuffix)
+        {
+            lock (gate) return "自动计时器 " + GameplayDisplayName +
+                (string.IsNullOrEmpty(integrityTitle) ? "" : " " + integrityTitle) + onlineSuffix + ReleaseSuffix;
+        }
         public override string GetMoreInfo() => T(status + (!freshSnapshot || observer.Snapshot == null ? "" : "  场景 " + observer.Snapshot.scene +
             (items.View.Available ? "  金钱 " + items.View.Cash : "  物品数据不可用")));
         public override string GetAAction() => "";
@@ -438,7 +451,7 @@ namespace Pal98Timer
         {
             if (overlay != null && !overlay.IsDisposed) return;
             overlay = new Dx9OverlayForm(OverlaySnapshot, Dx9OverlaySettings.LoadLayout(OverlayLayout), layout => Dx9OverlaySettings.SaveLayout(layout, OverlayLayout));
-            overlay.Text = GameplayName + " - OBS 独立遮罩";
+            overlay.Text = GameplayDisplayName + " - OBS 独立遮罩" + ReleaseSuffix;
             overlay.LayoutSaveFailed += error => form.Error("OBS 设置保存失败：" + error.Message);
             overlay.FormClosed += (s, e) => { if (overlayMenu != null) overlayMenu.Checked = false; };
             overlay.Start(); overlayMenu.Checked = true;
@@ -483,6 +496,8 @@ namespace Pal98Timer
         {
             lock (gate)
             {
+                if (overlay != null && !overlay.IsDisposed)
+                    overlay.Text = GameplayDisplayName + " - OBS 独立遮罩" + ReleaseSuffix;
                 var entries = new Dx9OverlayTimelineEntry[2];
                 int start = Math.Max(0, Math.Min(CurrentStep - 1, CheckPoints.Count - 2));
                 for (int i = 0; i < 2 && start + i < CheckPoints.Count; i++)
@@ -492,7 +507,7 @@ namespace Pal98Timer
                     GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL) }.Where(text => !string.IsNullOrEmpty(text)));
                 return new Dx9OverlaySnapshot(handle, overlay?.ConfiguredFontFamily, TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
                     GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], new Dx9OverlayTimelineEntry(), T(status), false, !MT.IsRunning,
-                    GameplayName, "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
+                    GetGameVersion(), "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
                     OverlayIdentity(form.CloudID(), form.CompetitionOverlayCaption));
             }
         }

@@ -187,6 +187,53 @@ internal static class SdlpalBehavior
             finally {File.Delete(path);}
         }
     }
+    static void ReleaseTitleTests()
+    {
+        var baseline=Snapshot();
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            return SdlpalBridge.Decode(Header(baseline,json.Length),json,777,123,10000);
+        };
+        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(baseline));
+        var fields=original();fields.Remove("releaseRevision");
+        Check(decode(fields).releaseRevision==null,"legacy snapshots do not invent a release revision");
+        foreach(string revision in new[]{"r48","r49","r100"})
+        {
+            fields=original();fields["releaseRevision"]=revision;fields["identity"]=new Dictionary<string,object>{{"releaseRevision",revision}};
+            var actual=decode(fields);
+            Check(actual.releaseRevision==revision&&actual.IdentityKey==baseline.IdentityKey&&
+                RankingConfiguration.Digest(actual.RankingFacts())==RankingConfiguration.Digest(baseline.RankingFacts()),
+                "release display metadata is detected without changing ranking or relay rules: "+revision);
+        }
+        foreach(string revision in new[]{null,"","r0","r048","r48\n","r48 extra","R48","r1234567890"})
+        {
+            fields=original();fields["releaseRevision"]=revision;
+            Check(decode(fields).releaseRevision==null,"invalid display label is omitted: "+(revision??"null"));
+        }
+        foreach(object revision in new object[]{48,true,new object[0],new Dictionary<string,object>()})
+        {fields=original();fields["releaseRevision"]=revision;Reject(()=>decode(fields),"non-text release metadata is rejected");}
+        fields=original();fields["releaseRevision"]="r48";fields["identity"]=new Dictionary<string,object>{{"releaseRevision","r49"}};
+        Check(decode(fields).releaseRevision==null,"conflicting nested revision is not displayed");
+        using(var run=new CompletionFixture(true))
+        {
+            run.Engine.State.releaseRevision="r48";run.Tick();
+            Check(run.Core.GetGameVersion()==SdlpalGeshi.GameplayName+" r48","title-screen snapshot displays its detected release before timing starts");
+            string category=run.Core.ActiveBestPath;
+            run.Engine.State.releaseRevision="r49";run.Tick();
+            Check(run.Core.GetGameVersion().EndsWith(" r49")&&run.Core.ActiveBestPath==category,"release label refresh leaves best-reference partition unchanged");
+            run.Engine.State.releaseRevision="r48";run.Engine.State.wuqiang=true;run.Tick();
+            Check(run.Core.GetGameVersion()==SdlpalGeshi.GameplayName+"（吴强） r48"&&run.Core.ReleaseSuffix==" r48",
+                "actual no-wall state adds Wuqiang and release at the end");
+            Check(run.Core.GetWindowTitle("测试状态"," [离线]")=="自动计时器 "+SdlpalGeshi.GameplayName+"（吴强） 测试状态 [离线] r48",
+                "actual window-title formatter keeps release after integrity and online status");
+            var overlay=(Dx9OverlaySnapshot)Call(run.Core,"OverlaySnapshot");
+            Check(overlay.TimingModeLabel==run.Core.GetGameVersion(),"OBS gameplay label agrees with the timer title");
+            run.Engine.View.Write(56,SdlpalBridge.GetTickCount64()-3000);Call(run.Core,"OnTick");
+            Check(run.Core.GetGameVersion()==SdlpalGeshi.GameplayName&&run.Core.ReleaseSuffix=="","stale/disconnected snapshot removes old Wuqiang and release labels");
+            run.Engine.State.releaseRevision=null;run.Engine.State.wuqiang=false;run.Tick();
+            Check(run.Core.GetGameVersion()==SdlpalGeshi.GameplayName,"reconnecting an older ordinary game retains no r48 or Wuqiang label");
+        }
+    }
     static void ItemTests()
     {
         var s=Snapshot();s.started=true;s.cash=uint.MaxValue;s.party=new[]{0,1};
@@ -1065,7 +1112,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }
