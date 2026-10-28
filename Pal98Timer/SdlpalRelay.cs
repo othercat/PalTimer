@@ -57,6 +57,21 @@ namespace Pal98Timer
     }
     internal static class SdlpalControl
     {
+        internal static void ValidateSaveDirectory(SdlpalSnapshot current, SdlpalSnapshot expected)
+        {
+            if (String.IsNullOrWhiteSpace(current.savePath) || !Path.IsPathRooted(current.savePath) ||
+                String.IsNullOrWhiteSpace(expected.savePath) || !Path.IsPathRooted(expected.savePath) ||
+                !String.Equals(Path.GetFullPath(current.savePath).TrimEnd('\\','/'), Path.GetFullPath(expected.savePath).TrimEnd('\\','/'), StringComparison.OrdinalIgnoreCase) ||
+                !Directory.Exists(current.savePath) || current.saveLayout != expected.saveLayout)
+                throw new InvalidDataException("当前内容存档目录已变化，未写入云存档或发送读档命令");
+            if (current.saveLayout == "content-v1") {
+                string id = current.profile.Substring(0, current.profile.Length - 3);
+                string marker = Path.Combine(current.savePath, ".content-package");
+                if (!File.Exists(marker) || new FileInfo(marker).Length > 80 || File.ReadAllText(marker).TrimEnd('\r','\n') != id)
+                    throw new InvalidDataException("存档目录身份与当前内容不一致，未写入云存档");
+            } else if (current.saveLayout != null && current.saveLayout != "legacy")
+                throw new InvalidDataException("不支持的存档目录布局");
+        }
         // The mutex covers staging, acknowledgement, and copying the finished
         // save, so two timer instances cannot exchange each other's slot 250.
         internal static SdlpalControlResult Execute(SdlpalBridge bridge, uint command, SdlpalSnapshot expected, byte[] loadBytes = null)
@@ -73,6 +88,7 @@ namespace Pal98Timer
                     if (bridge == null || !bridge.TryRead(out current) || current.Pid != expected.Pid || current.Created != expected.Created ||
                         current.epoch != expected.epoch || current.ResourceEngineIdentity != expected.ResourceEngineIdentity || !current.canControl)
                         throw new InvalidOperationException("请先回到游戏探索画面，并确认资源和存档未变化");
+                    ValidateSaveDirectory(current, expected);
                     using (var map = MemoryMappedFile.OpenExisting("Local\\SDLPAL.LostEdit.Control.v1." + current.Pid, MemoryMappedFileRights.ReadWrite))
                     using (var view = map.CreateViewAccessor(0, 128, MemoryMappedFileAccess.ReadWrite))
                     {

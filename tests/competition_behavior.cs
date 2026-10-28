@@ -497,6 +497,32 @@ internal static partial class CompetitionBehavior
         client.Invalidate("next");Check(client.View.Reply==null,"reset clears previous board rank to unknown");await client.CloseAsync();
     }
 
+    static async Task MaintenanceCases()
+    {
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"}) {
+            string family=SdlpalBridge.ProfileFamily(profile);
+            Func<int,CompetitionObservation> observe=step=>{
+                var value=SdlpalObservation(profile,step);value.ReleaseRevision="r53";
+                value.Gameplay.family=family;value.Gameplay.content_id=profile;
+                value.Ranking.rules["family"]=family;value.Ranking.rules["profile"]=profile;
+                value.Ranking.configuration_id=RankingConfiguration.Digest(value.Ranking.rules);value.Gameplay.rules_sha256=value.Ranking.configuration_id;
+                value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(s=>s.checkpoint_id)),false);return value;
+            };
+            var wire=new Fake{Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceFeature}};
+            var auth=new FakeAuth();var store=Store("maintenance-"+profile);var client=new CompetitionClient(store,wire,auth);client.Configure(Config());
+            await Until(()=>wire.Registers>0,"maintenance fixture registration "+profile);
+            client.Publish(observe(0));client.Publish(observe(2));await Until(()=>wire.Posts==1,"maintenance signed final uploads "+profile);
+            var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(wire.Payloads.Single());
+            Check(run.release_revision=="r53"&&run.gameplay.walk_frame_ms==90&&run.observations.initial_gameplay.walk_frame_ms==90,"sealed initial/final walk and revision retained "+profile);
+            Check(CompetitionProtocol.Validate(run)==""&&run.ranking.Valid(run.gameplay),"four-profile score contract remains valid "+profile);
+            string ranking=run.ranking.configuration_id;run.release_revision="r54";
+            Check(CompetitionProtocol.Validate(run)==""&&run.ranking.configuration_id==ranking,"maintenance r does not split ranking "+profile);
+            var legacy=CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string,object>>(CompetitionProtocol.SerializeRun(run,false));
+            Check(!legacy.ContainsKey("release_revision")&&!legacy.ContainsKey("restart_ms"),"presealed legacy form omits additive metadata "+profile);
+            foreach(string invalid in new[]{"r0","r1234567","r53\n","<r53>"}) {run.release_revision=invalid;Check(CompetitionProtocol.Validate(run)!="","invalid release metadata rejected "+invalid);}
+            await client.CloseAsync();
+        }
+    }
     static void ModelCases()
     {
         var vectorPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"ranking-configuration-vectors.json");
@@ -870,8 +896,16 @@ internal static partial class CompetitionBehavior
     }
     static int Main(string[] args)
     {
+        if (args.Length == 2 && args[1] == "--snapshot-bridge-only") {
+            try {
+                root = args[0]; Directory.CreateDirectory(root);
+                SpeedSnapshotBridgeCases().GetAwaiter().GetResult();
+                Console.WriteLine("PASS bridge total=" + count); return 0;
+            } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        }
         try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CompatibilityCases().GetAwaiter().GetResult(); CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); SdlpalCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
-            if (args.Length == 1) { LocalIdentityCases().GetAwaiter().GetResult(); IdentityProgramCases().GetAwaiter().GetResult(); }
+            if (args.Length == 1) { MaintenanceCases().GetAwaiter().GetResult(); MaintenanceInitializationCases().GetAwaiter().GetResult(); SpeedIndependentClientCases().GetAwaiter().GetResult(); LocalIdentityCases().GetAwaiter().GetResult(); IdentityProgramCases().GetAwaiter().GetResult(); }
+            if (args.Length == 1) SpeedSnapshotBridgeCases().GetAwaiter().GetResult();
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

@@ -11,13 +11,15 @@ namespace Pal98Timer
     {
         public static int InitializeGeshiConfiguration(string snapshotFile, string outputDirectory) =>
             GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory);
+        public static int InitializeSdlpalConfiguration(string snapshotFile, string outputDirectory, string[] checkpointIds) =>
+            GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory, checkpointIds);
         public static IPalTimerOnlineV1 Create(int apiVersion, string timerVersion)
         {
             if (apiVersion != 1) throw new NotSupportedException("Unsupported online host API.");
             return new OnlineModule(timerVersion);
         }
     }
-    internal sealed class OnlineModule : IPalTimerOnlineV1
+    internal sealed class OnlineModule : IPalTimerOnlineV1, IPalTimerOnlineStatusV1
     {
         private readonly CompetitionClient client;
         private CompetitionSettingsForm settingsForm;
@@ -30,6 +32,8 @@ namespace Pal98Timer
         public int ApiVersion => 1;
         public bool Enabled => client.Enabled;
         public string LiveCaption => client.LiveCaption;
+        public string StatusCaption => client.StatusCaption;
+        public string StatusDetail => client.StatusDetail;
         internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) { }
         internal OnlineModule(CompetitionClient client) { this.client = client; }
         public void ObserveTarget(int processId, long epoch)
@@ -62,11 +66,14 @@ namespace Pal98Timer
                 Step = value.Step, FadeMilliseconds = value.Fade, MapSpeedTicks = value.Speed, TotalMilliseconds = value.Total,
                 RestartMilliseconds = restartMilliseconds,
                 LiveTimingValid = ReadLiveTimingValid(value),
+                ReleaseRevision = ReadReleaseRevision(value),
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
                     family = value.Gameplay.Family, fade_ms = value.Gameplay.Fade, map_speed_ticks = value.Gameplay.Speed,
-                    walk_frame_ms = ReadWalkFrame(value) },
+                    walk_frame_ms = ReadWalkFrame(value),
+                    speed = ReadSdlSpeed(value, "sdlpal.speed"),
+                    battle_speed = ReadSdlSpeed(value, "sdlpal.battle_speed") },
                 Ranking = value.Ranking == null ? null : new RankingConfiguration { schema = value.Ranking.Schema,
                     configuration_id = value.Ranking.Id, covered = value.Ranking.Covered,
                     rules = value.Ranking.Rules?.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal) },
@@ -79,16 +86,31 @@ namespace Pal98Timer
         private static bool? ReadLiveTimingValid(OnlineSnapshotV1 value)
         {
             string text;
-            if (value.Gameplay?.Family != "sdlpal-geshi-easy" || !value.Extensions.TryGetValue("sdlpal.live_timing_valid", out text)) return null;
+            if (!GameplayIdentity.IsSdlFamily(value.Gameplay?.Family) || !value.Extensions.TryGetValue("sdlpal.live_timing_valid", out text)) return null;
             if (text == "true") return true;
             if (text == "false") return false;
             throw new ArgumentException("Invalid sdlpal.live_timing_valid extension.");
+        }
+        private static string ReadReleaseRevision(OnlineSnapshotV1 value)
+        {
+            string revision;
+            if (!GameplayIdentity.IsSdlFamily(value.Gameplay?.Family) || !value.Extensions.TryGetValue("sdlpal.release_revision", out revision)) return null;
+            if (!CompetitionProtocol.ReleaseRevision(revision)) throw new ArgumentException("Invalid sdlpal.release_revision extension.");
+            return revision;
         }
         private static int? ReadWalkFrame(OnlineSnapshotV1 value)
         {
             string text; int number;
             return value.Extensions != null && value.Extensions.TryGetValue("sdlpal.walk_frame_ms", out text) &&
                 int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) ? number : (int?)null;
+        }
+        private static int? ReadSdlSpeed(OnlineSnapshotV1 value, string key)
+        {
+            string text; int number;
+            if (!GameplayIdentity.IsSdlFamily(value.Gameplay?.Family) || !value.Extensions.TryGetValue(key, out text)) return null;
+            if (!int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) || number < 0 || number > 100)
+                throw new ArgumentException("Invalid " + key + " extension.");
+            return number;
         }
         public void Invalidate(string token) => client.Invalidate(token);
         public void ShowSettings(IWin32Window owner)

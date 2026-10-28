@@ -21,8 +21,16 @@ namespace Pal98Timer
         public int? Team { get; set; }
         public int? Scene { get; set; }
         public int? Enemy { get; set; }
-        internal bool Matches(SdlpalBattleEvent battle) => Kind == "battle" && battle.result == 3 &&
+        public int[] Scenes { get; set; }
+        public int? X { get; set; } public int? Y { get; set; } public int? Radius { get; set; }
+        public int? Music { get; set; } public int? Item { get; set; }
+        internal bool MatchesState(SdlpalSnapshot s) => s.started &&
+            (Kind == "position" && s.scene == Scene && Math.Abs((long)s.viewportX - X.Value) <= Radius.Value * 16 && Math.Abs((long)s.viewportY - Y.Value) <= Radius.Value * 8 ||
+             Kind == "music" && s.music == Music || Kind == "item" && s.inventory != null && s.inventory.Any(i => i.id == Item && i.amount > 0));
+        internal static SdlpalSplitRule[] Defaults(string profile) => profile == "geshi-easy-v1" ? Defaults() : SdlpalDreamRoutes.ForProfile(profile);
+        internal bool Matches(SdlpalBattleEvent battle) => ((Kind == "battle" || Kind == "completion" && Team.HasValue) && battle.result == 3 || Kind == "battle-end") &&
             (!Team.HasValue || Team == battle.team) && (!Scene.HasValue || Scene == battle.scene) &&
+            (Scenes == null || Scenes.Contains(battle.scene)) &&
             (!Enemy.HasValue || battle.enemies.Contains(Enemy.Value));
         internal static SdlpalSplitRule[] Defaults() => new[] {
             new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
@@ -32,8 +40,13 @@ namespace Pal98Timer
         {
             if (rules == null || rules.Length < 1 || rules.Length > 64 || rules.Any(r => r == null || !CompetitionProtocol.Identifier(r.Id) ||
                 string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.Name.Any(char.IsControl) ||
-                (r.Kind != "battle" && r.Kind != "scene" && r.Kind != "completion") ||
-                r.Kind == "battle" && !r.Team.HasValue && !r.Enemy.HasValue || r.Kind == "scene" && !r.Scene.HasValue ||
+                (r.Kind != "battle" && r.Kind != "battle-end" && r.Kind != "scene" && r.Kind != "completion" && r.Kind != "position" && r.Kind != "music" && r.Kind != "item") ||
+                (r.Kind == "battle" || r.Kind == "battle-end") && !r.Team.HasValue && !r.Enemy.HasValue || r.Kind == "scene" && !r.Scene.HasValue ||
+                r.Scenes != null && (r.Scenes.Length == 0 || r.Scenes.Length > 16 || r.Scenes.Any(v => v < 1 || v >= 300) || r.Scenes.Distinct().Count() != r.Scenes.Length) ||
+                r.Kind == "completion" && (r.Team.HasValue || r.Enemy.HasValue || r.Scene.HasValue) && (!r.Team.HasValue || !r.Enemy.HasValue || !r.Scene.HasValue) ||
+                r.Kind == "position" && (!r.Scene.HasValue || !r.X.HasValue || !r.Y.HasValue || !r.Radius.HasValue || r.Radius < 0 || r.Radius > 100 || r.X < 0 || r.X > 65535 || r.Y < 0 || r.Y > 65535) ||
+                r.Kind == "music" && (!r.Music.HasValue || r.Music < 1 || r.Music > 999) ||
+                r.Kind == "item" && (!r.Item.HasValue || r.Item < 1 || r.Item >= 700) ||
                 r.Team < 0 || r.Team > 65535 || r.Scene < 0 || r.Scene > 65535 || r.Enemy < 0 || r.Enemy > 65535) ||
                 rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != rules.Length ||
                 rules.Count(r => r.Kind == "completion") != 1 || rules[rules.Length - 1].Kind != "completion")
@@ -45,7 +58,9 @@ namespace Pal98Timer
             string text = string.Join("\n", rules.Select(r => GameplayModeReader.Quote(r.Id) + ":" + r.Kind + ":" +
                 (r.Team.HasValue ? r.Team.Value.ToString(CultureInfo.InvariantCulture) : "-") + ":" +
                 (r.Scene.HasValue ? r.Scene.Value.ToString(CultureInfo.InvariantCulture) : "-") + ":" +
-                (r.Enemy.HasValue ? r.Enemy.Value.ToString(CultureInfo.InvariantCulture) : "-")));
+                (r.Enemy.HasValue ? r.Enemy.Value.ToString(CultureInfo.InvariantCulture) : "-") +
+                (r.Kind == "position" ? ":" + r.X + ":" + r.Y + ":" + r.Radius : r.Kind == "music" ? ":" + r.Music : r.Kind == "item" ? ":" + r.Item : "") +
+                (r.Scenes == null ? "" : ":scenes=" + string.Join(",", r.Scenes.OrderBy(v => v)))));
             return CompetitionProtocol.Hash("SDLPAL.GeshiSplits.v1\n" + text + "\n");
         }
     }
@@ -59,14 +74,12 @@ namespace Pal98Timer
         internal string Issue = "";
         internal bool BeganHere, Started, EpochChanged;
         internal bool WuQiangChanged;
+        internal bool BestConfigurationChanged;
         private ulong lastBattle;
         private string initialIdentity;
         private bool initialWuQiang;
-        private SdlpalSnapshot speedBaseline;
-        // The existing online contract compares initial/final facts exactly.
-        // Keep the run's starting speed category, while retaining current engine,
-        // resources and raw speed observations in Snapshot and exported evidence.
-        internal SdlpalSnapshot ConfigurationSnapshot => Snapshot?.WithSpeedConfiguration(speedBaseline ?? Snapshot);
+        private string initialBestConfiguration;
+        internal SdlpalSnapshot ConfigurationSnapshot => Snapshot;
         internal void Observe(SdlpalSnapshot next, SdlpalSplitRule[] rules)
         {
             EpochChanged = Snapshot != null && (Snapshot.Pid != next.Pid || Snapshot.Created != next.Created || Snapshot.epoch != next.epoch);
@@ -75,7 +88,11 @@ namespace Pal98Timer
             if (first || EpochChanged)
             {
                 lastBattle = next.battleEvents.Length == 0 ? (next.battle.active && next.battle.sequence > 0 ? next.battle.sequence - 1 : next.battle.sequence) : next.battleEvents.Last().seq;
-                if (Started) { Issue = "游戏已读档或重启"; Reached.Clear(); }
+                bool ordinaryLoad = Started && Snapshot != null && Snapshot.Pid == next.Pid &&
+                    Snapshot.Created == next.Created && next.loadedFrom > 0 && initialIdentity == next.ResourceEngineIdentity;
+                // Loading an ordinary game save keeps this run's time and reached
+                // checkpoints. Rebase the battle event cursor without replaying it.
+                if (Started) { if (!ordinaryLoad) { Issue = "游戏已重开或切换进程"; Reached.Clear(); } }
                 else if (freshStart) { BeganHere = true; initialIdentity = next.ResourceEngineIdentity; }
                 else if (next.started) { Issue = "中途连接或载入存档"; BeganHere = false; initialIdentity = next.ResourceEngineIdentity; }
             }
@@ -83,11 +100,12 @@ namespace Pal98Timer
             {
                 Started = true;
                 initialWuQiang = next.wuqiang;
-                speedBaseline = next.WithSpeedConfiguration(next);
+                initialBestConfiguration = RankingConfiguration.Digest(next.RankingFacts());
                 if (!first && !EpochChanged && !Snapshot.started) { BeganHere = true; initialIdentity = next.ResourceEngineIdentity; }
             }
             if (Started && initialIdentity != next.ResourceEngineIdentity) Issue = "计时期间资源或引擎配置变化";
             if (Started && initialWuQiang != next.wuqiang) WuQiangChanged = true;
+            if (Started && initialBestConfiguration != RankingConfiguration.Digest(next.RankingFacts())) BestConfigurationChanged = true;
             if (!first && !EpochChanged)
             {
                 var pending = next.battleEvents.Where(e => e.seq > lastBattle).ToArray();
@@ -101,27 +119,33 @@ namespace Pal98Timer
             if (next.started && (Snapshot == null || !Snapshot.started || next.scene != Snapshot.scene))
                 foreach (var rule in rules)
                     if (!Reached.Contains(rule.Id) && rule.Kind == "scene" && next.scene == rule.Scene) { Reached.Add(rule.Id); break; }
+            foreach (var rule in rules) if (rule.MatchesState(next)) Reached.Add(rule.Id);
             foreach (var rule in rules)
                 if (next.started && rule.Kind == "completion" && next.completed) Reached.Add(rule.Id);
             Snapshot = next;
         }
-        internal void MarkImported(SdlpalSnapshot snapshot, bool wuqiangChanged = false)
+        internal void MarkImported(SdlpalSnapshot snapshot, bool wuqiangChanged = false, bool bestConfigurationChanged = false)
         {
             Snapshot = snapshot; Started = snapshot.started; BeganHere = false; EpochChanged = false;
             WuQiangChanged |= wuqiangChanged;
+            BestConfigurationChanged |= bestConfigurationChanged;
             initialWuQiang = snapshot.wuqiang;
-            initialIdentity = snapshot.ResourceEngineIdentity; speedBaseline = snapshot.WithSpeedConfiguration(snapshot);
+            initialBestConfiguration = RankingConfiguration.Digest(snapshot.RankingFacts());
+            initialIdentity = snapshot.ResourceEngineIdentity;
             lastBattle = snapshot.battleEvents.Length == 0 ? 0 : snapshot.battleEvents.Last().seq;
             Reached.Clear(); Issue = "接力或时间线导入";
         }
     }
 
-    [TimerCoreDisplayName("隔世追凶-简单")]
+    [TimerCoreDisplayName("SDLPAL 隔世／梦幻／梦时空（自动识别）")]
     public sealed class SdlpalGeshi : TimerCore
     {
         internal const string Family = "sdlpal-geshi-easy";
         internal const string GameplayName = "隔世追凶-简单";
-        private const string RulesFile = "sdlpal_geshi_splits.json", OverlayLayout = "sdlpal_geshi_overlay_layout";
+        private string activeProfile = "geshi-easy-v1";
+        internal string ActiveProfile => activeProfile;
+        private string RulesFile => activeProfile == "geshi-easy-v1" ? "sdlpal_geshi_splits.json" : "sdlpal_" + activeProfile + "_splits.json";
+        private string OverlayLayout => activeProfile == "geshi-easy-v1" ? "sdlpal_geshi_overlay_layout" : "sdlpal_" + activeProfile + "_overlay_layout";
         private readonly object gate = new object();
         private SdlpalBridge bridge;
         private SdlpalRunObserver observer = new SdlpalRunObserver();
@@ -129,7 +153,7 @@ namespace Pal98Timer
         private readonly PTimer battleTimer = new PTimer(), idleTimer = new PTimer();
         private ulong battleSequence;
         private ulong nextDiscovery;
-        private string status = "等待隔世追凶-简单", warning = "";
+        private string status = "等待受支持的 SDLPAL 游戏", warning = "";
         private bool busyRelay, unloaded;
         private long relayRun;
         private SdlpalBridge relayBridge;
@@ -161,11 +185,14 @@ namespace Pal98Timer
         internal SdlpalItemSettings ItemSettings { get { lock (gate) return itemSettings.Copy(); } }
         internal SdlpalItemView ItemView { get { lock (gate) return items.View; } }
         internal void ApplyItemSettings(SdlpalItemSettings value)
+        { ApplyProfileItemSettings(value, null); }
+        internal void ApplyProfileItemSettings(SdlpalItemSettings value, string profile)
         {
             lock (gate)
             {
                 if (unloaded) throw new InvalidOperationException("核心已切换，请重新打开物品配置");
-                value = value.Copy(); value.Save(); itemSettings = value; PublishItemPlugins();
+                if (profile != null && profile != activeProfile) throw new InvalidOperationException("游戏内容已切换，请重新打开物品配置");
+                value = value.Copy(); value.Save(activeProfile); itemSettings = value; PublishItemPlugins();
             }
         }
         internal void RebaseItems()
@@ -180,18 +207,22 @@ namespace Pal98Timer
         private void PublishItemPlugins() => SendPluginsEvent(SdlpalItemPlugin.EventName, new SdlpalItemPluginText(items.View, itemSettings, T));
         private void ShowItems()
         {
+            lock (gate) {
             if (itemsForm == null || itemsForm.IsDisposed)
             {
-                itemsForm = new SdlpalItemsForm(() => ItemView, () => ItemSettings, ApplyItemSettings, RebaseItems, T);
+                string profile = activeProfile;
+                itemsForm = new SdlpalItemsForm(() => ItemView, () => ItemSettings, value => ApplyProfileItemSettings(value, profile),
+                    () => { lock (gate) { if (activeProfile == profile && !unloaded) RebaseItems(); } }, T);
                 itemsForm.Show(form);
             }
             else { itemsForm.Show(); itemsForm.Activate(); }
+            }
         }
         internal override Process CompetitionGameProcess => bridge?.Process;
         internal override bool CompetitionPublicationAllowed => observer.Snapshot != null && !observer.Snapshot.diagnostic;
         internal SdlpalSnapshot CurrentSnapshot => observer.Snapshot;
         private string RouteIdentity => SdlpalSplitRule.Identity(rules);
-        private string BestCategory => observer.Snapshot == null ? "unbound" : CompetitionProtocol.Hash(observer.ConfigurationSnapshot.IdentityKey).Substring(0, 16);
+        private string BestCategory => observer.Snapshot == null ? "unbound" : RankingConfiguration.Digest(observer.Snapshot.RankingFacts()).Substring(0, 16);
         public override string ActiveBestPath => TimerUserSettings.BestPath("best" + CoreName + "-" + BestCategory + "-" + RouteIdentity.Substring(0, 16) + ".txt");
         // This edition always displays simplified names, including legacy Big5
         // snapshots and traditional Windows locales. Other cores keep their choice.
@@ -201,9 +232,10 @@ namespace Pal98Timer
         {
             lock (gate)
             {
+                rules = SdlpalSplitRule.Defaults(activeProfile);
                 string path = TimerUserSettings.GetPath(RulesFile);
                 try { if (File.Exists(path)) { var parsed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(File.ReadAllText(path)); SdlpalSplitRule.Validate(parsed); rules = parsed; } }
-                catch (Exception ex) { warning = "节点配置无效，保留默认节点：" + ex.Message; rules = SdlpalSplitRule.Defaults(); }
+                catch (Exception ex) { warning = "节点配置无效，保留默认节点：" + ex.Message; rules = SdlpalSplitRule.Defaults(activeProfile); }
                 LoadBest(); _CurrentStep = -1; CheckPoints = new List<CheckPoint>();
                 foreach (var rule in rules)
                 {
@@ -240,12 +272,14 @@ namespace Pal98Timer
         {
             if (observer.WuQiangChanged)
                 throw new InvalidOperationException("本跑次曾切换吴强无墙模式；请重置后再保存该模式最佳线。时间线仍可导出留作参考。");
+            if (observer.BestConfigurationChanged)
+                throw new InvalidOperationException("本跑次曾切换资源或玩法配置；请重置后再保存该配置最佳线。时间线仍可导出留作参考。");
         }
-        protected override void FillReferenceIdentity(HObj data) { data["SdlpalRoute"] = RouteIdentity; data["SdlpalProfile"] = "geshi-easy-v1"; data["SdlpalCategory"] = BestCategory; }
+        protected override void FillReferenceIdentity(HObj data) { data["SdlpalRoute"] = RouteIdentity; data["SdlpalProfile"] = activeProfile; data["SdlpalCategory"] = BestCategory; }
         protected override void ValidateBestReference(HObj data)
         {
-            if (data.GetValue<string>("SdlpalRoute") != RouteIdentity || data.GetValue<string>("SdlpalProfile") != "geshi-easy-v1" || data.GetValue<string>("SdlpalCategory") != BestCategory)
-                throw new InvalidDataException("最佳时间线不属于当前隔世追凶节点规则");
+            if (data.GetValue<string>("SdlpalRoute") != RouteIdentity || data.GetValue<string>("SdlpalProfile") != activeProfile || data.GetValue<string>("SdlpalCategory") != BestCategory)
+                throw new InvalidDataException("最佳时间线不属于当前内容节点规则");
         }
         protected override void FillMoreTimerData(HObj data)
         {
@@ -254,9 +288,10 @@ namespace Pal98Timer
             if (observer.Snapshot != null)
             {
                 var s = observer.Snapshot;
-                data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
+                data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.monsterRush, s.invisibleMonsters, s.respawnRule, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
             }
             data["SdlpalWuQiangChanged"] = observer.WuQiangChanged;
+            data["SdlpalBestConfigurationChanged"] = observer.BestConfigurationChanged;
             data["SdlpalIssue"] = GetScoreValidationError();
             data["SdlpalStatuses"] = new HObj(CheckPoints.Select(p => (object)p.Status.ToString()).ToArray());
             data["SdlpalIdle"] = idleTimer.ToFullString();
@@ -264,7 +299,7 @@ namespace Pal98Timer
         public override string GetScoreValidationError()
         {
             var s = observer.Snapshot;
-            if (s == null) return "尚未连接已验证的隔世追凶资源";
+            if (s == null) return "尚未连接已验证的 SDLPAL 资源";
             if (s.diagnostic) return "诊断模式禁止榜单和成绩上传";
             if (!freshSnapshot) return "游戏快照暂不可用";
             if (s.fadeCycleMs <= 0 || s.walkFrameMs <= 0) return "运行时尚未发布有效速度配置";
@@ -284,12 +319,14 @@ namespace Pal98Timer
             var facts = s.RankingFacts();
             string digest = RankingConfiguration.Digest(facts);
             observation.Gameplay = new GameplayIdentity { content_id = s.profile, content_sha256 = facts["content"], rules_sha256 = digest,
-                family = Family, fade_ms = s.fadeCycleMs, map_speed_ticks = 0, walk_frame_ms = s.walkFrameMs };
+                family = SdlpalBridge.ProfileFamily(s.profile), fade_ms = s.fadeCycleMs, map_speed_ticks = 0, walk_frame_ms = s.walkFrameMs,
+                speed = s.speed, battle_speed = s.battleSpeed };
             observation.Ranking = new RankingConfiguration { configuration_id = digest, covered = true, rules = facts };
             observation.Hardcore = new CompetitionHardcore();
             observation.TimelineId = TimelineIdentity.Create(digest, CompetitionProtocol.RouteHash(CheckPoints.Select(p => p.Name)), false);
             observation.ValidationError = GetScoreValidationError();
             var current = observer.Snapshot;
+            observation.ReleaseRevision = current.releaseRevision;
             observation.LiveTimingValid = freshSnapshot && !current.diagnostic && current.fadeCycleMs > 0 && current.walkFrameMs > 0;
         }
         protected override void OnTick()
@@ -308,6 +345,39 @@ namespace Pal98Timer
                     if (observer.Started) idleTimer.Start();
                     if (bridge != null && (bridge.Process == null || bridge.Process.HasExited)) { bridge.Dispose(); bridge = null; }
                     return;
+                }
+                if (snapshot.profile != activeProfile)
+                {
+                    // Save the old run before changing any route or clock state.
+                    if (observer.Started)
+                        TimerUserSettings.WriteText("sdlpal-previous-" + activeProfile + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff") + ".json", GetRStr(), new UTF8Encoding(false));
+                    activeProfile = snapshot.profile;
+                    Reset(); InitCheckPoints();
+                    try { itemSettings = SdlpalItemSettings.Load(activeProfile); }
+                    catch (Exception ex) { itemSettings = new SdlpalItemSettings(); warning = "当前内容物品配置无效：" + ex.Message; }
+                    var oldOverlay = overlay; overlay = null;
+                    var oldItems = itemsForm; itemsForm = null;
+                    string selectedProfile = activeProfile;
+                    if (form != null && form.IsHandleCreated) form.BeginInvoke(new Action(() => {
+                        oldOverlay?.Close(); oldItems?.Close();
+                        lock (gate) {
+                            if (unloaded || activeProfile != selectedProfile) return;
+                            var renderer = form.rr;
+                            if (renderer == null) return;
+                            renderer.ClearAllItem();
+                            // A tick may already have advanced the new route before
+                            // this UI callback runs. Rebind its values and state,
+                            // including when the old and new indices are identical.
+                            renderer.ItemIdx = -1;
+                            foreach (var point in CheckPoints) {
+                                var item = renderer.AddItem(point.GetNickName(), point.Best);
+                                point.SetUIItem(item);
+                                item.Cur = point.Current;
+                                item.Status = point.Status;
+                            }
+                            renderer.ItemIdx = CurrentStep;
+                        }
+                    }));
                 }
                 freshSnapshot = true;
                 observer.Observe(snapshot, rules);
@@ -372,7 +442,9 @@ namespace Pal98Timer
         public override string GetSecondWatch() => idleTimer.ToFullString();
         internal string GameplayDisplayName
         {
-            get { lock (gate) return GameplayName + (freshSnapshot && observer.Snapshot?.wuqiang == true ? "（吴强）" : ""); }
+            get { lock (gate) return SdlpalBridge.ProfileName(activeProfile) + (freshSnapshot && observer.Snapshot?.wuqiang == true ? "（吴强）" : "") +
+                (freshSnapshot && observer.Snapshot?.monsterRush == true ? "（突脸）" : "") +
+                (freshSnapshot && observer.Snapshot?.invisibleMonsters == true ? "（隐形）" : ""); }
         }
         internal string ReleaseSuffix
         {
@@ -402,9 +474,12 @@ namespace Pal98Timer
                 if (bridge == null || !bridge.TryRead(out snapshot))
                     throw new InvalidOperationException("请先启动隔世追凶游戏");
                 // gamePath is the resource directory (usually ./PAL), not the executable directory.
-                string directory = Path.GetDirectoryName(bridge.Process.MainModule.FileName);
-                return new ProcessStartInfo(Path.Combine(directory, "LostEditKeyConfig.exe"))
-                    { WorkingDirectory = directory, UseShellExecute = true };
+                string executable = bridge.Process.MainModule.FileName;
+                string directory = Path.GetDirectoryName(executable);
+                return new ProcessStartInfo(Pal98.Maintenance.MaintenanceExecutable.FindConfiguration(directory))
+                    { WorkingDirectory = directory, UseShellExecute = false,
+                      Arguments = "--game-dir " + Pal98.Maintenance.MaintenanceExecutable.Quote(directory) +
+                          " --game-exe " + Pal98.Maintenance.MaintenanceExecutable.Quote(executable) };
             }
         }
         internal void OpenKeyConfig()
@@ -412,7 +487,6 @@ namespace Pal98Timer
             try
             {
                 var start = CreateKeyConfigStartInfo();
-                if (!File.Exists(start.FileName)) throw new FileNotFoundException("游戏目录缺少 LostEditKeyConfig.exe");
                 Process.Start(start);
             }
             catch (Exception ex) { form.Error(ex.Message); }
@@ -521,24 +595,29 @@ namespace Pal98Timer
             internal TimeSpan[] Times;
             internal CheckPointStatus[] Statuses;
             internal bool WuQiangChanged;
+            internal bool BestConfigurationChanged;
         }
         private ImportedTimer ValidateImport(string json, string identity)
         {
             if (json == null || json.Length > 262144) throw new InvalidDataException("时间线容量无效");
             var data = new HObj(json);
-            if (data.GetValue<string>("SdlpalRoute") != RouteIdentity || data.GetValue<string>("SdlpalProfile") != "geshi-easy-v1")
-                throw new InvalidDataException("时间线不属于当前隔世追凶节点规则");
-            // PB categories include the starting speed; a relay may legitimately
-            // arrive at another speed, but never another engine/resource/route.
+            if (data.GetValue<string>("SdlpalRoute") != RouteIdentity || data.GetValue<string>("SdlpalProfile") != activeProfile)
+                throw new InvalidDataException("时间线不属于当前内容节点规则");
+            // Speed changes share a PB category and may also occur in a relay;
+            // engine/resource/route identities still have to match.
             if (data.GetValue<string>("TimerCore") != CoreName || !SdlpalSnapshot.SameResourceEngineIdentity(data.GetValue<string>("SdlpalIdentity"), identity))
                 throw new InvalidDataException("时间线资源或引擎身份不匹配");
             object changed;
             bool hasChanged = data.ToDic().TryGetValue("SdlpalWuQiangChanged", out changed);
             if (hasChanged && !(changed is bool)) throw new InvalidDataException("时间线无墙模式变更记录无效");
+            object configurationChanged;
+            bool hasConfigurationChanged = data.ToDic().TryGetValue("SdlpalBestConfigurationChanged", out configurationChanged);
+            if (hasConfigurationChanged && !(configurationChanged is bool)) throw new InvalidDataException("时间线配置变更记录无效");
             var points = data.GetValue<HObj>("CheckPoints")?.ToList(); var states = data.GetValue<HObj>("SdlpalStatuses")?.ToList();
             var result = new ImportedTimer { Current = ParseTime(data.GetValue<string>("Current")), Idle = ParseTime(data.GetValue<string>("SdlpalIdle")),
                 Step = data.GetValue<int>("Step"), Times = new TimeSpan[rules.Length], Statuses = new CheckPointStatus[rules.Length],
-                WuQiangChanged = hasChanged && (bool)changed };
+                WuQiangChanged = hasChanged && (bool)changed,
+                BestConfigurationChanged = hasConfigurationChanged && (bool)configurationChanged };
             if (points == null || states == null || points.Count != rules.Length || states.Count != rules.Length || result.Step < -1 || result.Step > rules.Length) throw new InvalidDataException("时间线节点数量或进度无效");
             TimeSpan last = TimeSpan.Zero;
             for (int i = 0; i < rules.Length; i++)
@@ -566,7 +645,7 @@ namespace Pal98Timer
             lock (gate)
             {
                 MT.Stop(); MT.SetTS(timer.Current); idleTimer.Stop(); idleTimer.SetTS(timer.Idle); battleTimer.Reset();
-                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot, timer.WuQiangChanged); freshSnapshot = true;
+                AdvanceScoreRunSequence(imported: true); observer.MarkImported(snapshot, timer.WuQiangChanged, timer.BestConfigurationChanged); freshSnapshot = true;
                 // Jump derives the interval and prediction from checkpoint times.
                 for (int i = 0; i < rules.Length; i++) CheckPoints[i].SetCurrentTSForLoad(timer.Times[i]);
                 Jump(timer.Step);
@@ -672,13 +751,23 @@ namespace Pal98Timer
         { try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
         private void EditRules()
         {
-            using (var dialog = new SdlpalRulesForm(rules, observer.Snapshot))
+            string profile; SdlpalSplitRule[] initialRules; SdlpalSnapshot snapshot;
+            lock (gate) { profile = activeProfile; initialRules = rules; snapshot = observer.Snapshot; }
+            using (var dialog = new SdlpalRulesForm(initialRules, snapshot))
                 if (dialog.ShowDialog(form) == DialogResult.OK && form.Confirm("保存新节点并重置计时器？"))
                 {
-                    string json = SdlpalBridge.Json().Serialize(dialog.Rules); string path = TimerUserSettings.GetPath(RulesFile);
-                    if (File.Exists(path)) File.Copy(path, path + ".backup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff"));
-                    TimerUserSettings.WriteText(RulesFile, json, new UTF8Encoding(false)); form._ResetAll();
+                    try { lock (gate) { SaveProfileRules(dialog.Rules, profile); form._ResetAll(); } }
+                    catch (Exception ex) { form.Error(ex.Message); }
                 }
+        }
+        internal void SaveProfileRules(SdlpalSplitRule[] value, string profile)
+        {
+            lock (gate) {
+                if (unloaded || profile != activeProfile) throw new InvalidOperationException("游戏内容已切换，请重新打开节点编辑器；旧节点未保存。");
+                string json = SdlpalBridge.Json().Serialize(value); string path = TimerUserSettings.GetPath(RulesFile);
+                if (File.Exists(path)) File.Copy(path, path + ".backup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff"));
+                TimerUserSettings.WriteText(RulesFile, json, new UTF8Encoding(false));
+            }
         }
     }
 
@@ -688,14 +777,14 @@ namespace Pal98Timer
         private readonly DataGridView grid = new DataGridView { Dock = DockStyle.Fill, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, AllowUserToAddRows = true, AllowUserToDeleteRows = true };
         internal SdlpalRulesForm(SdlpalSplitRule[] rules, SdlpalSnapshot snapshot)
         {
-            Text = "隔世追凶自动节点（按表格顺序）"; Font = new Font("Microsoft YaHei UI", 9F);
+            Text = "SDLPAL 自动节点（当前内容，按表格顺序）"; Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi; Width = 1040; Height = 560; MinimumSize = new Size(850, 420); StartPosition = FormStartPosition.CenterParent;
-            var help = new Label { Text = "battle 仅匹配胜利；scene 使用实际场景 ID；最后一行必须是 completion。可从当前/最近战斗捕获，再调整顺序。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
-            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID" };
+            var help = new Label { Text = "battle 匹配胜利；position 使用场景与坐标范围；music/item 匹配当前音乐/持有物品；最后为 completion。每种内容独立保存。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
+            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合" };
             for (int i = 0; i < names.Length; i++) grid.Columns.Add(names[i], captions[i]);
             grid.Columns[0].FillWeight = 190; grid.Columns[1].FillWeight = 120; grid.RowTemplate.Height = 28;
             foreach (DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
-            foreach (var rule in rules) grid.Rows.Add(rule.Id, rule.Name, rule.Kind, rule.Team, rule.Scene, rule.Enemy);
+            foreach (var rule in rules) grid.Rows.Add(rule.Id, rule.Name, rule.Kind, rule.Team, rule.Scene, rule.Enemy, rule.X, rule.Y, rule.Radius, rule.Music, rule.Item, rule.Scenes == null ? "" : string.Join(",", rule.Scenes));
             var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45, Padding = new Padding(5) };
             var capture = new Button { Text = "捕获战斗", AutoSize = true };
             capture.Click += (s, e) => {
@@ -720,13 +809,14 @@ namespace Pal98Timer
                     grid.EndEdit(); var result = new List<SdlpalSplitRule>();
                     foreach (DataGridViewRow row in grid.Rows) if (!row.IsNewRow)
                         result.Add(new SdlpalSplitRule { Id = Convert.ToString(row.Cells[0].Value).Trim(), Name = Convert.ToString(row.Cells[1].Value).Trim(), Kind = Convert.ToString(row.Cells[2].Value).Trim(),
-                            Team = Number(row.Cells[3].Value), Scene = Number(row.Cells[4].Value), Enemy = Number(row.Cells[5].Value) });
+                            Team = Number(row.Cells[3].Value), Scene = Number(row.Cells[4].Value), Enemy = Number(row.Cells[5].Value), X = Number(row.Cells[6].Value), Y = Number(row.Cells[7].Value), Radius = Number(row.Cells[8].Value), Music = Number(row.Cells[9].Value), Item = Number(row.Cells[10].Value), Scenes = Numbers(row.Cells[11].Value) });
                     Rules = result.ToArray(); SdlpalSplitRule.Validate(Rules); DialogResult = DialogResult.OK;
                 }
                 catch (Exception ex) { MessageBox.Show(this, ex.Message, "节点无效", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             };
             Controls.Add(grid); Controls.Add(help); Controls.Add(bar);
         }
+        private static int[] Numbers(object value) { string text = Convert.ToString(value).Trim(); return text.Length == 0 ? null : text.Split(',').Select(v => int.Parse(v.Trim(), CultureInfo.InvariantCulture)).ToArray(); }
         private static int? Number(object value) { string text = Convert.ToString(value).Trim(); return text.Length == 0 ? (int?)null : int.Parse(text, CultureInfo.InvariantCulture); }
     }
 }

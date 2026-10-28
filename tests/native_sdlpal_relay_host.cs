@@ -122,7 +122,7 @@ internal static partial class NativeSdlpalRelayHost
             SynchronizationContext.SetSynchronizationContext(null);
             ((Task)Call(Core, "RunRelay", operation)).GetAwaiter().GetResult();
         }
-        internal string Slot250 => Path.Combine(DirectoryPath, "save", "250.rpg");
+        internal string Slot250 => Path.Combine((string)ReadNative(Process)["savePath"], "250.rpg");
         public void Dispose()
         {
             Core?.Unload();

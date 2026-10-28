@@ -56,6 +56,9 @@ namespace Pal98Timer
         public bool verified { get; set; }
         public bool diagnostic { get; set; }
         public bool wuqiang { get; set; }
+        public bool monsterRush { get; set; }
+        public bool invisibleMonsters { get; set; }
+        public string respawnRule { get; set; }
         public string releaseRevision { get; set; }
         public string resourceHash { get; set; }
         public Dictionary<string, string> resourceHashes { get; set; }
@@ -63,6 +66,7 @@ namespace Pal98Timer
         public string exeHash { get; set; }
         public string gamePath { get; set; }
         public string savePath { get; set; }
+        public string saveLayout { get; set; }
         public bool started { get; set; }
         public bool focused { get; set; }
         public bool busy { get; set; }
@@ -77,6 +81,7 @@ namespace Pal98Timer
         public int fadeCycleMs { get; set; }
         public int scene { get; set; }
         public int map { get; set; }
+        public int viewportX { get; set; } public int viewportY { get; set; } public int music { get; set; }
         public long cash { get; set; }
         public SdlpalBattle battle { get; set; }
         public SdlpalBattleEvent[] battleEvents { get; set; }
@@ -91,24 +96,35 @@ namespace Pal98Timer
         // Online categories describe gameplay, not the executable or its UI.
         // IdentityKey retains the historical serialized/PB format. Speed is a
         // normal Geshi control, so runtime/relay checks use ResourceEngineIdentity.
-        internal Dictionary<string, string> RankingFacts()
+        internal Dictionary<string, string> RankingFacts(bool includeHistoricalSpeed = false)
         {
             var facts = new Dictionary<string, string>(StringComparer.Ordinal) {
-                ["family"] = "sdlpal-geshi-easy", ["profile"] = profile,
-                ["content"] = CompetitionProtocol.Hash(string.Join("\n", resourceHashes.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value))),
-                ["fade_ms"] = fadeCycleMs.ToString(System.Globalization.CultureInfo.InvariantCulture), ["map_speed_ticks"] = "0",
-                ["walk_frame_ms"] = walkFrameMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["battle_speed"] = battleSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                ["family"] = SdlpalBridge.ProfileFamily(profile), ["profile"] = profile,
+                ["content"] = CompetitionProtocol.Hash(string.Join("\n", resourceHashes.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value)))
             };
+            // Historical initialization retries must retain their signed bytes.
+            // New maintenance categories depend on resources and gameplay effects.
+            if (includeHistoricalSpeed)
+            {
+                facts["fade_ms"] = fadeCycleMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                facts["map_speed_ticks"] = "0";
+                facts["walk_frame_ms"] = walkFrameMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                facts["speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                facts["battle_speed"] = battleSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
             foreach (var pair in resourceHashes) facts["resource." + pair.Key] = pair.Value;
             // Preserve ordinary categories and historical records byte-for-byte.
             if (wuqiang) facts["wuqiang"] = "1";
+            if (!string.IsNullOrEmpty(respawnRule)) facts["respawn_rule"] = respawnRule;
+            if (monsterRush) facts["monster_rush"] = "1";
+            if (invisibleMonsters) facts["invisible_monsters"] = "1";
             return facts;
         }
         internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
-            (wuqiang ? "|wuqiang=1" : "");
+            (wuqiang ? "|wuqiang=1" : "") +
+            (!string.IsNullOrEmpty(respawnRule) ? "|respawn_rule=" + respawnRule : "") +
+            (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "");
         internal string IdentityKey => ResourceEngineIdentity + "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
         internal SdlpalSnapshot WithSpeedConfiguration(SdlpalSnapshot source)
         {
@@ -142,6 +158,9 @@ namespace Pal98Timer
     // identify its actual live owner; callers cannot use a PID from its JSON.
     internal sealed class SdlpalBridge : IDisposable
     {
+        internal static bool SupportedProfile(string value) => value == "geshi-easy-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1";
+        internal static string ProfileFamily(string value) => value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
+        internal static string ProfileName(string value) => value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
         internal const int Capacity = 4194304, HeaderSize = 64;
         internal const string Prefix = "Local\\SDLPAL.LostEdit.v1.";
         private readonly object gate = new object();
@@ -200,8 +219,22 @@ namespace Pal98Timer
                 releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
                 validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
+            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "respawnRule" })
+            {
+                object field;
+                bool present = fields.TryGetValue(key, out field);
+                if (present && (key == "respawnRule" ? field != null && !(field is string) : !(field is bool)))
+                    throw new InvalidDataException("怪物模式字段无效");
+                object nestedField;
+                if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> modeIdentity &&
+                    modeIdentity.TryGetValue(key, out nestedField) && (!present || !Equals(nestedField, field)))
+                    throw new InvalidDataException("怪物模式身份与状态不一致");
+            }
+            if (!string.IsNullOrEmpty(value.respawnRule) && value.respawnRule != "pal98-current-scene-v1" ||
+                (value.monsterRush || value.invisibleMonsters) && value.respawnRule != "pal98-current-scene-v1")
+                throw new InvalidDataException("未知怪物刷新规则");
             value.releaseRevision = validLabel ? label : null;
-            if (value.schema != 1 || value.profile != "geshi-easy-v1" || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
+            if (value.schema != 1 || !SupportedProfile(value.profile) || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||
                 value.resourceHashes["SSS.MKF"] != value.resourceHash || string.IsNullOrWhiteSpace(value.build) || value.build.Length > 128 ||
                 value.build.Any(char.IsControl) || !AbsolutePath(value.gamePath) || !AbsolutePath(value.savePath) ||

@@ -37,7 +37,7 @@ namespace Pal98Timer
     }
     internal sealed class CompetitionObservation
     {
-        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId, GameTitle;
+        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId, GameTitle, ReleaseRevision;
         internal GameplayIdentity Gameplay;
         internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;

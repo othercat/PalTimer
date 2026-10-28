@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using Pal98Timer;
+using Pal98.Maintenance;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -49,19 +50,33 @@ internal static class SdlpalBehavior
         Check(original==category(changed),"online configuration survives engine update and installation paths");
         foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.fadeCycleMs++,s=>s.walkFrameMs++,s=>s.speed++,s=>s.battleSpeed++})
         {
-            changed=Clone(initial);edit(changed);Check(original!=category(changed),"raw snapshot retains actual speed facts");
+            changed=Clone(initial);edit(changed);Check(original==category(changed),"all starting and in-run speeds share the content configuration");
             Check(initial.IdentityKey!=changed.IdentityKey&&initial.ResourceEngineIdentity==changed.ResourceEngineIdentity&&
                 SdlpalSnapshot.SameResourceEngineIdentity(initial.IdentityKey,changed.IdentityKey),"legacy serialized identity accepts only speed differences for relay");
         }
         foreach(string name in initial.resourceHashes.Keys)
         {changed=Clone(initial);changed.resourceHashes[name]=new string('e',64);Check(original!=category(changed),"gameplay resource change partitions configuration: "+name);}
         var facts=initial.RankingFacts();
-        Check(facts.Count==12&&!facts.ContainsKey("engine_sha256")&&!facts.ContainsKey("engine_build")&&!facts.ContainsKey("route_rules_sha256")&&!facts.ContainsKey("timer_exe_sha256"),
-            "only content and speed enter ranking facts; signatures and node routes remain independent");
-        var game=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=initial.profile,content_sha256=facts["content"],rules_sha256=original,fade_ms=800,map_speed_ticks=0,walk_frame_ms=90};
+        foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.monsterRush=true,s=>s.invisibleMonsters=true})
+        {
+            changed=Clone(initial);changed.respawnRule="pal98-current-scene-v1";edit(changed);
+            Check(original!=category(changed),"monster mode partitions the original ranking category");
+            Check(!SdlpalSnapshot.SameResourceEngineIdentity(initial.IdentityKey,changed.IdentityKey),"relay refuses a different monster rule or mode");
+            var modeFacts=changed.RankingFacts();
+            var modeGame=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=changed.profile,content_sha256=modeFacts["content"],
+                rules_sha256=category(changed),fade_ms=changed.fadeCycleMs,map_speed_ticks=0,walk_frame_ms=changed.walkFrameMs,speed=changed.speed,battle_speed=changed.battleSpeed};
+            Check(new RankingConfiguration {covered=true,rules=modeFacts,configuration_id=category(changed)}.Valid(modeGame),"known monster mode has valid isolated ranking facts");
+            modeFacts["respawn_rule"]="unknown";
+            Check(!new RankingConfiguration {covered=true,rules=modeFacts,configuration_id=RankingConfiguration.Digest(modeFacts)}.Valid(modeGame),"unknown respawn rule is rejected");
+        }
+        Check(facts.Count==7&&!facts.ContainsKey("engine_sha256")&&!facts.ContainsKey("fade_ms")&&!facts.ContainsKey("route_rules_sha256")&&!facts.ContainsKey("timer_exe_sha256"),
+            "only content enters base ranking facts; speed, signatures and node routes remain independent");
+        var game=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=initial.profile,content_sha256=facts["content"],rules_sha256=original,fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0};
         Func<bool> valid=()=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(game);
-        Check(valid(),"content-speed ranking validates");
+        Check(valid(),"content ranking validates");
         facts["WindowWidth"]="1920";Check(!valid(),"display setting cannot leak into accepted ranking facts");facts.Remove("WindowWidth");
+        facts=initial.RankingFacts(true);
+        Check(valid(),"historical speed configuration remains valid");
         facts["engine_sha256"]=initial.exeHash;Check(!valid(),"partial legacy identity is rejected");
         facts["engine_build"]=initial.build;facts["route_rules_sha256"]=new string('e',64);
         Check(valid(),"complete old configuration remains readable without rewriting its digest");
@@ -69,6 +84,22 @@ internal static class SdlpalBehavior
     }
     static void DecodeTests(string[] paths)
     {
+        Func<Dictionary<string,object>,SdlpalSnapshot> decodeMode=fields=>{
+            byte[] bytes=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            return SdlpalBridge.Decode(Header(Snapshot(),bytes.Length),bytes,777,123,10000);
+        };
+        foreach(string key in new[]{"monsterRush","invisibleMonsters"})
+        {
+            var mode=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(Snapshot()));
+            mode["respawnRule"]="pal98-current-scene-v1";mode[key]=true;
+            var identity=new Dictionary<string,object>{{key,true},{"respawnRule","pal98-current-scene-v1"}};mode["identity"]=identity;
+            Check(decodeMode(mode).respawnRule=="pal98-current-scene-v1","matching nested monster identity accepted: "+key);
+            identity[key]=false;Reject(()=>decodeMode(mode),"conflicting nested monster identity rejected: "+key);
+            identity[key]=true;mode.Remove(key);Reject(()=>decodeMode(mode),"nested-only mode cannot invent runtime state: "+key);
+            mode[key]="true";Reject(()=>decodeMode(mode),"monster mode does not coerce text into a boolean: "+key);
+            mode[key]=true;identity["respawnRule"]="unknown";
+            Reject(()=>decodeMode(mode),"nested respawn rule disagreement rejected: "+key);
+        }
         var state=Snapshot(); byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state)); var header=Header(state,json.Length);
         Check(SdlpalBridge.Decode(header,json,777,123,10000).profile=="geshi-easy-v1","valid versioned snapshot");
         Reject(()=>SdlpalBridge.Decode(header,json,778,123,10000),"foreign PID rejected");
@@ -104,7 +135,7 @@ internal static class SdlpalBehavior
         var normal=Snapshot();var enabled=Clone(normal);enabled.wuqiang=true;
         string legacy=normal.profile+"|"+normal.exeHash+"|"+normal.build+"|"+
             string.Join("|",normal.resourceHashes.OrderBy(p=>p.Key,StringComparer.Ordinal).Select(p=>p.Key+"="+p.Value));
-        Check(normal.ResourceEngineIdentity==legacy&&normal.RankingFacts().Count==12,
+        Check(normal.ResourceEngineIdentity==legacy&&normal.RankingFacts().Count==7,
             "ordinary identity and twelve ranking facts preserve historical categories");
         Check(enabled.ResourceEngineIdentity==legacy+"|wuqiang=1"&&enabled.RankingFacts()["wuqiang"]=="1"&&
             RankingConfiguration.Digest(enabled.RankingFacts())!=RankingConfiguration.Digest(normal.RankingFacts()),
@@ -113,7 +144,7 @@ internal static class SdlpalBehavior
         {
             var facts=state.RankingFacts();var game=new GameplayIdentity {family="sdlpal-geshi-easy",content_id=state.profile,
                 content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=state.fadeCycleMs,
-                map_speed_ticks=0,walk_frame_ms=state.walkFrameMs};
+                map_speed_ticks=0,walk_frame_ms=state.walkFrameMs,speed=state.speed,battle_speed=state.battleSpeed};
             Func<bool> valid=()=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(game);
             Check(valid(),"ordinary/WuQiang ranking facts validate: "+state.wuqiang);
             foreach(string invalid in new[]{"0","true","false","01","2","",null})
@@ -384,6 +415,18 @@ internal static class SdlpalBehavior
         state.completed=true;run.Observe(Clone(state),rules);Check(run.Reached.Contains(rules[1].Id),"real completed latch advances ending");
         state.epoch=2;state.completed=false;state.battleEvents=new SdlpalBattleEvent[0];run.Observe(Clone(state),rules);
         Check(run.EpochChanged&&!run.Reached.Any()&&run.Issue!="","load epoch clears pending victories and marks run");
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach(int slot in new[]{1,5,100})
+        {
+            var loading=new SdlpalRunObserver();var before=Snapshot();before.profile=profile;
+            loading.Observe(Clone(before),rules);before.started=true;loading.Observe(Clone(before),rules);
+            before.battleEvents=new[]{Victory(1)};loading.Observe(Clone(before),rules);
+            var reached=loading.Reached.ToArray();
+            before.epoch++;before.loadedFrom=slot;before.battleEvents=new SdlpalBattleEvent[0];loading.Observe(Clone(before),rules);
+            Check(loading.BeganHere&&loading.Issue==""&&loading.Reached.SetEquals(reached),"ordinary and quick load preserve run origin and observed checkpoints: "+profile+" / "+slot);
+            before.battleEvents=new[]{Victory(1)};loading.Observe(Clone(before),rules);
+            Check(loading.Issue==""&&loading.Reached.SetEquals(reached),"rebased battle sequence neither duplicates a checkpoint nor creates a gap after load");
+        }
         run=new SdlpalRunObserver();state=Snapshot();state.started=true;state.battleEvents=new[]{Victory(1)};run.Observe(Clone(state),rules);
         Check(!run.BeganHere&&!run.Reached.Contains(rules[0].Id),"late attach cannot consume historical victory");
         state.battleEvents=new[]{Victory(3)};run.Observe(Clone(state),rules);Check(run.Issue.Contains("缺口")&&!run.Reached.Contains(rules[0].Id),"ring gap reports and rebuilds without inventing split");
@@ -491,8 +534,10 @@ internal static class SdlpalBehavior
             foreach(var point in core.CheckPoints)point.SetUIItem(form.rr.AddItem(point.GetNickName(),point.Best));
             var keyConfig=core.CreateKeyConfigStartInfo();
             string executableDirectory=Path.GetDirectoryName(engine.Process.MainModule.FileName);
-            Check(keyConfig.WorkingDirectory==executableDirectory && keyConfig.FileName==Path.Combine(executableDirectory,"LostEditKeyConfig.exe") &&
+            Check(keyConfig.WorkingDirectory==executableDirectory && keyConfig.FileName==Path.Combine(executableDirectory,"我的 配置.exe") &&
                 keyConfig.WorkingDirectory!=engine.State.gamePath,"F11 locates key configuration beside the verified executable, independently of resources");
+            Check(keyConfig.Arguments.Contains("--game-exe "+MaintenanceExecutable.Quote(engine.Process.MainModule.FileName)),
+                "F11 passes the actual game executable and supports renamed tools");
             Call(core,"OnTick");engine.State.started=true;engine.Publish();Call(core,"OnTick");Thread.Sleep(70);
             Check(core.GetMainWatch().TotalMilliseconds>=50,"production core clock starts on new game");
             core.IsUIPause=true;Call(core,"OnTick");var paused=core.GetMainWatch();Thread.Sleep(50);Call(core,"OnTick");
@@ -522,7 +567,7 @@ internal static class SdlpalBehavior
             Check(!core.CompetitionPublicationAllowed&&core.GetScoreValidationError().Contains("诊断"),"diagnostic runtime cannot publish competition observations");
             var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);
             Check(observation.Gameplay.Valid&&observation.Ranking.Valid(observation.Gameplay)&&observation.Gameplay.map_speed_ticks==0&&observation.Gameplay.walk_frame_ms==90,"independent SDL family uses milliseconds without PALDLL ticks");
-            Check(observation.Ranking.rules.Count==12&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes content-speed category");
+            Check(observation.Ranking.rules.Count==7&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes content-only category with truthful speed evidence");
             Set(core,"relayRun",core.ScoreRunSequence);Set(core,"relayBridge",bridge);Call(core,"CheckRelayOwner");
             core.SetTS(TimeSpan.FromSeconds(1));Reject(()=>Call(core,"CheckRelayOwner"),"manual time/reset cancels an earlier relay transaction lease");
             Check(!core.CanBeginCompetitionHere(0),"manual time change cannot claim a fresh competition start");
@@ -619,10 +664,10 @@ internal static class SdlpalBehavior
                     edit(run.Engine.State);run.Tick();var current=observe();
                     Check(run.Watch.IsRunning&&!run.Core.IsUIPause&&run.Core.GetScoreValidationError()==""&&current.LiveTimingValid==true,
                         "normal speed adjustment keeps timing, score evidence and live validity intact");
-                    Check(current.FadeMilliseconds==initial.FadeMilliseconds&&current.MapSpeedTicks==initial.MapSpeedTicks&&current.TimelineId==initial.TimelineId&&
-                        SdlpalBridge.Json().Serialize(current.Gameplay)==SdlpalBridge.Json().Serialize(initial.Gameplay)&&
+                    Check(current.FadeMilliseconds==run.Engine.State.fadeCycleMs&&current.MapSpeedTicks==initial.MapSpeedTicks&&current.TimelineId==initial.TimelineId&&
+                        current.Gameplay.walk_frame_ms==run.Engine.State.walkFrameMs&&current.Gameplay.speed==run.Engine.State.speed&&current.Gameplay.battle_speed==run.Engine.State.battleSpeed&&
                         SdlpalBridge.Json().Serialize(current.Ranking)==SdlpalBridge.Json().Serialize(initial.Ranking)&&current.Ranking.Valid(current.Gameplay),
-                        "initial and final online facts remain in the run's starting-speed category");
+                        "real speed evidence changes while configuration and timeline remain stable");
                     Check(run.Core.ActiveBestPath==path&&run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(30)&&run.Core.CheckPoints[0].NickName=="Speed baseline 0",
                         "in-run speed changes preserve the loaded PB and its nickname");
                     var actual=new HFrame.ENT.HObj(run.Core.GetRStr()).GetValue<HFrame.ENT.HObj>("SdlpalProfileData");
@@ -631,8 +676,8 @@ internal static class SdlpalBehavior
                         "exported runtime evidence retains every actual speed setting");
                 }
                 run.Core.Reset();run.Tick();
-                Check(run.Core.ActiveBestPath!=path&&observe().Gameplay.walk_frame_ms==100&&observe().FadeMilliseconds==1200,
-                    "reset selects the new starting-speed category without rewriting historical PB files");
+                Check(run.Core.ActiveBestPath==path&&observe().Gameplay.walk_frame_ms==100&&observe().FadeMilliseconds==1200,
+                    "a new starting speed keeps the same PB category and real observation values");
                 var imported=Call(run.Core,"ValidateImport",exported,run.Core.CurrentSnapshot.IdentityKey);
                 Call(run.Core,"Restore",imported,run.Core.CurrentSnapshot);
                 Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==savedTime&&run.Assisted,
@@ -792,9 +837,9 @@ internal static class SdlpalBehavior
                 run.Core.CheckPoints[0].Current==completedSplit&&run.Statuses(CheckPointStatus.Completed,CheckPointStatus.InProgress),
                 name+": elapsed time and completed splits survive");
             var observation=new CompetitionObservation();run.Core.CaptureCompetitionGameplay(observation);
-            Check(observation.LiveTimingValid==true&&observation.ValidationError=="游戏已读档或重启"&&
+            Check(observation.LiveTimingValid==true&&observation.ValidationError==(transition=="load-then-restart"?"游戏已重开或切换进程":"")&&
                 run.Form.ManualPauseCount==((pause=="F8"||pause=="F9")?1:0),
-                name+": live validity, restart evidence and manual pause count remain distinct");
+                name+": ordinary loads preserve score eligibility while process restart evidence remains");
         }
     }
     static void ReconnectTests()
@@ -820,7 +865,7 @@ internal static class SdlpalBehavior
             Check(run.Watch.IsRunning==(pause=="none")&&run.Core.IsUIPause==(pause!="none")&&run.Core.GetMainWatch()>=TimeSpan.FromSeconds(20),
                 "reconnect preserves time and selected pause: reused PID="+reusedPid+", title="+titleFirst+", pause="+pause);
             var observation=new CompetitionObservation();run.Core.CaptureCompetitionGameplay(observation);
-            Check(observation.LiveTimingValid==true&&observation.ValidationError=="游戏已读档或重启",
+            Check(observation.LiveTimingValid==true&&observation.ValidationError=="游戏已重开或切换进程",
                 "reconnected live timing is valid while score restart evidence remains");
             run.Core.IsUIPause=false;run.Engine.State.epoch++;run.Tick();
             Check(!run.Core.IsUIPause&&run.Watch.IsRunning,"later same-process load also continues after reconnect");
@@ -839,6 +884,30 @@ internal static class SdlpalBehavior
             Check(observe().LiveTimingValid==false,"diagnostic snapshot cannot claim valid live timing");
         }
     }
+    static void MaintenanceSaveIsolationTests()
+    {
+        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"};
+        byte[] bytes=Enumerable.Repeat((byte)42,2048).ToArray();
+        foreach(string profile in profiles) using(var engine=new Engine()) using(var bridge=new SdlpalBridge()) {
+            engine.State.profile=profile;engine.State.saveLayout="content-v1";
+            string id=profile.Substring(0,profile.Length-3);
+            engine.State.savePath=Path.Combine(root,"isolated-save",id);Directory.CreateDirectory(engine.State.savePath);
+            string marker=Path.Combine(engine.State.savePath,".content-package");File.WriteAllText(marker,id+"\n");
+            engine.Publish();bridge.Attach(Process.GetProcessById(engine.Process.Id));SdlpalSnapshot snapshot;
+            Check(bridge.TryRead(out snapshot),"content relay snapshot reads "+profile);
+            var pack=new SdlpalRelayPackage{identity=snapshot.IdentityKey,timer="{}",saveBase64=Convert.ToBase64String(bytes),saveSha256=SdlpalRelayPackage.Hash(bytes)};
+            Check(pack.Validate(snapshot.IdentityKey).SequenceEqual(bytes),"same content cloud payload matches "+profile);
+            foreach(string foreign in profiles.Where(p=>p!=profile)) {var other=Clone(snapshot);other.profile=foreign;Reject(()=>pack.Validate(other.IdentityKey),"cross content cloud package rejected "+profile+" -> "+foreign);}
+            var reply=engine.Reply(2,1,bytes);SdlpalControl.Execute(bridge,2,snapshot,pack.Validate(snapshot.IdentityKey));reply.GetAwaiter().GetResult();
+            Check(File.ReadAllBytes(Path.Combine(engine.State.savePath,"250.rpg")).SequenceEqual(bytes),"cloud load writes only selected content slot "+profile);
+            engine.State.canControl=true;engine.Publish();bridge.TryRead(out snapshot);
+            ulong request=engine.Control.ReadUInt64(40);File.WriteAllText(marker,"foreign-content\n");
+            Reject(()=>SdlpalControl.Execute(bridge,2,snapshot,new byte[2048]),"changed directory marker rejects before cloud write "+profile);
+            Check(request==engine.Control.ReadUInt64(40)&&File.ReadAllBytes(Path.Combine(engine.State.savePath,"250.rpg")).SequenceEqual(bytes),"rejected cloud load changes neither command nor RPG "+profile);
+            File.WriteAllText(marker,id+"\n");var moved=Clone(snapshot);moved.savePath=Path.Combine(root,"save");
+            Reject(()=>SdlpalControl.Execute(bridge,2,moved,bytes),"changed destination cancels cloud transaction "+profile);
+        }
+    }
     static void OnlineSnapshotBridgeTests()
     {
         // Load only pure mapping methods from the freshly built pair. Never
@@ -849,19 +918,30 @@ internal static class SdlpalBehavior
         var flags=BindingFlags.NonPublic|BindingFlags.Instance;
         var read=online.GetType("Pal98Timer.OnlineModule",true).GetMethod("ReadSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
         var create=host.GetType("Pal98Timer.GForm",true).GetMethod("CreateCompetitionSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
-        foreach(string family in new[]{"sdlpal-geshi-easy","standard"}) foreach(bool? valid in new bool?[]{null,false,true})
+        foreach(string family in new[]{"sdlpal-geshi-easy","sdlpal-dream222","sdlpal-dreamspace39x","standard","drawcard"}) foreach(bool? valid in new bool?[]{null,false,true})
+        foreach(int? speed in new int?[]{null,0,7,100})
         {
             var value=Activator.CreateInstance(observationType,true);
             var gameplay=Activator.CreateInstance(host.GetType("Pal98Timer.GameplayIdentity",true),true);
             gameplay.GetType().GetProperty("family").SetValue(gameplay,family);
+            gameplay.GetType().GetProperty("speed").SetValue(gameplay,speed);
+            gameplay.GetType().GetProperty("battle_speed").SetValue(gameplay,speed.HasValue?(int?)(100-speed.Value):null);
             observationType.GetField("Gameplay",flags).SetValue(value,gameplay);
             observationType.GetField("LiveTimingValid",flags).SetValue(value,valid);
+            observationType.GetField("ReleaseRevision",flags).SetValue(value,"r53");
             observationType.GetField("ValidationError",flags).SetValue(value,"游戏已读档或重启");
             observationType.GetField("Splits",flags).SetValue(value,Array.CreateInstance(host.GetType("Pal98Timer.CompetitionSplit",true),0));
             var snapshot=create.Invoke(null,new[]{value});
             var extensions=(IReadOnlyDictionary<string,string>)snapshot.GetType().GetProperty("Extensions").GetValue(snapshot);
             var decoded=read.Invoke(null,new[]{snapshot});
-            bool? expected=family=="sdlpal-geshi-easy"?valid:null;
+            bool? expected=GameplayIdentity.IsSdlFamily(family)?valid:null;
+            var decodedGameplay=decoded.GetType().GetField("Gameplay",flags).GetValue(decoded);
+            int? expectedSpeed=GameplayIdentity.IsSdlFamily(family)?speed:null;
+            Check((int?)decodedGameplay.GetType().GetProperty("speed").GetValue(decodedGameplay)==expectedSpeed&&
+                (int?)decodedGameplay.GetType().GetProperty("battle_speed").GetValue(decodedGameplay)==(expectedSpeed.HasValue?(int?)(100-expectedSpeed.Value):null)&&
+                extensions.ContainsKey("sdlpal.speed")==expectedSpeed.HasValue&&extensions.ContainsKey("sdlpal.battle_speed")==expectedSpeed.HasValue,
+                "actual host/module bridge preserves optional SDL speeds and legacy isolation: "+family+"/"+speed);
+            Check((string)decoded.GetType().GetField("ReleaseRevision",flags).GetValue(decoded)==(GameplayIdentity.IsSdlFamily(family)?"r53":null), "release display extension follows SDL family: "+family);
             Check(extensions.ContainsKey("sdlpal.live_timing_valid")==expected.HasValue&&
                 (bool?)decoded.GetType().GetField("LiveTimingValid",flags).GetValue(decoded)==expected&&
                 (string)decoded.GetType().GetField("ValidationError",flags).GetValue(decoded)=="游戏已读档或重启",
@@ -877,6 +957,16 @@ internal static class SdlpalBehavior
             bool rejected=false;
             try{read.Invoke(null,new[]{snapshot});}catch(TargetInvocationException error){if(error.InnerException is ArgumentException)rejected=true;else throw;}
             Check(rejected,"malformed live validity extension is rejected: "+(malformed??"null"));
+        }
+        foreach(string key in new[]{"sdlpal.speed","sdlpal.battle_speed"})
+        foreach(string malformed in new[]{null,"","-1","+1","101","2147483648","1.5"," 1","1 ","NaN"})
+        {
+            var snapshot=Activator.CreateInstance(snapshotType,new object[]{"fixture","SDLPAL_GESHI_EASY",null,null,null,null,null,game,null,null,
+                0,800,0,0L,DateTimeOffset.UtcNow,false,false,Array.CreateInstance(host.GetType("Pal98Timer.OnlineSplitV1",true),0),
+                new Dictionary<string,string>{{key,malformed}}});
+            bool rejected=false;
+            try{read.Invoke(null,new[]{snapshot});}catch(TargetInvocationException error){if(error.InnerException is ArgumentException)rejected=true;else throw;}
+            Check(rejected,"malformed SDL speed extension is rejected: "+key+"/"+(malformed??"null"));
         }
     }
     static void BestReferenceTests()
@@ -1087,6 +1177,243 @@ internal static class SdlpalBehavior
         }
         finally {SoundConfig.ins.ToggleHotkey=previousHotkey;}
     }
+    static void MaintenanceProfiles()
+    {
+        var paths = new HashSet<string>();
+        foreach (string profile in new[]{"dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        {
+            var rules=SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
+            Check(rules.Length==21,"audited original Dream 2.2 route has 21 nodes: "+profile);
+            var s=Snapshot();s.profile=profile;s.scene=5;s.viewportX=1088;s.viewportY=1088;s.started=true;
+            Check(rules[0].MatchesState(s),"ship node uses actual viewport coordinates");
+            s.viewportX+=200;Check(!rules[0].MatchesState(s),"position outside route bounds cannot split");
+            var caiyi=rules.Single(r=>r.Id=="dream-caiyi");
+            Check(caiyi.Matches(new SdlpalBattleEvent{team=39,scene=108,enemies=new[]{468},result=1}),"Caiyi preserves original battle-end exception");
+            var poison=rules.Single(r=>r.Id=="dream-seven-poisons");
+            Check(!poison.Matches(new SdlpalBattleEvent{team=224,scene=200,enemies=new[]{533},result=3}),"Dreamspace shared enemy ID in fire fight cannot trigger seven-poisons node");
+            foreach(var rule in rules.Where(r=>r.Kind=="battle" || r.Kind=="completion"))
+            {
+                var fight=new SdlpalBattleEvent{team=rule.Team.Value,scene=rule.Scene??rule.Scenes[0],enemies=new[]{rule.Enemy.Value},result=3};
+                Check(rule.Matches(fight),"audited team/scene/object victory: "+rule.Id);
+                fight.result=1;Check(!rule.Matches(fight),"defeat cannot satisfy victory: "+rule.Id);
+            }
+            var observer=new SdlpalRunObserver();s=Snapshot();s.profile=profile;observer.Observe(Clone(s),rules);
+            s.started=true;observer.Observe(Clone(s),rules);s.battleEvents=new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=389,scene=297,enemies=new[]{576},result=3}};
+            observer.Observe(Clone(s),rules);
+            Check(observer.Reached.Contains("dream-ending")&&!s.completed,"final victory stops timer before ending dialogue");
+            var settings=new SdlpalItemSettings{WatchedIds=new[]{579}};settings.Save(profile);
+            Check(SdlpalItemSettings.Load(profile).WatchedIds.SequenceEqual(new[]{579}),"profile-local watched items persist");
+            var facts=s.RankingFacts(); var game=new GameplayIdentity{family=SdlpalBridge.ProfileFamily(profile),content_id=profile,content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=s.speed,battle_speed=s.battleSpeed};
+            Check(new RankingConfiguration{configuration_id=game.rules_sha256,covered=true,rules=facts}.Valid(game),"known family/profile ranking remains validated");
+            Check(paths.Add(s.IdentityKey),"profile separates PB/relay identity");
+        }
+        using(var engine=new Engine())
+        {
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            using(var control=new System.Windows.Forms.Form())
+            {
+                typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance).SetValue(form,typeof(System.Windows.Forms.Control).GetField("window",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(control));
+                var core=new SdlpalGeshi(form);Call(core,"InitCheckPoints");form.rr=new GRender(control);
+                var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(engine.Process.Id));Set(core,"bridge",bridge);
+                try {
+                    Call(core,"OnTick");engine.State.profile="dream222-normal-v1";engine.Publish();Call(core,"OnTick");
+                    Check(core.ActiveProfile==engine.State.profile&&core.CheckPoints.Count==21&&core.GetGameVersion().Contains("梦幻"),"actual core auto-switches from Geshi to Dream route and label");
+                    var itemBefore = core.ItemSettings;
+                    Reject(() => core.ApplyProfileItemSettings(new SdlpalItemSettings { WatchedIds = new[] { 61 } }, "geshi-easy-v1"),
+                        "stale item editor cannot save Geshi settings into Dream");
+                    Check(core.ItemSettings.WatchedIds.SequenceEqual(itemBefore.WatchedIds), "rejected old editor preserves active content item settings");
+                    string routePath = TimerUserSettings.GetPath("sdlpal_dream222-normal-v1_splits.json");
+                    byte[] routeBefore = File.Exists(routePath) ? File.ReadAllBytes(routePath) : null;
+                    Reject(() => core.SaveProfileRules(new SdlpalSplitRule[0], "geshi-easy-v1"), "stale route editor cannot overwrite Dream nodes");
+                    Check(routeBefore == null ? !File.Exists(routePath) : routeBefore.SequenceEqual(File.ReadAllBytes(routePath)),
+                        "stale route rejection preserves active content rules byte-for-byte");
+                    string previous=core.ActiveBestPath;engine.State.profile="dreamspace39x-hard-v1";engine.Publish();Call(core,"OnTick");
+                    Check(core.ActiveProfile==engine.State.profile&&previous!=core.ActiveBestPath&&core.GetGameVersion().Contains("梦时空"),"actual core isolates Dreamspace PB and display");
+                    engine.State.profile="geshi-easy-v1";engine.Publish();Call(core,"OnTick");
+                    Check(core.CheckPoints.Count==2&&core.GetGameVersion().Contains("隔世"),"switch back restores original Geshi route");
+                } finally {core.Unload();}
+            }
+        }
+    }
+    static void BestConfigurationTests()
+    {
+        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"};
+        Action<SdlpalSnapshot>[] changes={
+            s=>{s.monsterRush=true;s.respawnRule="pal98-current-scene-v1";},
+            s=>{s.invisibleMonsters=true;s.respawnRule="pal98-current-scene-v1";},
+            s=>s.respawnRule="pal98-current-scene-v1",
+            s=>s.resourceHashes["DATA.MKF"]=new string('e',64)
+        };
+        foreach(string profile in profiles) foreach(var change in changes)
+        using(var run=new CompletionFixture(true))
+        {
+            run.Engine.State.profile=profile;run.StartNewGame();
+            string path=run.Core.ActiveBestPath;var original=Clone(run.Engine.State);
+            try
+            {
+                run.Core.SaveBest();byte[] saved=File.ReadAllBytes(path);
+                change(run.Engine.State);run.Tick();string other=run.Core.ActiveBestPath;
+                Check(other!=path,"changed content/effect selects a different best file: "+profile);
+                Reject(()=>run.Core.SaveBest(),"mixed configuration cannot overwrite the selected configuration PB: "+profile);
+                Check(!File.Exists(other),"rejected mixed save creates no foreign best file: "+profile);
+                run.Engine.State=original;run.Tick();
+                Reject(()=>run.Core.SaveBest(),"returning to the original configuration retains mixed-run protection: "+profile);
+                Check(run.Core.ActiveBestPath==path&&File.ReadAllBytes(path).SequenceEqual(saved),"original best bytes survive configuration round trip: "+profile);
+                string mixed=run.Core.GetRStr();var imported=Call(run.Core,"ValidateImport",mixed,run.Core.CurrentSnapshot.IdentityKey);
+                var snapshot=run.Core.CurrentSnapshot;run.Core.Reset();Call(run.Core,"Restore",imported,snapshot);
+                Reject(()=>run.Core.SaveBest(),"timeline/relay import retains mixed-configuration PB protection: "+profile);
+                Check(run.Core.IsUIPause,"best-line protection keeps import pause semantics: "+profile);
+                run.Core.Reset();run.Tick();run.Core.SaveBest();
+                Check(File.Exists(path),"explicit reset allows saving the current configuration PB: "+profile);
+                var legacy=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(run.Core.GetRStr());
+                legacy.Remove("SdlpalBestConfigurationChanged");
+                Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(legacy),run.Core.CurrentSnapshot.IdentityKey);
+                Check(true,"old timeline without configuration-change metadata remains readable: "+profile);
+                legacy["SdlpalBestConfigurationChanged"]="false";
+                Reject(()=>Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(legacy),run.Core.CurrentSnapshot.IdentityKey),
+                    "non-boolean configuration-change metadata is rejected: "+profile);
+            }
+            finally {File.Delete(path);}
+        }
+        var paths=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach(string profile in profiles) using(var run=new CompletionFixture(true))
+        {
+            run.Engine.State.profile=profile;run.Tick();
+            run.Form.rr.ClearAllItem();
+            foreach(var point in run.Core.CheckPoints) point.SetUIItem(run.Form.rr.AddItem(point.GetNickName(),point.Best));
+            var files=new List<string>();var bytes=new List<byte[]>();
+            Action<int> select=mode=>{
+                run.Engine.State.wuqiang=(mode&1)!=0;run.Engine.State.monsterRush=(mode&2)!=0;run.Engine.State.invisibleMonsters=(mode&4)!=0;
+                run.Engine.State.respawnRule=(mode&6)!=0?"pal98-current-scene-v1":null;
+                run.Tick();
+            };
+            try
+            {
+                for(int mode=0;mode<8;mode++)
+                {
+                    run.Core.Reset();select(mode);
+                    for(int i=0;i<run.Core.CheckPoints.Count;i++)
+                    {
+                        run.Core.CheckPoints[i].Current=TimeSpan.FromSeconds(100+mode*10+i);
+                        run.Core.CheckPoints[i].NickName="PB "+profile+" / "+mode+" / "+i;
+                    }
+                    run.Core.SaveBest();string path=run.Core.ActiveBestPath;
+                    Check(paths.Add(path),"each profile/effect combination has an independent best file: "+profile+" / "+mode);
+                    files.Add(path);bytes.Add(File.ReadAllBytes(path));
+                }
+                foreach(int mode in Enumerable.Range(0,8).Reverse().Concat(Enumerable.Range(0,8)))
+                {
+                    select(mode);
+                    Check(run.Core.ActiveBestPath==files[mode]&&run.Core.CheckPoints.Select((point,i)=>
+                        point.Best==TimeSpan.FromSeconds(100+mode*10+i)&&point.GetNickName()=="PB "+profile+" / "+mode+" / "+i).All(ok=>ok),
+                        "automatic round-trip switch restores every best time and label: "+profile+" / "+mode);
+                    Check(run.Core.CheckPoints.Select((point,i)=>run.Form.rr.GetItem(i).Best==point.Best&&run.Form.rr.GetItem(i).Name==point.GetNickName()).All(ok=>ok),
+                        "rendered best references follow the selected configuration: "+profile+" / "+mode);
+                    var bestClear=(TimeSpan)typeof(TimerCore).GetField("BestClear",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(run.Core);
+                    Check(bestClear==run.Core.CheckPoints.Last().Best,"predicted finish baseline follows the selected configuration: "+profile+" / "+mode);
+                    run.Engine.State.speed=mode;run.Engine.State.battleSpeed=7-mode;run.Engine.State.walkFrameMs=30+mode;run.Engine.State.fadeCycleMs=400+mode;
+                    run.Tick();
+                    Check(run.Core.ActiveBestPath==files[mode]&&run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(100+mode*10),
+                        "speed changes keep the same best file and reference: "+profile+" / "+mode);
+                }
+                Check(files.Select((path,i)=>File.ReadAllBytes(path).SequenceEqual(bytes[i])).All(ok=>ok),
+                    "all configuration best files remain byte-identical after switching: "+profile);
+            }
+            finally {foreach(string path in files) File.Delete(path);}
+        }
+        Check(paths.Count==32,"four contents by ordinary/WuQiang/rush/invisible combinations yield 32 independent references");
+    }
+    static void SplitDisplayTests()
+    {
+        string output=Path.Combine(root,"split-display");Directory.CreateDirectory(output);
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        using(var engine=new Engine())
+        using(var control=new System.Windows.Forms.Form { ClientSize=new System.Drawing.Size(346,916) })
+        using(var board=new GBoard())
+        {
+            // Real OnTick -> BeginInvoke -> GRender binding, without GForm
+            // startup, hooks, a network client, or a visible/game window.
+            var handle=control.Handle;
+            var form=(GForm)FormatterServices.GetUninitializedObject(typeof(GForm));
+            for(Type type=typeof(System.Windows.Forms.Control);type!=null;type=type.BaseType)
+                foreach(var field in type.GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance|BindingFlags.DeclaredOnly))
+                    field.SetValue(form,field.GetValue(control));
+            form.IsNonSequentialCheck=true;
+            form.rr=new GRender(control);form.rr.SetGBoard(board);
+            form.rr.SetTitle("分段显示回归");form.rr.SetVersion(GForm.CurrentVersion);
+            var core=new SdlpalGeshi(form);Set(form,"core",core);
+            core.OnCurrentStepChanged=index=>form.rr.ItemIdx=index;
+            form.InitCheckPoints();
+            var bridge=new SdlpalBridge();bridge.Attach(Process.GetProcessById(engine.Process.Id));Set(core,"bridge",bridge);
+            var watch=(PTimer)typeof(TimerCore).GetField("MT",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(core);
+            Action tick=()=>{engine.Publish();Call(core,"OnTick");};
+            Action drain=()=>{
+                if(typeof(System.Windows.Forms.Control).GetField("threadCallbackList",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(form)!=null)
+                    typeof(System.Windows.Forms.Control).GetMethod("InvokeMarshaledCallbacks",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(form,null);
+            };
+            Func<int,string,int[]> render=(index,name)=>{
+                form.rr.SetGameVersion(core.GetGameVersion());form.rr.SetMainTimer(core.GetMainWatch());form.rr.Draw();
+                var bitmap=(System.Drawing.Bitmap)control.BackgroundImage;
+                bitmap.Save(Path.Combine(output,profile+"-"+name+".png"));
+                var area=(System.Drawing.Rectangle)typeof(GRender).GetField("rcItems",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(form.rr);
+                var pixels=new List<int>();
+                for(int y=area.Top+index*board.ItemHeight;y<area.Top+(index+1)*board.ItemHeight;y++)
+                    for(int x=area.Right-110;x<area.Right;x++) pixels.Add(bitmap.GetPixel(x,y).ToArgb());
+                return pixels.ToArray();
+            };
+            try
+            {
+                engine.State.profile=profile;tick();engine.State.started=true;tick();
+                watch.Stop();watch.SetTS(TimeSpan.FromSeconds(90));tick();core.IsUIPause=true;tick();
+                var elapsed=core.GetMainWatch();drain();
+                bool synchronized=form.rr.ItemIdx==0&&form.rr.GetItem(0).IsActive&&form.rr.GetItem(0).Cur==core.CheckPoints[0].Current;
+                var pixels=render(0,"active");
+                Check(core.CurrentStep==0&&core.CheckPoints[0].Current.TotalSeconds>=90,"actual core has a running split before display binding: "+profile);
+                Check(synchronized,
+                    "right-hand current split is active and synchronized after queued content binding: "+profile);
+                Check(pixels.Distinct().Count()>4,"actual right-hand split region contains rendered time glyphs: "+profile);
+                Check(core.GetMainWatch()==elapsed&&core.IsUIPause,"display binding preserves paused elapsed time: "+profile);
+                core.IsUIPause=false;watch.SetTS(TimeSpan.FromSeconds(112));tick();core.IsUIPause=true;tick();
+                Check(!pixels.SequenceEqual(render(0,"advanced")),"right-hand time glyphs update when the clock advances: "+profile);
+
+                // Advance the first node through its actual route predicate.
+                core.IsUIPause=false;
+                if(profile=="geshi-easy-v1") engine.State.battleEvents=new[]{Victory(1)};
+                else {engine.State.scene=5;engine.State.viewportX=1088;engine.State.viewportY=1088;}
+                tick();core.IsUIPause=true;tick();var completed=core.CheckPoints[0].Current;
+                Check(core.CurrentStep==1&&form.rr.GetItem(0).IsPassed&&form.rr.GetItem(1).IsActive,
+                    "completed split stays visible and following split becomes active: "+profile);
+                Check(render(0,"completed").Distinct().Count()>4&&form.rr.GetItem(0).Cur==completed,
+                    "completed right-hand time is retained: "+profile);
+                // Switch back while paused before the queued bind, with both
+                // old and new renderer indices equal to zero.
+                engine.State.profile=profile=="geshi-easy-v1"?"dream222-normal-v1":"geshi-easy-v1";
+                engine.State.scene=0;engine.State.battleEvents=new SdlpalBattleEvent[0];tick();
+                watch.Stop();watch.SetTS(TimeSpan.FromSeconds(34));tick();core.IsUIPause=true;tick();drain();
+                synchronized=form.rr.ItemIdx==0&&form.rr.GetItem(0).IsActive&&form.rr.GetItem(0).Cur==core.CheckPoints[0].Current;
+                render(0,"switched");
+                Check(synchronized,
+                    "switching content restores the same-index active split: "+profile);
+                // A slow UI can receive the binding callback after a split has
+                // already completed. It must retain both completed and live rows.
+                engine.State.profile=profile;tick();watch.Stop();watch.SetTS(TimeSpan.FromSeconds(45));
+                if(profile=="geshi-easy-v1") engine.State.battleEvents=new[]{Victory(1)};
+                else {engine.State.scene=5;engine.State.viewportX=1088;engine.State.viewportY=1088;}
+                tick();core.IsUIPause=true;tick();drain();
+                Check(core.CurrentStep==1&&form.rr.ItemIdx==1&&form.rr.GetItem(0).IsPassed&&form.rr.GetItem(1).IsActive&&
+                    form.rr.GetItem(0).Cur==core.CheckPoints[0].Current&&form.rr.GetItem(0).Status==CheckPointStatus.Completed&&
+                    form.rr.GetItem(1).Cur==core.CheckPoints[1].Current&&form.rr.GetItem(1).Status==CheckPointStatus.InProgress,
+                    "late UI binding retains completed/current times and statuses: "+profile);
+                Check(render(0,"late-bind").Distinct().Count()>4,"late-bound completed time is actually rendered: "+profile);
+            }
+            finally
+            {
+                core.Unload();drain();
+                var graphics=(System.Drawing.Graphics)typeof(GRender).GetField("CG",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(form.rr);
+                if(graphics!=null) graphics.Dispose();if(control.BackgroundImage!=null) control.BackgroundImage.Dispose();
+            }
+        }
+    }
     [STAThread] static int Main(string[] args)
     {
         try
@@ -1094,6 +1421,8 @@ internal static class SdlpalBehavior
             typeof(TimerUserSettings).GetField("store",BindingFlags.NonPublic|BindingFlags.Static).SetValue(null,new TimerSettingsStore(root,Path.Combine(root,"localappdata"),_=>{}));
             TimerUserSettings.ClearPathCache();SoundConfig.ins.GlobalEnabled=false;
             bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
+            if(args.Contains("--split-display-only")) {SplitDisplayTests();Console.WriteLine("PASS total="+count);return 0;}
+            if(args.Contains("--best-configuration-only")) {BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;}
             if(noGui&&args.Contains("--ui")) throw new ArgumentException("--no-gui cannot be combined with --ui");
             if(args.Length==1&&args[0]=="--ui")
             {
@@ -1112,7 +1441,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

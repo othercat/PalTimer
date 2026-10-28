@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 //using System.Linq;
 using System.Windows.Forms;
 using System.Diagnostics;
@@ -25,7 +26,8 @@ namespace Pal98Timer
                 Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
                 bool startupCheck = System.Array.IndexOf(Environment.GetCommandLineArgs(), "--startup-check") >= 0;
                 var arguments = Environment.GetCommandLineArgs();
-                bool initializeConfiguration = arguments.Length > 1 && arguments[1] == "--initialize-geshi-configuration";
+                bool initializeMaintenance = arguments.Length > 1 && arguments[1] == "--initialize-sdlpal-configuration";
+                bool initializeConfiguration = initializeMaintenance || arguments.Length > 1 && arguments[1] == "--initialize-geshi-configuration";
                 StartupDependencies.WriteLog("start version=" + typeof(Program).Assembly.GetName().Version + " os=" + Environment.OSVersion + " clr=" + Environment.Version + " x64=" + Environment.Is64BitProcess);
                 if (!StartupDependencies.Check(AppDomain.CurrentDomain.BaseDirectory, (message, fatal) => {
                     string log = StartupDependencies.WriteLog(message);
@@ -38,9 +40,18 @@ namespace Pal98Timer
                 if (initializeConfiguration)
                 {
                     if (arguments.Length != 4) { Environment.ExitCode = 1; return; }
+                    object[] inputs = { arguments[2], arguments[3] };
+                    if (initializeMaintenance)
+                    {
+                        if (new FileInfo(arguments[2]).Length > SdlpalBridge.Capacity) throw new InvalidDataException("初始化输入超过容量");
+                        var snapshot = SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(File.ReadAllText(arguments[2]));
+                        var rules = SdlpalSplitRule.Defaults(snapshot.profile);
+                        SdlpalSplitRule.Validate(rules);
+                        inputs = new object[] { arguments[2], arguments[3], rules.Select(p => p.Id).ToArray() };
+                    }
                     using (var lease = OnlineModuleLoader.LoadVerified(AppDomain.CurrentDomain.BaseDirectory, false))
                         Environment.ExitCode = (int)lease.OnlineAssembly.GetType("Pal98Timer.OnlineEntryPoint", true)
-                            .GetMethod("InitializeGeshiConfiguration").Invoke(null, new object[] { arguments[2], arguments[3] });
+                            .GetMethod(initializeMaintenance ? "InitializeSdlpalConfiguration" : "InitializeGeshiConfiguration").Invoke(null, inputs);
                     return;
                 }
                 TimerUserSettings.Store.Initialize();
@@ -48,7 +59,8 @@ namespace Pal98Timer
                 RunApplication();
             } catch (Exception ex) {
                 string log = StartupDependencies.WriteLog(ex.ToString());
-                if (!(ex is TimerSettingsException) && Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-geshi-configuration") < 0)
+                if (!(ex is TimerSettingsException) && Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-geshi-configuration") < 0 &&
+                    Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-sdlpal-configuration") < 0)
                     TimerUserSettings.ShowError("计时器启动失败：" + ex.GetType().Name + "\n" + ex.Message + "\n\n请提供启动日志：" + log, "计时器启动失败");
                 // A failed constructor can leave worker threads alive. Do not
                 // resume its message loop or leave an invisible timer process.

@@ -11,7 +11,7 @@ using System.Web;
 using Pal98.LocalDisplay;
 
 [assembly: AssemblyVersion("3.37.7.11")]
-internal static class LiveBehavior
+internal static partial class LiveBehavior
 {
     static int checks;
     static void Check(bool value, string name) { if (!value) throw new Exception(name); checks++; Console.WriteLine("PASS " + name); }
@@ -40,6 +40,8 @@ internal static class LiveBehavior
     sealed class Transport : ICompetitionTransport
     {
         internal bool Supported = true, Approved = true, WrongAck, WrongRank, WrongChallenge, MissingDate;
+        internal bool ThrowRequests;
+        internal int Devices;
         internal bool OmitRegistrationPlayer, OmitGetPlayer, OmitStandings;
         internal CompetitionPlayer Player = new CompetitionPlayer { bound = true, id = "11111111-1111-4111-8111-111111111111", display_name = "实时测试玩家" };
         internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature };
@@ -63,8 +65,9 @@ internal static class LiveBehavior
         {
             int active = Interlocked.Increment(ref Active); MaxActive = Math.Max(MaxActive, active);
             try {
+                if (ThrowRequests) throw new InvalidOperationException("fixture transport unavailable");
                 var json = CompetitionProtocol.Json(); string origin = new Uri(url).GetLeftPart(UriPartial.Authority);
-                if (url.EndsWith("/devices")) { var device = Board(); device.supported_features = Features; if (OmitRegistrationPlayer) device.player = null; return Reply(device); }
+                if (url.EndsWith("/devices")) { Devices++; var device = Board(); device.supported_features = Features; if (OmitRegistrationPlayer) device.player = null; return Reply(device); }
                 if (url.Contains("/auth/status?")) return Reply(new { protocol = CompetitionAuthProtocol.Name, scope = CompetitionProtocol.Scope,
                     server_origin = origin, key_id = new string('a',32), timer_exe_sha256 = new string('b',64), approved = Approved,
                     live_protocol = Supported ? CompetitionClient.LiveProtocol : null });
@@ -128,12 +131,14 @@ internal static class LiveBehavior
     }
     static async Task LiveValidityTests(string root)
     {
-        var wire=new Transport();var client=Client(root,"sdlpal-live-validity",wire,new Auth());
+        foreach(string family in new[]{"sdlpal-geshi-easy","sdlpal-dream222","sdlpal-dreamspace39x"}) {
+        var wire=new Transport {Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceFeature}};var client=Client(root,"sdlpal-live-validity-"+family,wire,new Auth());
         await Until(()=>client.Enabled,"SDL live validity fixture is enabled");
-        var assisted=Observe("assisted",0);assisted.Gameplay.family="sdlpal-geshi-easy";
+        var assisted=Observe("assisted",0);assisted.Gameplay.family=family;assisted.ReleaseRevision="r53";
         assisted.LiveTimingValid=true;assisted.ValidationError="游戏已读档或重启";assisted.BeganHere=false;
         client.Publish(assisted);client.PublishClock(assisted.Token,1200,true,Stopwatch.GetTimestamp());
         await Until(()=>wire.Last?.observation?.state=="running","SDL assisted run streams a valid running clock");
+        Check(wire.Last.observation.release_revision=="r53","live heartbeat carries maintenance revision "+family);
         Check(assisted.Context.Issues.Contains("timing-validation: "+assisted.ValidationError)&&!assisted.Context.BeganHere,
             "live validity preserves score review issues and missing start evidence");
         await client.CloseAsync();
@@ -159,9 +164,11 @@ internal static class LiveBehavior
         Check(state()=="running","legacy core with a fresh valid clock keeps running behavior");
         assisted.ValidationError="legacy review";assisted.Finished=true;
         Check(state()=="finished","legacy finish precedence remains compatible");
-        assisted.Gameplay.family="sdlpal-geshi-easy";assisted.LiveTimingValid=true;
+        assisted.Gameplay.family=family;assisted.LiveTimingValid=true;
         assisted.RestartMilliseconds=CompetitionProtocol.MaxMilliseconds+1;
         Check(state()=="invalid","live validity cannot bypass restart bounds");
+        await client.CloseAsync();
+        }
     }
     static async Task IdentityLiveTests(string root)
     {
@@ -201,15 +208,19 @@ internal static class LiveBehavior
     }
     static async Task Run(string root)
     {
+        await ConnectivityRecoveryTests(root);
+        await LoopbackHttpTests(root);
         await IdentityLiveTests(root);
         await LiveValidityTests(root);
         string gameRoot=Path.Combine(root,"geshi-root");Directory.CreateDirectory(Path.Combine(gameRoot,"palmod"));
         string settingsFile=Path.Combine(gameRoot,"palmod","common-tools.v1.json");
         File.WriteAllText(settingsFile,"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://www.pallab.top\"}}}");
         var native=new SdlpalSnapshot {verified=true,profile="geshi-easy-v1",gamePath=Path.Combine(gameRoot,"PAL")};
-        foreach(string exe in new[]{"pal.exe","sdlpal.exe"}) {
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach(string exe in new[]{"pal.exe","sdlpal.exe","我的 仙剑.exe"}) {
+            native.profile = profile;
             var selected=CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,exe),native);
-            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+exe);
+            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+profile+" / "+exe);
         }
         native.diagnostic=true;bool denied=false;
         try {CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,"pal.exe"),native);}catch(InvalidDataException){denied=true;}

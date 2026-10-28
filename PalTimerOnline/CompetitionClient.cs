@@ -44,7 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
-        private bool serverSupportsRestartTime;
+        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects;
         private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
@@ -53,6 +53,9 @@ namespace Pal98Timer
         private readonly Func<Process, CompetitionGameResolution> resolveGame;
         private volatile Process observedGame;
         private volatile string gameSettingsError = "";
+        private volatile bool readingGameSettings;
+        private long nextGameSettingsRetryTick;
+        private int gameSettingsFailures;
         private long gameGeneration;
         private bool observedGameOnce;
         private readonly string timerVersion;
@@ -75,8 +78,7 @@ namespace Pal98Timer
         internal bool Enabled { get { return enabled && (!gameManaged || observedGame != null); } }
         internal string ActivationText { get { return enabled ? activationText : "仅本地保存"; } }
         internal bool DeviceIdentityReady { get { return deviceIdentityReady; } }
-        // Configuration errors belong to the settings window, never the timing
-        // gate, title, or OBS ranking output. Do not disguise them as disabled.
+        // Configuration errors are presentation state, never a timing gate.
         internal string GameSettingsError { get { return gameSettingsError; } }
         internal void ObserveTarget(int pid, long generation)
         {
@@ -94,11 +96,14 @@ namespace Pal98Timer
             if (!gameManaged || observedGameOnce && ReferenceEquals(observedGame, process)) return;
             ObserveGameCore(process, Interlocked.Increment(ref requestedTarget));
         }
-        private void ObserveGameCore(Process process, long targetRequest)
+        private void ObserveGameCore(Process process, long targetRequest, bool retry = false)
         {
             if (!gameManaged) return;
             identityTarget = null;
             observedGameOnce = true; observedGame = process; gameSettingsError = "";
+            readingGameSettings = process != null;
+            nextGameSettingsRetryTick = 0;
+            if (!retry) gameSettingsFailures = 0;
             long epoch = Interlocked.Increment(ref gameGeneration);
             if (process == null) {
                 // Completed records retain their authorized destination and may
@@ -117,16 +122,29 @@ namespace Pal98Timer
                 CompetitionSettings next; CompetitionGameResolution resolved = null; string error = "";
                 try { resolved = resolveGame(process); next = resolved.Settings; }
                 catch (Exception ex) {
-                    next = new CompetitionSettings();
+                    next = null;
                     error = ex is System.IO.InvalidDataException ? ex.Message : "联机配置无法读取，请检查游戏目录的访问权限及配套组件。";
                     error = "联机配置读取失败：" + error.Substring(0, Math.Min(512, error.Length));
                     storage.LogNetwork("game-upload-settings-unavailable", 0);
                 }
                 if (epoch != Interlocked.Read(ref gameGeneration)) return;
-                next.CopyAppearance(settings);
-                if (ApplyConfiguration(next, null, epoch) && error.Length == 0)
-                    InstallIdentityTarget(resolved, epoch, targetRequest);
-                if (epoch == Interlocked.Read(ref gameGeneration)) gameSettingsError = error;
+                // A transient read error must not replace the last authorized
+                // settings or discard the current run's immutable evidence.
+                if (error.Length == 0) {
+                    next.CopyAppearance(settings);
+                    if (ApplyConfiguration(next, null, epoch))
+                        InstallIdentityTarget(resolved, epoch, targetRequest);
+                    else error = "联机设置未能保存，请检查本机记录目录的访问权限。";
+                }
+                if (epoch == Interlocked.Read(ref gameGeneration)) {
+                    gameSettingsError = error; readingGameSettings = false;
+                    if (error.Length == 0) gameSettingsFailures = 0;
+                    else {
+                        gameSettingsFailures = Math.Min(4, gameSettingsFailures + 1);
+                        int seconds = gameSettingsFailures == 1 ? 5 : gameSettingsFailures == 2 ? 10 : gameSettingsFailures == 3 ? 20 : 30;
+                        nextGameSettingsRetryTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * seconds;
+                    }
+                }
             });
         }
         internal void ConfigureAppearance(CompetitionSettings requested, string replacementSecret = null)
@@ -180,7 +198,8 @@ namespace Pal98Timer
                 // Latch observed changes even if the settings later return to
                 // their initial values. Only bounded scalar comparisons here.
                 if (lease.Started) {
-                    if (observation.FadeMilliseconds != lease.Fade || observation.MapSpeedTicks != lease.Speed) LatchIssue("speed-changed");
+                    if (!(observation.Ranking?.SpeedIndependent == true && lease.InitialRanking?.SpeedIndependent == true) &&
+                        (observation.FadeMilliseconds != lease.Fade || observation.MapSpeedTicks != lease.Speed)) LatchIssue("speed-changed");
                     if (lease.ConfigurationId != observation.Ranking?.configuration_id || lease.TimelineId != observation.TimelineId) LatchIssue("rules-changed");
                     if (!string.IsNullOrEmpty(observation.ValidationError)) LatchIssue("timing-validation: " + observation.ValidationError.Substring(0, Math.Min(270, observation.ValidationError.Length)));
                 }
@@ -232,7 +251,14 @@ namespace Pal98Timer
                     if (gameManaged) { stored.Enabled = false; stored.Server = new CompetitionSettings().Server; stored.Event = "wuqiang"; stored.Ruleset = "wuqiang-2026-v1"; stored.CustomCompetitionId = null; stored.ConfigurationId = null; }
                     storage.SaveSettings(stored);
                 }
-                catch { enabled = false; SetStatus("比赛设置未能保存，联机已停止；请检查本机记录目录权限", true); return false; }
+                catch {
+                    enabled = false;
+                    if (gameManaged && observedGame != null) {
+                        gameSettingsError = "联机设置未能保存，请检查本机记录目录的访问权限。";
+                        nextGameSettingsRetryTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
+                    }
+                    SetStatus("比赛设置未能保存，联机已停止；请检查本机记录目录权限", true); return false;
+                }
                 // Publish endpoint and credential together, only after all preparation succeeded.
                 lock (publication)
                 {
@@ -255,7 +281,7 @@ namespace Pal98Timer
                 if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
-                serverSupportsV2 = serverSupportsRestartTime = false;
+                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
@@ -272,6 +298,8 @@ namespace Pal98Timer
                 approvals.Clear();
                 candidates.Clear();
                 RetryLiveConnection();
+                if (gameManaged && observedGame != null && !readingGameSettings && gameSettingsError.Length != 0)
+                    ObserveGameCore(observedGame, Interlocked.Read(ref requestedTarget), true);
                 foreach (var record in pending.Where(p => !p.LocalRejected)) { record.Rejected = false; record.NextAttemptUtc = DateTime.MinValue; storage.SavePending(record); }
                 storage.LogNetwork("manual-retry", 0);
             });
@@ -318,6 +346,9 @@ namespace Pal98Timer
                         CompetitionObservation finish;
                         while (completions.TryPeek(out finish)) { ProcessObservation(finish); completions.TryDequeue(out finish); }
                         Action command; while (commands.TryDequeue(out command)) command();
+                        if (gameManaged && observedGame != null && !readingGameSettings && nextGameSettingsRetryTick > 0 &&
+                            Stopwatch.GetTimestamp() >= nextGameSettingsRetryTick)
+                            ObserveGameCore(observedGame, Interlocked.Read(ref requestedTarget), true);
                         var update = Interlocked.Exchange(ref latest, null);
                         if (update != null) ProcessObservation(update);
                         if (enabled && settings.Enabled)
@@ -338,7 +369,10 @@ namespace Pal98Timer
                         }
                     }
                     catch (OperationCanceledException) { }
-                    catch { storage.LogNetwork("background-retry", 0); }
+                    catch {
+                        LiveFailure("联机后台处理失败，正在自动重试；本地计时不受影响。", 0, true);
+                        storage.LogNetwork("background-retry", 0);
+                    }
                     await Task.Delay(250, stop.Token).ConfigureAwait(false);
                 }
             }
@@ -373,7 +407,8 @@ namespace Pal98Timer
             var boundCredential = storage.Credential(contextSettings.Server);
             var issues = new List<string>(bound.Issues);
             if (!beganHere) issues.Add("start-evidence-missing");
-            if (observation.FadeMilliseconds != bound.Fade || observation.MapSpeedTicks != bound.Speed) issues.Add("speed-changed");
+            if (!(observation.Ranking?.SpeedIndependent == true && bound.InitialRanking?.SpeedIndependent == true) &&
+                (observation.FadeMilliseconds != bound.Fade || observation.MapSpeedTicks != bound.Speed)) issues.Add("speed-changed");
             if (bound.ConfigurationId != observation.Ranking?.configuration_id || bound.TimelineId != observation.TimelineId) issues.Add("rules-changed");
             if (!string.IsNullOrEmpty(observation.ValidationError)) issues.Add("timing-validation: " + observation.ValidationError.Substring(0, Math.Min(270, observation.ValidationError.Length)));
             var run = new CompetitionRun {
@@ -388,6 +423,7 @@ namespace Pal98Timer
                 run_id = contextRunId, hwid = boundCredential.Hwid, track_id = contextSettings.Track, ruleset_id = contextSettings.Ruleset,
                 route_sha256 = route, started_at = started.ToString("o"), finished_at = bound.FinishedAt.ToString("o"),
                 total_ms = observation.TotalMilliseconds, restart_ms = observation.RestartMilliseconds, timer_version = timerVersion,
+                release_revision = observation.ReleaseRevision,
                 game_version = string.IsNullOrEmpty(observation.GameVersion) ? null : observation.GameVersion,
                 pal_dll_sha256 = CompetitionProtocol.Digest(observation.DllHash) ? observation.DllHash : null,
                 observations = new CompetitionRunObservations { began_here = beganHere, finished = observation.Finished, issues = issues.Distinct(StringComparer.Ordinal).Take(32).ToArray(),
@@ -461,6 +497,8 @@ namespace Pal98Timer
                 registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5);
                 serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true;
                 serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
+                serverSupportsMaintenance = reply.supported_features?.Contains(CompetitionProtocol.MaintenanceFeature) == true;
+                serverSupportsContentEffects = reply.supported_features?.Contains(CompetitionProtocol.ContentEffectsFeature) == true;
                 PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply);
                 return true;
             }
@@ -581,15 +619,22 @@ namespace Pal98Timer
             if (validation.Length != 0) { item.Rejected = true; item.LastStatus = validation; storage.SavePending(item); return; }
             if (!item.ValidUploadVariants())
             { item.LocalRejected = item.Rejected = true; item.LastStatus = "兼容签封与原始事实不一致，仅保留本地"; storage.SavePending(item); return; }
+            if (item.Run.ranking?.SpeedIndependent == true && !serverSupportsContentEffects)
+            {
+                item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
+                item.LastStatus = "服务器尚未支持改版同配置规则；原始签封已保留，等待服务器升级";
+                storage.SavePending(item); storage.LogNetwork("awaiting-content-effects-server", 0); return;
+            }
             string format = item.UploadFormat == CompetitionPending.Unselected
-                ? serverSupportsRestartTime ? CompetitionPending.Original : CompetitionPending.Legacy
+                ? serverSupportsRestartTime && (item.Run.release_revision == null || serverSupportsMaintenance) ? CompetitionPending.Original : CompetitionPending.Legacy
                 : item.UploadFormat;
             string uploadPayload = format == CompetitionPending.Legacy ? item.LegacyPayload : item.Payload;
             string uploadSeal = format == CompetitionPending.Legacy ? item.LegacySealedRun : item.SealedRun;
-            if (!serverSupportsRestartTime && CompetitionProtocol.Json().Deserialize<Dictionary<string, object>>(uploadPayload).ContainsKey("restart_ms"))
+            if ((!serverSupportsRestartTime && CompetitionProtocol.Json().Deserialize<Dictionary<string, object>>(uploadPayload).ContainsKey("restart_ms")) ||
+                (!serverSupportsMaintenance && CompetitionProtocol.Json().Deserialize<Dictionary<string, object>>(uploadPayload).ContainsKey("release_revision")))
             {
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
-                item.LastStatus = "服务器暂不支持这份原始记录的重启耗时扩展；签封保留，等待服务器升级";
+                item.LastStatus = "服务器暂不支持这份原始记录的展示扩展；签封保留，等待服务器升级";
                 storage.SavePending(item); storage.LogNetwork("awaiting-restart-time-server", 0); return;
             }
             CompetitionAuthSeal producer;

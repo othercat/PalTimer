@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.38.3";
+        public const string CurrentVersion = "3.38.4";
         public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;
@@ -846,7 +846,7 @@ namespace Pal98Timer
                         return;
                     }
                 }
-                string onlineSuffix = competition == null ? "" : onlineCaption;
+                string onlineSuffix = CompetitionOverlayCaption;
                 rr.SetGameVersion(core.GetGameVersion() + onlineSuffix);
                 string integrityTitle = core.GetRuntimeIntegrityStatus();
                 var dx9Core = core as 仙剑98柔情DX9;

@@ -73,6 +73,7 @@ namespace Pal98Timer
         public string custom_competition_id { get; set; }
         public string route_sha256 { get; set; }
         public string game_title { get; set; }
+        public string release_revision { get; set; }
         public long elapsed_ms { get; set; }
         public long? restart_ms { get; set; }
         public string current_checkpoint { get; set; }
@@ -119,6 +120,33 @@ namespace Pal98Timer
 
         internal CompetitionClockWarning ClockWarning { get { return enabled && settings.Enabled ? clockWarning : null; } }
         internal string LiveCaption { get { var warning = ClockWarning; return warning != null ? warning.Caption : liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
+        internal string StatusCaption
+        {
+            get {
+                if (gameSettingsError.Length != 0) return " [联机配置读取失败]";
+                if (readingGameSettings) return " [正在读取联机配置]";
+                if (gameManaged && observedGame == null && liveConnection.Id.Length == 0) return " [联机等待游戏]";
+                if (!enabled || !settings.Enabled) return " [联机关闭]";
+                if (liveConnection.Detail.StartsWith("配套认证组件不可用", StringComparison.Ordinal)) return " [联机认证组件不可用]";
+                if (liveConnection.Failed && liveConnection.Detail.StartsWith("当前构建尚未获服务器批准", StringComparison.Ordinal) &&
+                    activationText == "未激活，仅本地保存") return " [联机构建待批准]";
+                if (liveConnection.Failed && ClockWarning == null) return " [连接失败]";
+                string caption = LiveCaption;
+                if (view.Reply?.player?.bound == false && (caption.StartsWith(" [已连接:", StringComparison.Ordinal) || caption.StartsWith(" [不完全连接:", StringComparison.Ordinal)))
+                    return caption.TrimEnd(']') + " · 未绑定玩家]";
+                return caption.Length == 0 ? " [联机尚未就绪]" : caption;
+            }
+        }
+        internal string StatusDetail
+        {
+            get {
+                if (gameSettingsError.Length != 0) return gameSettingsError + "；将自动重读，也可点击后台重试。本地计时不受影响。";
+                if (readingGameSettings) return "正在后台读取当前游戏的联机设置，本地计时不受影响。";
+                if (gameManaged && observedGame == null && liveConnection.Id.Length == 0) return "等待当前内核识别游戏，再读取游戏目录的联机设置。";
+                if (liveConnection.Failed && ClockWarning == null) return liveConnection.Detail + "\n" + ActivationText + "\n云 ID 存读档使用独立的激活和连接流程。";
+                return LiveDetail + "\n" + ActivationText + "\n云 ID 存读档使用独立的激活和连接流程。";
+            }
+        }
         internal string LiveDetail
         {
             get {
@@ -272,7 +300,7 @@ namespace Pal98Timer
             bool restartInRange = !restart.HasValue || restart >= 0 && restart <= CompetitionProtocol.MaxMilliseconds;
             // SDL assisted runs can have a valid live clock while retaining all
             // score-review evidence. Older cores keep their existing semantics.
-            bool hasLiveValidity = observation?.Gameplay?.family == "sdlpal-geshi-easy" && observation.LiveTimingValid.HasValue;
+            bool hasLiveValidity = GameplayIdentity.IsSdlFamily(observation?.Gameplay?.family) && observation.LiveTimingValid.HasValue;
             bool timingValid = hasLiveValidity ? observation.LiveTimingValid.Value : string.IsNullOrEmpty(observation?.ValidationError);
             bool invalidTiming = !timingValid || hasClock && !fresh;
             string state = !hasGame ? "no_game" : observation == null ? "waiting" : !restartInRange || hasLiveValidity && invalidTiming ? "invalid" : observation.Finished ? "finished" :
@@ -284,6 +312,7 @@ namespace Pal98Timer
                 custom_competition_id = observation?.Context?.Settings.CustomCompetitionId,
                 route_sha256 = observation == null ? null : route,
                 game_title = LiveText(observation?.GameTitle ?? observation?.GameVersion, 240),
+                release_revision = observation?.ReleaseRevision,
                 elapsed_ms = Math.Max(0, Math.Min(86400000, hasClock ? clock.Elapsed : observation?.TotalMilliseconds ?? 0)),
                 // Do not turn an over-capacity observation into a valid finish or
                 // break the live lease with repeated 422s. Its original value is
@@ -338,6 +367,7 @@ namespace Pal98Timer
             bool includeRestartTime = serverSupportsRestartTime;
             var wireObservation = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(CompetitionProtocol.Json().Serialize(snapshot));
             if (!includeRestartTime) wireObservation.Remove("restart_ms");
+            if (!serverSupportsMaintenance || snapshot.release_revision == null) wireObservation.Remove("release_revision");
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
                 session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
             var identityRequest = CaptureIdentityRequest(cfg);

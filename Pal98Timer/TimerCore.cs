@@ -1062,7 +1062,7 @@ namespace Pal98Timer
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
             competitionProcess = process; competitionMetadataPoll = now + 5 * Stopwatch.Frequency;
             form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
-                Step = step, TotalMilliseconds = totalMilliseconds, RestartMilliseconds = RestartMilliseconds, LiveTimingValid = observation.LiveTimingValid, GameTitle = GetGameVersion(),
+                Step = step, TotalMilliseconds = totalMilliseconds, RestartMilliseconds = RestartMilliseconds, LiveTimingValid = observation.LiveTimingValid, ReleaseRevision = observation.ReleaseRevision, GameTitle = GetGameVersion(),
                 Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
                 DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });
         }

@@ -87,7 +87,7 @@ namespace Pal98Timer
         }
         internal static CompetitionSettings LoadSdlpal(string executable, SdlpalSnapshot snapshot)
         {
-            if (snapshot == null || !snapshot.verified || snapshot.profile != "geshi-easy-v1" || snapshot.diagnostic)
+            if (snapshot == null || !snapshot.verified || SdlpalBridge.ProfileFamily(snapshot.profile).Length == 0 || snapshot.diagnostic)
                 throw new InvalidDataException("SDLPAL 运行时身份无效或处于诊断模式");
             // GamePath points to resources (normally PAL), never upload settings.
             // The dedicated tool writes the root file; PALDLL user-data/lock state
