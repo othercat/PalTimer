@@ -415,7 +415,7 @@ internal static class SdlpalBehavior
         state.completed=true;run.Observe(Clone(state),rules);Check(run.Reached.Contains(rules[1].Id),"real completed latch advances ending");
         state.epoch=2;state.completed=false;state.battleEvents=new SdlpalBattleEvent[0];run.Observe(Clone(state),rules);
         Check(run.EpochChanged&&!run.Reached.Any()&&run.Issue!="","load epoch clears pending victories and marks run");
-        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"})
         foreach(int slot in new[]{1,5,100})
         {
             var loading=new SdlpalRunObserver();var before=Snapshot();before.profile=profile;
@@ -886,7 +886,7 @@ internal static class SdlpalBehavior
     }
     static void MaintenanceSaveIsolationTests()
     {
-        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"};
+        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"};
         byte[] bytes=Enumerable.Repeat((byte)42,2048).ToArray();
         foreach(string profile in profiles) using(var engine=new Engine()) using(var bridge=new SdlpalBridge()) {
             engine.State.profile=profile;engine.State.saveLayout="content-v1";
@@ -918,7 +918,7 @@ internal static class SdlpalBehavior
         var flags=BindingFlags.NonPublic|BindingFlags.Instance;
         var read=online.GetType("Pal98Timer.OnlineModule",true).GetMethod("ReadSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
         var create=host.GetType("Pal98Timer.GForm",true).GetMethod("CreateCompetitionSnapshot",BindingFlags.Static|BindingFlags.NonPublic);
-        foreach(string family in new[]{"sdlpal-geshi-easy","sdlpal-dream222","sdlpal-dreamspace39x","standard","drawcard"}) foreach(bool? valid in new bool?[]{null,false,true})
+        foreach(string family in new[]{"sdlpal-geshi-easy","sdlpal-dream222","sdlpal-dreamspace39x","sdlpal-dream22","standard","drawcard"}) foreach(bool? valid in new bool?[]{null,false,true})
         foreach(int? speed in new int?[]{null,0,7,100})
         {
             var value=Activator.CreateInstance(observationType,true);
@@ -1180,7 +1180,7 @@ internal static class SdlpalBehavior
     static void MaintenanceProfiles()
     {
         var paths = new HashSet<string>();
-        foreach (string profile in new[]{"dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach (string profile in new[]{"dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"})
         {
             var rules=SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
             Check(rules.Length==21,"audited original Dream 2.2 route has 21 nodes: "+profile);
@@ -1229,6 +1229,8 @@ internal static class SdlpalBehavior
                         "stale route rejection preserves active content rules byte-for-byte");
                     string previous=core.ActiveBestPath;engine.State.profile="dreamspace39x-hard-v1";engine.Publish();Call(core,"OnTick");
                     Check(core.ActiveProfile==engine.State.profile&&previous!=core.ActiveBestPath&&core.GetGameVersion().Contains("梦时空"),"actual core isolates Dreamspace PB and display");
+                    previous=core.ActiveBestPath;engine.State.profile="dream22-puppet100-v1";engine.Publish();Call(core,"OnTick");
+                    Check(core.ActiveProfile==engine.State.profile&&previous!=core.ActiveBestPath&&core.CheckPoints.Count==21&&core.GetGameVersion().Contains("傀儡100%"),"actual core selects Dream 2.2 puppet route and separate PB");
                     engine.State.profile="geshi-easy-v1";engine.Publish();Call(core,"OnTick");
                     Check(core.CheckPoints.Count==2&&core.GetGameVersion().Contains("隔世"),"switch back restores original Geshi route");
                 } finally {core.Unload();}
@@ -1237,7 +1239,7 @@ internal static class SdlpalBehavior
     }
     static void BestConfigurationTests()
     {
-        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"};
+        string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"};
         Action<SdlpalSnapshot>[] changes={
             s=>{s.monsterRush=true;s.respawnRule="pal98-current-scene-v1";},
             s=>{s.invisibleMonsters=true;s.respawnRule="pal98-current-scene-v1";},
@@ -1321,12 +1323,12 @@ internal static class SdlpalBehavior
             }
             finally {foreach(string path in files) File.Delete(path);}
         }
-        Check(paths.Count==32,"four contents by ordinary/WuQiang/rush/invisible combinations yield 32 independent references");
+        Check(paths.Count==profiles.Length*8,"profile and effect facts always produce independent best references, including synthetic unsupported combinations");
     }
     static void SplitDisplayTests()
     {
         string output=Path.Combine(root,"split-display");Directory.CreateDirectory(output);
-        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"})
         using(var engine=new Engine())
         using(var control=new System.Windows.Forms.Form { ClientSize=new System.Drawing.Size(346,916) })
         using(var board=new GBoard())

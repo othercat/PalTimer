@@ -158,9 +158,9 @@ namespace Pal98Timer
     // identify its actual live owner; callers cannot use a PID from its JSON.
     internal sealed class SdlpalBridge : IDisposable
     {
-        internal static bool SupportedProfile(string value) => value == "geshi-easy-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1";
-        internal static string ProfileFamily(string value) => value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
-        internal static string ProfileName(string value) => value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
+        internal static bool SupportedProfile(string value) => value == "geshi-easy-v1" || value == "dream22-puppet100-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1";
+        internal static string ProfileFamily(string value) => value == "dream22-puppet100-v1" ? "sdlpal-dream22" : value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
+        internal static string ProfileName(string value) => value == "dream22-puppet100-v1" ? "梦幻2.2-傀儡100%" : value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
         internal const int Capacity = 4194304, HeaderSize = 64;
         internal const string Prefix = "Local\\SDLPAL.LostEdit.v1.";
         private readonly object gate = new object();
