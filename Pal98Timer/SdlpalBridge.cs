@@ -58,6 +58,7 @@ namespace Pal98Timer
         public bool wuqiang { get; set; }
         public bool monsterRush { get; set; }
         public bool invisibleMonsters { get; set; }
+        public bool dreamspaceThrowFormula { get; set; }
         public string respawnRule { get; set; }
         public string releaseRevision { get; set; }
         public string resourceHash { get; set; }
@@ -82,6 +83,7 @@ namespace Pal98Timer
         public int scene { get; set; }
         public int map { get; set; }
         public int viewportX { get; set; } public int viewportY { get; set; } public int music { get; set; }
+        public int? partyOffsetX { get; set; } public int? partyOffsetY { get; set; } public int? partyDirection { get; set; }
         public long cash { get; set; }
         public SdlpalBattle battle { get; set; }
         public SdlpalBattleEvent[] battleEvents { get; set; }
@@ -118,6 +120,7 @@ namespace Pal98Timer
             if (!string.IsNullOrEmpty(respawnRule)) facts["respawn_rule"] = respawnRule;
             if (monsterRush) facts["monster_rush"] = "1";
             if (invisibleMonsters) facts["invisible_monsters"] = "1";
+            // The optional throw formula is informational, not a score category.
             return facts;
         }
         internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
@@ -158,9 +161,9 @@ namespace Pal98Timer
     // identify its actual live owner; callers cannot use a PID from its JSON.
     internal sealed class SdlpalBridge : IDisposable
     {
-        internal static bool SupportedProfile(string value) => value == "geshi-easy-v1" || value == "dream22-puppet100-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1";
-        internal static string ProfileFamily(string value) => value == "dream22-puppet100-v1" ? "sdlpal-dream22" : value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
-        internal static string ProfileName(string value) => value == "dream22-puppet100-v1" ? "梦幻2.2-傀儡100%" : value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
+        internal static bool SupportedProfile(string value) => value == "pal-dos-v1" || value == "pal98-classic-v6-v1" || value == "geshi-easy-v1" || value == "dream22-puppet100-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1" || value == "dream211-v1" || value == "hunqian-branch-v1" || value == "hunqian167-easy-v1" || value == "hunqian167-hard-v1" || value == "mogai10-v1" || value == "dream211-pudu-v1" || value == "dream211-yueying-v1" || value == "tianqi20-v1" || value == "dream211-yueying-rat-v1" || value == "geshi-hard-v1" || value == "geshi-nightwolf-v1" || value == "geshi-fanmade-v1" || value == "geshi-fanmade-entertainment-v1";
+        internal static string ProfileFamily(string value) => value == "pal-dos-v1" ? "sdlpal-dos" : value == "pal98-classic-v6-v1" ? "sdlpal-classic98" : value == "geshi-hard-v1" ? "sdlpal-geshi" : value == "geshi-nightwolf-v1" ? "sdlpal-geshi" : value == "geshi-fanmade-v1" ? "sdlpal-geshi" : value == "geshi-fanmade-entertainment-v1" ? "sdlpal-geshi" : value == "dream211-v1" ? "sdlpal-dream211" : value == "hunqian-branch-v1" ? "sdlpal-hunqian-branch" : value == "hunqian167-easy-v1" ? "sdlpal-hunqian167" : value == "hunqian167-hard-v1" ? "sdlpal-hunqian167" : value == "mogai10-v1" ? "sdlpal-mogai10" : value == "dream211-pudu-v1" ? "sdlpal-dream211" : value == "dream211-yueying-v1" ? "sdlpal-dream211" : value == "tianqi20-v1" ? "sdlpal-tianqi20" : value == "dream211-yueying-rat-v1" ? "sdlpal-dream211" : value == "dream22-puppet100-v1" ? "sdlpal-dream22" : value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
+        internal static string ProfileName(string value) => value == "pal-dos-v1" ? "仙剑DOS原版" : value == "pal98-classic-v6-v1" ? "98柔情经典速通v6" : value == "geshi-hard-v1" ? "隔世追凶·困难" : value == "geshi-nightwolf-v1" ? "隔世追凶·夜狼非人" : value == "geshi-fanmade-v1" ? "隔世追凶·非人饭制" : value == "geshi-fanmade-entertainment-v1" ? "隔世追凶·非人饭制娱乐" : value == "dream211-v1" ? "梦幻2.11" : value == "hunqian-branch-v1" ? "魂牵梦萦 初版分支" : value == "hunqian167-easy-v1" ? "魂牵梦萦1.67 简单" : value == "hunqian167-hard-v1" ? "魂牵梦萦1.67 困难" : value == "mogai10-v1" ? "魔改1.0" : value == "dream211-pudu-v1" ? "梦幻2.11 普渡" : value == "dream211-yueying-v1" ? "梦幻2.11 月影" : value == "tianqi20-v1" ? "天启神佑2.0" : value == "dream211-yueying-rat-v1" ? "梦幻2.11 月影鼠年祈福篇" : value == "dream22-puppet100-v1" ? "梦幻2.2-傀儡100%" : value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
         internal const int Capacity = 4194304, HeaderSize = 64;
         internal const string Prefix = "Local\\SDLPAL.LostEdit.v1.";
         private readonly object gate = new object();
@@ -219,17 +222,23 @@ namespace Pal98Timer
                 releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
                 validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
-            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "respawnRule" })
+            foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
+                if (fields.TryGetValue(key, out object coordinate) && coordinate != null &&
+                    (!(coordinate is int) || (int)coordinate < 0 || (int)coordinate > (key == "partyDirection" ? 3 : 65535)))
+                    throw new InvalidDataException("队伍触发位置字段无效");
+            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "respawnRule", "dreamspaceThrowFormula" })
             {
                 object field;
                 bool present = fields.TryGetValue(key, out field);
                 if (present && (key == "respawnRule" ? field != null && !(field is string) : !(field is bool)))
-                    throw new InvalidDataException("怪物模式字段无效");
+                    throw new InvalidDataException("玩法规则字段无效");
                 object nestedField;
                 if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> modeIdentity &&
                     modeIdentity.TryGetValue(key, out nestedField) && (!present || !Equals(nestedField, field)))
-                    throw new InvalidDataException("怪物模式身份与状态不一致");
+                    throw new InvalidDataException("玩法规则身份与状态不一致");
             }
+            if (value.dreamspaceThrowFormula && value.profile != "dreamspace39x-hard-v1")
+                throw new InvalidDataException("梦时空投掷公式不适用于当前内容");
             if (!string.IsNullOrEmpty(value.respawnRule) && value.respawnRule != "pal98-current-scene-v1" ||
                 (value.monsterRush || value.invisibleMonsters) && value.respawnRule != "pal98-current-scene-v1")
                 throw new InvalidDataException("未知怪物刷新规则");

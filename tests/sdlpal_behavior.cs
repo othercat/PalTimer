@@ -82,6 +82,42 @@ internal static class SdlpalBehavior
         Check(valid(),"complete old configuration remains readable without rewriting its digest");
         facts["resource.DATA.MKF"]=new string('e',64);Check(!valid(),"mismatched resource aggregate rejected");
     }
+    static void DreamspaceThrowTests()
+    {
+        var normal=Snapshot();normal.profile="dreamspace39x-hard-v1";normal.respawnRule="pal98-current-scene-v1";
+        var enabled=Clone(normal);enabled.dreamspaceThrowFormula=true;
+        Check(!normal.RankingFacts().ContainsKey("dreamspace_throw"),"disabled Dreamspace formula preserves r70 ranking keys");
+        Check(!enabled.RankingFacts().ContainsKey("dreamspace_throw")&&
+            RankingConfiguration.Digest(normal.RankingFacts())==RankingConfiguration.Digest(enabled.RankingFacts())&&
+            enabled.ResourceEngineIdentity==normal.ResourceEngineIdentity,
+            "Dreamspace formula changes neither score groups nor relay compatibility");
+        Func<Dictionary<string,string>,bool> valid=facts=>new RankingConfiguration {
+            covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)
+        }.Valid(new GameplayIdentity {family=facts["family"],content_id=facts["profile"],content_sha256=facts["content"],
+            rules_sha256=RankingConfiguration.Digest(facts),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0});
+        Check(valid(normal.RankingFacts())&&valid(enabled.RankingFacts()),"both Dreamspace formulas have valid complete ranking facts");
+        var bad=enabled.RankingFacts();bad["dreamspace_throw"]="lostedit-v1";
+        Check(!valid(bad),"informational throw choice cannot leak into accepted ranking facts");
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] bytes=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            return SdlpalBridge.Decode(Header(normal,bytes.Length),bytes,777,123,10000);
+        };
+        var fields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(enabled));
+        var identity=new Dictionary<string,object>{{"dreamspaceThrowFormula",true}};fields["identity"]=identity;
+        Check(decode(fields).dreamspaceThrowFormula,"matching native Dreamspace formula accepted");
+        identity["dreamspaceThrowFormula"]=false;Reject(()=>decode(fields),"conflicting nested throw formula rejected");
+        identity["dreamspaceThrowFormula"]=true;
+        foreach(object value in new object[]{null,1,"true"}) {
+            fields["dreamspaceThrowFormula"]=value;identity["dreamspaceThrowFormula"]=value;
+            Reject(()=>decode(fields),"throw formula requires actual JSON boolean");
+        }
+        fields.Remove("dreamspaceThrowFormula");identity["dreamspaceThrowFormula"]=true;
+        Reject(()=>decode(fields),"nested-only throw formula rejected");
+        fields.Remove("identity");Check(!decode(fields).dreamspaceThrowFormula,"old snapshots without the field retain classic throw identity");
+        fields["dreamspaceThrowFormula"]=true;fields["profile"]="geshi-easy-v1";
+        Reject(()=>decode(fields),"effective throw mode rejected on non-Dreamspace snapshots");
+        fields["dreamspaceThrowFormula"]=false;Check(!decode(fields).dreamspaceThrowFormula,"false throw flag allowed on all contents");
+    }
     static void DecodeTests(string[] paths)
     {
         Func<Dictionary<string,object>,SdlpalSnapshot> decodeMode=fields=>{
@@ -118,12 +154,24 @@ internal static class SdlpalBehavior
         {
             json=File.ReadAllBytes(path); state=SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(new UTF8Encoding(false,true).GetString(json));
             var actual=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);
-            Check(actual.profile=="geshi-easy-v1"&&actual.diagnostic,"real native diagnostic snapshot decodes: "+Path.GetFileName(path));
+            bool contentFixture=Path.GetFileName(path)=="verification-content.json";
+            string expectedProfile=contentFixture?new DirectoryInfo(Path.GetDirectoryName(path)).Parent.Name+"-v1":"geshi-easy-v1";
+            Check(actual.profile==expectedProfile&&actual.diagnostic,"real native diagnostic snapshot decodes: "+expectedProfile);
             var metadata=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(json));
             if(metadata.ContainsKey("rankingConfigurationId"))
                 Check((string)metadata["rankingConfigurationId"]==RankingConfiguration.Digest(actual.RankingFacts()),
                     "native title configuration ID matches timer ranking rules: "+Path.GetFileName(path));
             var items=new SdlpalItemTracker();items.Observe(actual);
+            if(contentFixture) {
+                Check(items.View.Available&&items.View.Rows.Select(row=>row.Id).OrderBy(id=>id).SequenceEqual(actual.itemIds.OrderBy(id=>id)),"actual runtime catalog remains complete for "+expectedProfile);
+                Check(items.View.Rows.All(row=>row.ResourcePrice==actual.catalog.Single(c=>c.id==row.Id).data[1]),"item prices retain the selected content values");
+                var facts=actual.RankingFacts();
+                Check(new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(new GameplayIdentity {family=SdlpalBridge.ProfileFamily(actual.profile),content_id=actual.profile,content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=actual.fadeCycleMs,map_speed_ticks=0,walk_frame_ms=actual.walkFrameMs,speed=actual.speed,battle_speed=actual.battleSpeed}),"actual content ranking validates");
+                var onlineType=Assembly.LoadFrom(Path.Combine(root,"PalTimerOnline.dll")).GetType("Pal98Timer.GameplayIdentity",true);
+                var onlineIdentity=SdlpalBridge.Json().GetType().GetMethods().Single(m=>m.Name=="Deserialize"&&m.IsGenericMethodDefinition&&m.GetParameters().Length==1).MakeGenericMethod(onlineType).Invoke(SdlpalBridge.Json(),new object[]{SdlpalBridge.Json().Serialize(new GameplayIdentity {family=SdlpalBridge.ProfileFamily(actual.profile),content_id=actual.profile,content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=actual.fadeCycleMs,map_speed_ticks=0,walk_frame_ms=actual.walkFrameMs,speed=actual.speed,battle_speed=actual.battleSpeed})});
+                Check((bool)onlineType.GetProperty("Valid",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(onlineIdentity,null),"shipped online module accepts actual content identity");
+                continue;
+            }
             Check(items.View.Available&&items.View.Rows.Any(row=>row.Id==585)&&!items.View.Rows.Any(row=>row.Id==571||row.Id==575),"native item catalog includes modified items and excludes initial magics: "+Path.GetFileName(path));
             Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&new[]{"銅錢鏢","铜钱镖"}.Contains(items.View.Rows.Single(row=>row.Id==344).Name),"native item names/prices come from current resources");
             Check(actual.scene==227 ? items.View.Cash==31265&&items.View.Kinds==80&&items.View.Quantity==355 :
@@ -1179,6 +1227,56 @@ internal static class SdlpalBehavior
     }
     static void MaintenanceProfiles()
     {
+        ClassicRouteTests();
+        foreach (string profile in new[]{"geshi-hard-v1", "geshi-nightwolf-v1", "geshi-fanmade-v1", "geshi-fanmade-entertainment-v1"})
+        {
+            var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
+            Check(rules.Length == 2 && SdlpalBridge.SupportedProfile(profile), "independent Geshi route: " + profile);
+            var fight = new SdlpalBattleEvent{team=315,enemies=new[]{547},result=3};
+            Check(rules[0].Matches(fight), "Geshi audited eight-headed serpent victory");
+            fight.result = 1; Check(!rules[0].Matches(fight), "Geshi defeat cannot split");
+            fight.result = 3; fight.team = 314; Check(!rules[0].Matches(fight), "another team cannot split Geshi");
+            var state = Snapshot(); state.profile = profile; state.started = false;
+            var observer = new SdlpalRunObserver(); observer.Observe(Clone(state),rules);
+            state.started = true; observer.Observe(Clone(state),rules);
+            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=315,enemies=new[]{547},result=3}};
+            observer.Observe(Clone(state),rules);
+            Check(!observer.Reached.Contains(rules[1].Id), "Geshi boss victory waits for the ending");
+            state.completed = true; observer.Observe(Clone(state),rules);
+            Check(observer.Reached.Contains(rules[1].Id), "actual Geshi ending completes route");
+            var facts = state.RankingFacts();
+            Check(facts["profile"] == profile && facts["family"] == "sdlpal-geshi", "Geshi difficulty keeps independent ranking identity");
+        }
+        foreach (string profile in new[]{"mogai10-v1", "tianqi20-v1", "dream211-v1", "dream211-pudu-v1",
+            "dream211-yueying-v1", "dream211-yueying-rat-v1", "hunqian-branch-v1", "hunqian167-easy-v1", "hunqian167-hard-v1"})
+        {
+            var expanded = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(expanded);
+            int count = profile == "tianqi20-v1" ? 17 : profile == "dream211-v1" || profile == "dream211-pudu-v1" ? 21 : 18;
+            Check(expanded.Length == count && SdlpalBridge.SupportedProfile(profile), "independent expanded route: " + profile);
+            var ending = expanded.Last();
+            Check(ending.Kind == "completion" && !ending.Team.HasValue && !ending.Scene.HasValue && !ending.Enemy.HasValue,
+                "expanded endings wait for the actual ending instead of reusing a Dream boss");
+            var state = Snapshot(); state.profile = profile; state.started = true; state.music = 23; state.scene = 106;
+            var tower = expanded.Single(r => r.Id == "dream-tower");
+            Check(!tower.MatchesState(state), "same music in an earlier scene cannot split the tower");
+            state.scene = 144; Check(tower.MatchesState(state), "tower music splits in its audited scene");
+            var observer = new SdlpalRunObserver(); state.started = false; observer.Observe(Clone(state), expanded);
+            state.started = true; observer.Observe(Clone(state), expanded);
+            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=389,scene=297,enemies=new[]{576},result=3}};
+            observer.Observe(Clone(state), expanded);
+            Check(!observer.Reached.Contains(ending.Id), "foreign Dream final battle cannot complete expanded content");
+            state.completed = true; observer.Observe(Clone(state), expanded);
+            Check(observer.Reached.Contains(ending.Id), "actual ending observation completes expanded content");
+            foreach (var rule in expanded.Where(r => r.Kind == "battle" || r.Kind == "battle-end"))
+            {
+                var fight = new SdlpalBattleEvent{team=rule.Team.Value,scene=rule.Scenes[0],enemies=new[]{rule.Enemy.Value},result=3};
+                Check(rule.Matches(fight), "expanded audited battle: " + rule.Id);
+                fight.scene = 1; Check(!rule.Matches(fight), "shared enemy in another scene cannot split expanded route");
+            }
+            var facts = state.RankingFacts();
+            Check(facts["profile"] == profile && facts["family"] == SdlpalBridge.ProfileFamily(profile),
+                "expanded profile keeps its own ranking family");
+        }
         var paths = new HashSet<string>();
         foreach (string profile in new[]{"dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"})
         {
@@ -1235,6 +1333,83 @@ internal static class SdlpalBehavior
                     Check(core.CheckPoints.Count==2&&core.GetGameVersion().Contains("隔世"),"switch back restores original Geshi route");
                 } finally {core.Unload();}
             }
+        }
+    }
+    static void ClassicRouteTests()
+    {
+        foreach (string profile in new[] { "pal-dos-v1", "pal98-classic-v6-v1" })
+        {
+            bool dos = profile == "pal-dos-v1";
+            var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
+            Check(rules.Length == 21 && SdlpalBridge.SupportedProfile(profile), "classic route retains all 21 native checkpoints: " + profile);
+            Check(SdlpalBridge.ProfileFamily(profile) == (dos ? "sdlpal-dos" : "sdlpal-classic98"), "new content has its own ranking family");
+            Check(rules.Single(r => r.Name == "进十年前").Scene == (dos ? 227 : 247) &&
+                rules.Single(r => r.Name == "祈雨").Scene == (dos ? 258 : 228), "late DOS scene reorder is not an offset from Win95");
+            foreach (var rule in rules.Where(r => r.Kind == "battle" || r.Kind == "battle-end" || r.Kind == "completion"))
+            {
+                var battle = new SdlpalBattleEvent { scene = rule.Scene.Value, team = rule.Team.Value, enemies = new[] { rule.Enemy.Value }, result = 3 };
+                Check(rule.Matches(battle), "audited classic battle matches " + rule.Name);
+                battle.scene++; Check(!rule.Matches(battle), "same enemy in another scene cannot split " + rule.Name);
+                battle.scene--; battle.result = 1;
+                Check(rule.Matches(battle) == (rule.Kind == "battle-end"), "Caiyi alone accepts non-victory battle end");
+            }
+            var ending = rules.Last();
+            Check(ending.Scene == (dos ? 281 : 282) && ending.Team == 313 && ending.Enemy == 546,
+                "classic final battle uses Baiyue instead of the Dream final boss");
+            var tower = rules.Single(r => r.Name == "进锁妖塔");
+            var state = Snapshot(); state.profile = profile; state.started = true;
+            foreach (var location in tower.Alternatives)
+            {
+                state.scene = location.Scene; state.viewportX = location.X ?? 0; state.viewportY = location.Y ?? 0;
+                Check(tower.MatchesState(state), "each native tower alternative completes the same single node");
+                if (location.X.HasValue) { state.viewportX += location.Radius.Value * 16 + 1; Check(!tower.MatchesState(state), "tower position bounds are exact"); }
+            }
+            var changed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(SdlpalBridge.Json().Serialize(rules));
+            changed.Single(r => r.Name == "进锁妖塔").Alternatives = tower.Alternatives.Reverse().ToArray();
+            Check(SdlpalSplitRule.Identity(rules) == SdlpalSplitRule.Identity(changed), "OR entry order is not a new route");
+            changed.Single(r => r.Name == "水灵珠").ReturnScene++;
+            Check(SdlpalSplitRule.Identity(rules) != SdlpalSplitRule.Identity(changed), "water-pearl return scene changes route identity");
+            changed.Single(r => r.Name == "进锁妖塔").Alternatives = new[] { new SdlpalLocationRule { Scene = 3, X = 1 } };
+            Reject(() => SdlpalSplitRule.Validate(changed), "partial alternative coordinates are rejected");
+
+            var pearl = rules.Single(r => r.Name == "水灵珠");
+            Func<SdlpalSnapshot> exchange = () => {
+                var s = Snapshot(); s.profile = profile; s.started = true; s.scene = pearl.Scene.Value;
+                s.partyOffsetX = 160; s.partyOffsetY = 112; s.partyDirection = 3;
+                s.viewportX = 1072 - 160; s.viewportY = 1608 - 112;
+                s.inventory = new[] { new SdlpalInventory { id = 265, amount = 0 } }; return s;
+            };
+            var observer = new SdlpalRunObserver(); state = exchange(); observer.Observe(Clone(state), rules);
+            state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(observer.Reached.Contains(pearl.Id), "manual exchange requires a count increase in the correct facing range");
+            observer = new SdlpalRunObserver(); state = exchange(); state.partyDirection = 1;
+            observer.Observe(Clone(state), rules); state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "wrong facing cannot claim an exchange merely from owning the pearl");
+            observer = new SdlpalRunObserver(); state = exchange(); observer.Observe(Clone(state), rules);
+            state.epoch++; state.loadedFrom = 1; state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "load epoch rebases pearl count without fabricating an exchange");
+            observer = new SdlpalRunObserver(); state = exchange(); state.partyDirection = null;
+            observer.Observe(Clone(state), rules); state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "legacy snapshot lacking facing does not guess a water-pearl checkpoint");
+            state.partyDirection = 0; state.scene = pearl.ReturnScene.Value;
+            state.viewportX = 1168 - 160; state.viewportY = 760 - 112;
+            observer.Observe(Clone(state), rules);
+            Check(observer.Reached.Contains(pearl.Id), "return to Dali with pearl follows the original fallback gate");
+            using (var editor = new SdlpalRulesForm(rules, state))
+            {
+                var bar = editor.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().Single();
+                var button = bar.Controls.OfType<System.Windows.Forms.Button>().Single(b => b.Text == "验证并保存");
+                typeof(System.Windows.Forms.Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                Check(editor.Rules != null && SdlpalSplitRule.Identity(editor.Rules) == SdlpalSplitRule.Identity(rules),
+                    "actual route editor roundtrip retains composite gates");
+            }
+        }
+        Reject(() => SdlpalDreamRoutes.ForProfile("future-unknown-v1"), "unknown content never inherits the Dream route");
+        foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
+        {
+            var s = Snapshot(); var fields = SdlpalBridge.Json().Deserialize<Dictionary<string, object>>(SdlpalBridge.Json().Serialize(s));
+            fields[key] = "1"; byte[] payload = Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            Reject(() => SdlpalBridge.Decode(Header(s, payload.Length), payload, 777, 123, 10000), "party coordinates never coerce text: " + key);
         }
     }
     static void BestConfigurationTests()
@@ -1425,6 +1600,7 @@ internal static class SdlpalBehavior
             bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
             if(args.Contains("--split-display-only")) {SplitDisplayTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--best-configuration-only")) {BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;}
+            if(args.Contains("--throw-formula-only")) {DreamspaceThrowTests();Console.WriteLine("PASS total="+count);return 0;}
             if(noGui&&args.Contains("--ui")) throw new ArgumentException("--no-gui cannot be combined with --ui");
             if(args.Length==1&&args[0]=="--ui")
             {
@@ -1443,7 +1619,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();DreamspaceThrowTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

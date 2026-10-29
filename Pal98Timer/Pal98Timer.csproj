@@ -138,6 +138,8 @@
     <Compile Include="SdlpalGeshi.cs" />
     <Compile Include="MaintenanceExecutable.cs" />
     <Compile Include="SdlpalDreamRoutes.cs" />
+    <Compile Include="SdlpalClassicRoutes.cs" />
+    <Compile Include="SdlpalExpandedRoutes.cs" />
     <Compile Include="SdlpalItems.cs" />
     <Compile Include="SdlpalItemsForm.cs" />
     <Compile Include="SdlpalRelay.cs" />

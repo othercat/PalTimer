@@ -1,6 +1,6 @@
 param([string]$PalSharedSourceRoot = '', [string[]]$NativeSnapshotFile, [switch]$NoGui,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [string]$RuntimeDirectory = '', [string]$PluginResource = '', [switch]$SkipBuild, [switch]$SplitDisplayOnly, [switch]$BestConfigurationOnly)
+    [string]$RuntimeDirectory = '', [string]$PluginResource = '', [switch]$SkipBuild, [switch]$SplitDisplayOnly, [switch]$BestConfigurationOnly, [switch]$ThrowFormulaOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
@@ -65,6 +65,7 @@ $arguments = @()
 if ($NoGui) { $arguments += '--no-gui' }
 if ($SplitDisplayOnly) { $arguments += '--split-display-only' }
 if ($BestConfigurationOnly) { $arguments += '--best-configuration-only' }
+if ($ThrowFormulaOnly) { $arguments += '--throw-formula-only' }
 foreach ($file in $NativeSnapshotFile) { $arguments += (Resolve-Path -LiteralPath $file).Path }
 Push-Location -LiteralPath $out
 try { & $exe @arguments 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt'); $result = $LASTEXITCODE }

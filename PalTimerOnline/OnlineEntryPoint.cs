@@ -11,6 +11,8 @@ namespace Pal98Timer
     {
         public static int InitializeGeshiConfiguration(string snapshotFile, string outputDirectory) =>
             GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory);
+        public static int ExecuteChallengeRequest(string gameRoot, string requestFile, string responseFile) =>
+            ChallengeBridge.Execute(gameRoot, requestFile, responseFile);
         public static int InitializeSdlpalConfiguration(string snapshotFile, string outputDirectory, string[] checkpointIds) =>
             GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory, checkpointIds);
         public static IPalTimerOnlineV1 Create(int apiVersion, string timerVersion)
@@ -22,6 +24,8 @@ namespace Pal98Timer
     internal sealed class OnlineModule : IPalTimerOnlineV1, IPalTimerOnlineStatusV1
     {
         private readonly CompetitionClient client;
+        private readonly System.Threading.CancellationTokenSource challengeStop = new System.Threading.CancellationTokenSource();
+        private Task challengeRefresh;
         private CompetitionSettingsForm settingsForm;
         private CompetitionOverlayForm overlay;
         private CompetitionClockWarningForm clockWarningForm;
@@ -34,7 +38,9 @@ namespace Pal98Timer
         public string LiveCaption => client.LiveCaption;
         public string StatusCaption => client.StatusCaption;
         public string StatusDetail => client.StatusDetail;
-        internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) { }
+        internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) {
+            challengeRefresh = ChallengeBridge.RefreshInstallation(AppDomain.CurrentDomain.BaseDirectory, challengeStop.Token);
+        }
         internal OnlineModule(CompetitionClient client) { this.client = client; }
         public void ObserveTarget(int processId, long epoch)
         {
@@ -140,6 +146,6 @@ namespace Pal98Timer
             if (!cfg.Overlay && overlay != null && !overlay.IsDisposed) overlay.Close();
         }
         public async Task<bool> CloseAsync() { closing = true; bool closed = await client.CloseAsync(); if (!closed) closing = false; return closed; }
-        public void Dispose() { closing = true; clockWarningForm?.Close(); overlay?.Close(); settingsForm?.Close(); client.Dispose(); }
+        public void Dispose() { closing = true; challengeStop.Cancel(); clockWarningForm?.Close(); overlay?.Close(); settingsForm?.Close(); client.Dispose(); challengeStop.Dispose(); }
     }
 }

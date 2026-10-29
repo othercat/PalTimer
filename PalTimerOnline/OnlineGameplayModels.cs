@@ -12,7 +12,7 @@ namespace Pal98Timer
 {
     internal sealed class GameplayIdentity
     {
-        internal static bool IsSdlFamily(string value) => value == "sdlpal-geshi-easy" || value == "sdlpal-dream22" || value == "sdlpal-dream222" || value == "sdlpal-dreamspace39x";
+        internal static bool IsSdlFamily(string value) => value == "sdlpal-dos" || value == "sdlpal-classic98" || value == "sdlpal-geshi" || value == "sdlpal-geshi-easy" || value == "sdlpal-dream22" || value == "sdlpal-dream222" || value == "sdlpal-dreamspace39x" || value == "sdlpal-dream211" || value == "sdlpal-mogai10" || value == "sdlpal-tianqi20" || value == "sdlpal-hunqian167" || value == "sdlpal-hunqian-branch";
         public string schema { get; set; } = "PAL98.GameplayIdentity.v1";
         public string rules_sha256 { get; set; }
         public string content_id { get; set; }

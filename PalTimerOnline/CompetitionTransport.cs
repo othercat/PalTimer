@@ -40,7 +40,8 @@ namespace Pal98Timer
             {
                 deadline.CancelAfter(timeoutMilliseconds);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secret);
-                if (method == "GET") request.Headers.Add("X-PAL-HWID", hwid);
+                if (method == "GET" || new Uri(url).AbsolutePath.StartsWith("/api/v1/timer/challenges/", StringComparison.Ordinal))
+                    request.Headers.Add("X-PAL-HWID", hwid);
                 if (body != null) request.Content = new StringContent(body, new UTF8Encoding(false), "application/json");
                 try
                 {

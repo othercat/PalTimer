@@ -44,7 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
-        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects;
+        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects, serverSupportsMaintenanceLive;
         private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
@@ -281,7 +281,7 @@ namespace Pal98Timer
                 if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
-                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = false;
+                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = serverSupportsMaintenanceLive = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
@@ -499,6 +499,7 @@ namespace Pal98Timer
                 serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
                 serverSupportsMaintenance = reply.supported_features?.Contains(CompetitionProtocol.MaintenanceFeature) == true;
                 serverSupportsContentEffects = reply.supported_features?.Contains(CompetitionProtocol.ContentEffectsFeature) == true;
+                serverSupportsMaintenanceLive = reply.supported_features?.Contains(CompetitionProtocol.MaintenanceLiveFeature) == true;
                 PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply);
                 return true;
             }
