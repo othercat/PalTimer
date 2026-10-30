@@ -24,6 +24,13 @@ namespace Pal98Timer
         Task<bool> CloseAsync();
     }
 
+    // Additive presentation extension; API 1 and its signed wire contract stay intact.
+    public interface IPalTimerOnlineStatusV1
+    {
+        string StatusCaption { get; }
+        string StatusDetail { get; }
+    }
+
     public sealed class OnlineGameplayV1
     {
         public string Schema { get; }

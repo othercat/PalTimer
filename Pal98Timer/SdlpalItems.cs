@@ -26,19 +26,23 @@ namespace Pal98Timer
         }
         internal SdlpalItemSettings Copy() => new SdlpalItemSettings { Version = Version, FujiaEnabled = FujiaEnabled,
             WatchEnabled = WatchEnabled, OnlyOwned = OnlyOwned, OnlyWatched = OnlyWatched, WatchedIds = WatchedIds.ToArray() };
-        internal static SdlpalItemSettings Load()
+        private static string ProfileFile(string profile) {
+            if (!SdlpalBridge.SupportedProfile(profile)) throw new ArgumentException("Unknown content profile");
+            return profile == "geshi-easy-v1" ? FileName : "sdlpal_" + profile + "_items.json";
+        }
+        internal static SdlpalItemSettings Load(string profile = "geshi-easy-v1")
         {
-            string path = TimerUserSettings.GetPath(FileName);
+            string path = TimerUserSettings.GetPath(ProfileFile(profile));
             if (!File.Exists(path)) return new SdlpalItemSettings();
             if (new FileInfo(path).Length > 32768) throw new InvalidDataException("物品监测配置过大");
             var value = SdlpalBridge.Json().Deserialize<SdlpalItemSettings>(File.ReadAllText(path, Encoding.UTF8));
             if (value == null) throw new InvalidDataException("物品监测配置为空");
             value.Validate(); return value;
         }
-        internal void Save()
+        internal void Save(string profile = "geshi-easy-v1")
         {
             Validate();
-            TimerUserSettings.WriteText(FileName, SdlpalBridge.Json().Serialize(this), new UTF8Encoding(false));
+            TimerUserSettings.WriteText(ProfileFile(profile), SdlpalBridge.Json().Serialize(this), new UTF8Encoding(false));
         }
     }
 

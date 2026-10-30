@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using System.Web;
 
 [assembly: AssemblyVersion("3.37.7.6")]
-internal static class CompetitionBehavior
+internal static partial class CompetitionBehavior
 {
     static int count;
     static string root;
@@ -72,6 +72,10 @@ internal static class CompetitionBehavior
         internal int UploadStatus = 201;
         internal string ExpectedRegistrationSecret;
         internal int RejectedRegistrations;
+        internal CompetitionPlayer Player = new CompetitionPlayer { bound = true, id = "11111111-1111-4111-8111-111111111111", display_name = "联调玩家" };
+        internal int RegisterStatus = 200;
+        internal string RegistrationBody;
+        internal TaskCompletionSource<bool> RegisterGate;
         internal readonly ConcurrentQueue<string> Payloads = new ConcurrentQueue<string>();
         internal readonly ConcurrentQueue<string> Urls = new ConcurrentQueue<string>();
         public async Task<CompetitionHttpResult> Send(string method, string url, string hwid, string secret, string body, int timeout, CancellationToken stop)
@@ -81,11 +85,16 @@ internal static class CompetitionBehavior
             {
                 Urls.Enqueue(url);
                 if (url.EndsWith("/devices")) {
+                    var response = Response(null, null);
+                    response.Status = RegisterStatus;
+                    if (RegistrationBody != null) response.Body = RegistrationBody;
+                    var registerGate = RegisterGate;
                     Registers++;
                     if (ExpectedRegistrationSecret != null && secret != ExpectedRegistrationSecret) {
                         RejectedRegistrations++; return new CompetitionHttpResult { Status = 401 };
                     }
-                    return Response(null, null);
+                    if (registerGate != null) await registerGate.Task;
+                    return response;
                 }
                 if (url.Contains("/auth/status?"))
                 {
@@ -128,7 +137,7 @@ internal static class CompetitionBehavior
             }
             finally { Interlocked.Decrement(ref Active); }
         }
-        CompetitionReply Envelope() { return new CompetitionReply { supported_features = Features, supported_run_protocols = V2 ? new[] { CompetitionProtocol.Online, CompetitionProtocol.OnlineV2 } : new[] { CompetitionProtocol.Online }, protocol = CompetitionProtocol.Online, scope=CompetitionProtocol.Scope,published=Published,title="测试日常榜", reference_only = true, includes_warmup = true, player = new CompetitionPlayer { bound = true, display_name = "联调玩家" } }; }
+        CompetitionReply Envelope() { return new CompetitionReply { supported_features = Features, supported_run_protocols = V2 ? new[] { CompetitionProtocol.Online, CompetitionProtocol.OnlineV2 } : new[] { CompetitionProtocol.Online }, protocol = CompetitionProtocol.Online, scope=CompetitionProtocol.Scope,published=Published,title="测试日常榜", reference_only = true, includes_warmup = true, player = Player }; }
         CompetitionHttpResult Response(string route, string node, string configuration = null, string elapsed = null, string board = null, string custom = null)
         {
             var reply = Envelope(); reply.board = board; reply.configuration_id = configuration; reply.custom_competition_id=custom; reply.route_sha256 = route;
@@ -148,8 +157,10 @@ internal static class CompetitionBehavior
         await Until(() => wire.Registers > 0, "compatible upload server registered");
         client.Publish(Observation("compatible-score", 0));
         var finish = Observation("compatible-score", 2); finish.RestartMilliseconds = 5432; client.Publish(finish);
-        await Until(() => wire.Posts == 1, "legacy server receives compatible sealed score");
-        var pending = store.LoadPending(Config()).Single();
+        CompetitionPending pending = null;
+        await Until(() => wire.Posts == 1 && wire.Payloads.Count == 1 &&
+            (pending = store.LoadPending(Config()).SingleOrDefault())?.Attempts == 1,
+            "legacy server receives compatible sealed score and retry is persisted");
         Check(selectedBeforeChallenge && pending.UploadFormat == CompetitionPending.Legacy, "upload format persisted before requesting challenge");
         var sent = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(wire.Payloads.Single());
         Check(!sent.ContainsKey("restart_ms") && pending.Run.restart_ms == 5432 && pending.Payload.Contains("\"restart_ms\":5432"),
@@ -200,7 +211,7 @@ internal static class CompetitionBehavior
         pending.LegacyPayload = pending.LegacySealedRun = null; pending.Attempts = 0; pending.NextAttemptUtc = DateTime.MinValue;
         pending.Path = null; store.SavePending(pending);
         wire = new Fake { Features = null }; auth = new FakeAuth(); client = new CompetitionClient(store, wire, auth); client.Configure(Config());
-        await Until(() => store.LoadPending(Config()).Single().LastStatus?.Contains("等待服务器升级") == true, "historical full seal waits for extension support");
+        await Until(() => store.LoadPending(Config()).Any(p => p.LastStatus?.Contains("等待服务器升级") == true), "historical full seal waits for extension support");
         Check(wire.Posts == 0 && auth.Seals == 0, "history cannot be stripped or resealed even before first counted attempt");
         wire.Features = new[] { CompetitionProtocol.RestartTimeFeature }; client.Retry();
         await Until(() => wire.Posts == 1, "historical original released by compatible server upgrade");
@@ -486,6 +497,32 @@ internal static class CompetitionBehavior
         client.Invalidate("next");Check(client.View.Reply==null,"reset clears previous board rank to unknown");await client.CloseAsync();
     }
 
+    static async Task MaintenanceCases()
+    {
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"}) {
+            string family=SdlpalBridge.ProfileFamily(profile);
+            Func<int,CompetitionObservation> observe=step=>{
+                var value=SdlpalObservation(profile,step);value.ReleaseRevision="r53";
+                value.Gameplay.family=family;value.Gameplay.content_id=profile;
+                value.Ranking.rules["family"]=family;value.Ranking.rules["profile"]=profile;
+                value.Ranking.configuration_id=RankingConfiguration.Digest(value.Ranking.rules);value.Gameplay.rules_sha256=value.Ranking.configuration_id;
+                value.TimelineId=TimelineIdentity.Create(value.Gameplay.rules_sha256,CompetitionProtocol.RouteHash(value.Splits.Select(s=>s.checkpoint_id)),false);return value;
+            };
+            var wire=new Fake{Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceFeature}};
+            var auth=new FakeAuth();var store=Store("maintenance-"+profile);var client=new CompetitionClient(store,wire,auth);client.Configure(Config());
+            await Until(()=>wire.Registers>0,"maintenance fixture registration "+profile);
+            client.Publish(observe(0));client.Publish(observe(2));await Until(()=>wire.Posts==1,"maintenance signed final uploads "+profile);
+            var run=CompetitionProtocol.Json().Deserialize<CompetitionRun>(wire.Payloads.Single());
+            Check(run.release_revision=="r53"&&run.gameplay.walk_frame_ms==90&&run.observations.initial_gameplay.walk_frame_ms==90,"sealed initial/final walk and revision retained "+profile);
+            Check(CompetitionProtocol.Validate(run)==""&&run.ranking.Valid(run.gameplay),"four-profile score contract remains valid "+profile);
+            string ranking=run.ranking.configuration_id;run.release_revision="r54";
+            Check(CompetitionProtocol.Validate(run)==""&&run.ranking.configuration_id==ranking,"maintenance r does not split ranking "+profile);
+            var legacy=CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string,object>>(CompetitionProtocol.SerializeRun(run,false));
+            Check(!legacy.ContainsKey("release_revision")&&!legacy.ContainsKey("restart_ms"),"presealed legacy form omits additive metadata "+profile);
+            foreach(string invalid in new[]{"r0","r1234567","r53\n","<r53>"}) {run.release_revision=invalid;Check(CompetitionProtocol.Validate(run)!="","invalid release metadata rejected "+invalid);}
+            await client.CloseAsync();
+        }
+    }
     static void ModelCases()
     {
         var vectorPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"ranking-configuration-vectors.json");
@@ -530,11 +567,11 @@ internal static class CompetitionBehavior
         older.SealedRun = CompetitionAuthProtocol.Encode(CompetitionProtocol.Json().Serialize(oldSeal));
         older.NextAttemptUtc = DateTime.MinValue; store.SavePending(older);
         fake = new Fake { DeniedBuild = new string('d', 64) }; auth = new FakeAuth(); client = new CompetitionClient(store, fake, auth);
-        await Until(() => store.LoadPending(Config()).Single().NextAttemptUtc > DateTime.UtcNow.AddMinutes(4), "unapproved original build receives a bounded wait");
+        await Until(() => store.LoadPending(Config()).Any(p => p.NextAttemptUtc > DateTime.UtcNow.AddMinutes(4)), "unapproved original build receives a bounded wait");
         client.Publish(Observation("newer", 0)); client.Publish(Observation("newer", 2));
         await Until(() => fake.Posts == 1, "unapproved old producer does not starve approved current record");
-        Check(store.LoadPending(Config()).Single().Run.run_id == older.Run.run_id && auth.Seals == 2, "only original old sealed record remains without resealing");
         await client.CloseAsync();
+        Check(store.LoadPending(Config()).Single().Run.run_id == older.Run.run_id && auth.Seals == 2, "only original old sealed record remains without resealing");
 
         store = Store("legacy"); fake = new Fake { Approved = false }; auth = new FakeAuth(); client = new CompetitionClient(store, fake, auth); client.Configure(Config());
         await Until(() => fake.Registers > 0, "legacy fixture ready"); client.Publish(Observation("legacy", 0)); client.Publish(Observation("legacy", 2));
@@ -859,7 +896,16 @@ internal static class CompetitionBehavior
     }
     static int Main(string[] args)
     {
+        if (args.Length == 2 && args[1] == "--snapshot-bridge-only") {
+            try {
+                root = args[0]; Directory.CreateDirectory(root);
+                SpeedSnapshotBridgeCases().GetAwaiter().GetResult();
+                Console.WriteLine("PASS bridge total=" + count); return 0;
+            } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        }
         try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CompatibilityCases().GetAwaiter().GetResult(); CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); SdlpalCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
+            if (args.Length == 1) { MaintenanceCases().GetAwaiter().GetResult(); MaintenanceInitializationCases().GetAwaiter().GetResult(); SpeedIndependentClientCases().GetAwaiter().GetResult(); LocalIdentityCases().GetAwaiter().GetResult(); IdentityProgramCases().GetAwaiter().GetResult(); }
+            if (args.Length == 1) SpeedSnapshotBridgeCases().GetAwaiter().GetResult();
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

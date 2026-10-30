@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $out | Out-Null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
 if (!$csc) { throw 'VS 2026 Roslyn required' }
-$names = @('RankingConfiguration.cs','OnlineGameplayModels.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','TournamentLockInfoReader.cs','CompetitionLive.cs')
+$names = @('RankingConfiguration.cs','OnlineGameplayModels.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs','TournamentLockInfoReader.cs','CompetitionLive.cs')
 $sources = @($names | ForEach-Object {
     $path = Join-Path $repo ('PalTimerOnline\' + $_)
     if (Test-Path -LiteralPath $path) { $path } else { Join-Path $repo ('Pal98Timer\' + $_) }
@@ -27,7 +27,7 @@ $sources += Join-Path $repo 'PalTimerOnline\GeshiConfigurationInitialization.cs'
 $sources += Join-Path $shared 'PalUserData.cs'
 $sources += Join-Path $PSScriptRoot 'geshi_http_host.cs'
 $exe = Join-Path $out 'GeshiHttpProbe.exe'
-& $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.dll /reference:System.Security.dll /reference:System.Net.Http.dll "/reference:$repo\Pal98Timer\lib\System.Web.Script.Serialization.dll" $sources *> (Join-Path $out 'build.log')
+& $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.dll /reference:System.Web.dll /reference:System.Security.dll /reference:System.Net.Http.dll "/reference:$repo\Pal98Timer\lib\System.Web.Script.Serialization.dll" $sources *> (Join-Path $out 'build.log')
 if ($LASTEXITCODE) { throw "Host build failed: $out/build.log" }
 Copy-Item -LiteralPath (Join-Path $repo 'Pal98Timer\lib\System.Web.Script.Serialization.dll') -Destination $out
 Copy-Item -LiteralPath (Join-Path $repo 'Pal98Timer\bin\x64\Release\Pal98Timer.exe.config') -Destination ($exe + '.config')

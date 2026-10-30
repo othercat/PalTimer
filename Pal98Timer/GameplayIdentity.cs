@@ -12,6 +12,7 @@ namespace Pal98Timer
 {
     internal sealed class GameplayIdentity
     {
+        internal static bool IsSdlFamily(string value) => value == "sdlpal-geshi-easy" || value == "sdlpal-dream222" || value == "sdlpal-dreamspace39x";
         public string schema { get; set; } = "PAL98.GameplayIdentity.v1";
         public string rules_sha256 { get; set; }
         public string content_id { get; set; }
@@ -20,10 +21,13 @@ namespace Pal98Timer
         public int fade_ms { get; set; }
         public int map_speed_ticks { get; set; }
         public int? walk_frame_ms { get; set; }
+        public int? speed { get; set; }
+        public int? battle_speed { get; set; }
         internal bool Valid => schema == "PAL98.GameplayIdentity.v1" && CompetitionProtocol.Digest(rules_sha256) &&
             CompetitionProtocol.Digest(content_sha256) && CompetitionProtocol.Identifier(content_id) &&
-            ((family == "standard" || family == "drawcard") && (fade_ms == 800 || fade_ms == 1200) && (map_speed_ticks == 9 || map_speed_ticks == 10) && !walk_frame_ms.HasValue ||
-             family == "sdlpal-geshi-easy" && fade_ms > 0 && fade_ms <= 86400000 && map_speed_ticks == 0 && walk_frame_ms > 0 && walk_frame_ms <= 1000000);
+            ((family == "standard" || family == "drawcard") && (fade_ms == 800 || fade_ms == 1200) && (map_speed_ticks == 9 || map_speed_ticks == 10) && !walk_frame_ms.HasValue && !speed.HasValue && !battle_speed.HasValue ||
+             IsSdlFamily(family) && fade_ms > 0 && fade_ms <= 86400000 && map_speed_ticks == 0 && walk_frame_ms > 0 && walk_frame_ms <= 1000000 &&
+             (!speed.HasValue || speed >= 0 && speed <= 100) && (!battle_speed.HasValue || battle_speed >= 0 && battle_speed <= 100));
         internal GameplayIdentity Copy() => (GameplayIdentity)MemberwiseClone();
     }
     internal sealed class CompetitionHardcore

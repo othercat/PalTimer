@@ -17,6 +17,9 @@ namespace Pal98Timer
         internal const string Online = "PAL98.TimerOnline.v1";
         internal const string OnlineV2 = "PAL98.TimerOnline.v2";
         internal const string Scope = "timer-online";
+        internal const string MaintenanceFeature = "sdl-maintenance.v1";
+        internal const string ContentEffectsFeature = "sdl-content-effects.v1";
+        internal static bool ReleaseRevision(string value) => value != null && Regex.IsMatch(value, @"\Ar[1-9][0-9]{0,5}\z");
         internal const string RestartTimeFeature = "restart-time.v1";
         internal static string SerializeRun(CompetitionRun run, bool includeRestartTime = true) {
             var serializer = Json();
@@ -27,14 +30,20 @@ namespace Pal98Timer
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
             if (run.protocol != OnlineV2) fields.Remove("observations");
             if (run.protocol != OnlineV2 || !includeRestartTime) fields.Remove("restart_ms");
+            if (run.protocol != OnlineV2 || !includeRestartTime || run.release_revision == null) fields.Remove("release_revision");
             if (run.protocol == Online || run.protocol == OnlineV2) { fields.Remove("track_id"); fields.Remove("ruleset_id"); }
             else { fields.Remove("ranking"); fields.Remove("custom_competition_id"); }
             return run.protocol == Online || run.protocol == OnlineV2 ? CanonicalJson(fields) : serializer.Serialize(fields);
         }
         private static void RemoveUnusedWalkField(Dictionary<string, object> fields, string key)
         {
-            if (fields.TryGetValue(key, out var value) && value is Dictionary<string, object> game &&
-                (!game.TryGetValue("family", out var family) || !Equals(family, "sdlpal-geshi-easy"))) game.Remove("walk_frame_ms");
+            if (fields.TryGetValue(key, out var value) && value is Dictionary<string, object> game)
+            {
+                bool sdl = game.TryGetValue("family", out var family) && GameplayIdentity.IsSdlFamily(family as string);
+                if (!sdl) game.Remove("walk_frame_ms");
+                foreach (string field in new[] { "speed", "battle_speed" })
+                    if (!sdl || !game.TryGetValue(field, out var actual) || actual == null) game.Remove(field);
+            }
         }
         // Preserve a deterministic body across the legacy serializer's different
         // dictionary/property traversal orders. The sealed original bytes are
@@ -114,6 +123,7 @@ namespace Pal98Timer
                 !Version.TryParse(run.timer_version, out version) || version.Revision < 0 ||
                 run.game_version != null && (!Version.TryParse(run.game_version, out version) || version.Revision < 0) ||
                 run.pal_dll_sha256 != null && !Digest(run.pal_dll_sha256) || run.timeline_id != null && !Digest(run.timeline_id) ||
+                run.release_revision != null && (!ReleaseRevision(run.release_revision) || !GameplayIdentity.IsSdlFamily(run.gameplay?.family)) ||
                 run.total_ms < 0 || run.total_ms > MaxMilliseconds || run.restart_ms < 0 || run.restart_ms > MaxMilliseconds ||
                 !DateTimeOffset.TryParse(run.started_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
                 !DateTimeOffset.TryParse(run.finished_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ||
@@ -209,6 +219,7 @@ namespace Pal98Timer
         public long? restart_ms { get; set; }
         public string timer_version { get; set; }
         public string game_version { get; set; }
+        public string release_revision { get; set; }
         public string pal_dll_sha256 { get; set; }
         public CompetitionSplit[] splits { get; set; }
         public string timeline_id { get; set; }
@@ -230,7 +241,7 @@ namespace Pal98Timer
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
     {
-        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId, GameTitle;
+        internal string Token, Core, DllHash, GameVersion, ValidationError, TimelineId, GameTitle, ReleaseRevision;
         internal GameplayIdentity Gameplay;
         internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;

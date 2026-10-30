@@ -10,6 +10,8 @@
     <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath><Optimize>true</Optimize><DebugType>pdbonly</DebugType><WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Runtime.Serialization"/>
+    <Reference Include="System.Xml"/>
     <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Net.Http"/>
     <Reference Include="System.Security"/><Reference Include="System.Web"/><Reference Include="System.Drawing"/><Reference Include="System.Windows.Forms"/><Reference Include="System.Management"/>
     <Reference Include="System.Web.Script.Serialization"><HintPath>..\Pal98Timer\lib\System.Web.Script.Serialization.dll</HintPath></Reference>
@@ -25,6 +27,9 @@
     <Compile Include="CompetitionClient.cs"/>
     <Compile Include="CompetitionLive.cs"/>
     <Compile Include="CompetitionGameSettings.cs"/>
+    <Compile Include="LocalPlayerIdentity.cs"/>
+    <Compile Include="IdentityBehaviorSnapshot.cs"/>
+    <Compile Include="CompetitionPlayerIdentity.cs"/>
     <Compile Include="CompetitionWindows.cs"/>
     <Compile Include="OnlineGameplayModels.cs"/>
     <Compile Include="..\Pal98Timer\SdlpalBridge.cs"><Link>SdlpalBridge.cs</Link></Compile>

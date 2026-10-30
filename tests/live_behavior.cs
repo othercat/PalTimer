@@ -8,9 +8,10 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using Pal98.LocalDisplay;
 
 [assembly: AssemblyVersion("3.37.7.11")]
-internal static class LiveBehavior
+internal static partial class LiveBehavior
 {
     static int checks;
     static void Check(bool value, string name) { if (!value) throw new Exception(name); checks++; Console.WriteLine("PASS " + name); }
@@ -39,6 +40,10 @@ internal static class LiveBehavior
     sealed class Transport : ICompetitionTransport
     {
         internal bool Supported = true, Approved = true, WrongAck, WrongRank, WrongChallenge, MissingDate;
+        internal bool ThrowRequests;
+        internal int Devices;
+        internal bool OmitRegistrationPlayer, OmitGetPlayer, OmitStandings;
+        internal CompetitionPlayer Player = new CompetitionPlayer { bound = true, id = "11111111-1111-4111-8111-111111111111", display_name = "实时测试玩家" };
         internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature };
         internal bool LastHasRestart;
         internal int UnsupportedFields;
@@ -48,10 +53,10 @@ internal static class LiveBehavior
         internal TaskCompletionSource<bool> Gate, SessionGate;
         internal string Session = Guid.NewGuid().ToString("D"), Instance;
         static CompetitionHttpResult Reply(object value) => new CompetitionHttpResult { Status = 200, Body = CompetitionProtocol.Json().Serialize(value) };
-        static CompetitionReply Board(string config = null, string route = null, string checkpoint = null, long? elapsed = null, string custom = null, string board = "overall") => new CompetitionReply {
+        CompetitionReply Board(string config = null, string route = null, string checkpoint = null, long? elapsed = null, string custom = null, string board = "overall") => new CompetitionReply {
             protocol = CompetitionProtocol.Online, scope = CompetitionProtocol.Scope, supported_run_protocols = new[] { CompetitionProtocol.Online },
             published = true, configuration_id = config, route_sha256 = route, custom_competition_id = custom, board = board,
-            player = new CompetitionPlayer { bound = true, display_name = "实时测试玩家" }, title = "测试参考榜",
+            player = Player, title = "测试参考榜",
             node = checkpoint == null ? null : new CompetitionNode { checkpoint_id = checkpoint, elapsed_ms = elapsed,
                 best_complete_line = new CompetitionComparison { rank = 2 }, personal_checkpoint_best = new CompetitionComparison { rank = 3 } },
             overall = new CompetitionOverall { personal_best = new CompetitionBest { rank = 5 } }
@@ -60,8 +65,9 @@ internal static class LiveBehavior
         {
             int active = Interlocked.Increment(ref Active); MaxActive = Math.Max(MaxActive, active);
             try {
+                if (ThrowRequests) throw new InvalidOperationException("fixture transport unavailable");
                 var json = CompetitionProtocol.Json(); string origin = new Uri(url).GetLeftPart(UriPartial.Authority);
-                if (url.EndsWith("/devices")) { var device = Board(); device.supported_features = Features; return Reply(device); }
+                if (url.EndsWith("/devices")) { Devices++; var device = Board(); device.supported_features = Features; if (OmitRegistrationPlayer) device.player = null; return Reply(device); }
                 if (url.Contains("/auth/status?")) return Reply(new { protocol = CompetitionAuthProtocol.Name, scope = CompetitionProtocol.Scope,
                     server_origin = origin, key_id = new string('a',32), timer_exe_sha256 = new string('b',64), approved = Approved,
                     live_protocol = Supported ? CompetitionClient.LiveProtocol : null });
@@ -92,12 +98,14 @@ internal static class LiveBehavior
                     var compare = request.compare;
                     return Reply(new CompetitionLiveAck { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
                         server_origin = origin, session_id = Session, public_id = "1042", sequence = request.sequence + (WrongAck ? 1 : 0), received_at = DateTimeOffset.UtcNow.ToString("o"),
-                        standings = compare == null ? null : Board(compare.configuration_id, compare.route_sha256, WrongRank ? "previous-node" : compare.checkpoint_id, compare.elapsed_ms, compare.custom_competition_id, compare.board) });
+                        standings = compare == null || OmitStandings ? null : Board(compare.configuration_id, compare.route_sha256, WrongRank ? "previous-node" : compare.checkpoint_id, compare.elapsed_ms, compare.custom_competition_id, compare.board) });
                 }
                 if (method == "GET") {
                     Gets++; var query = HttpUtility.ParseQueryString(new Uri(url).Query);
                     long value; long? elapsed = long.TryParse(query["elapsed_ms"], out value) ? (long?)value : null;
-                    return Reply(Board(query["configuration_id"],query["route_sha256"],query["checkpoint_id"],elapsed,query["custom_competition_id"],query["board"] ?? "overall"));
+                    var board = Board(query["configuration_id"],query["route_sha256"],query["checkpoint_id"],elapsed,query["custom_competition_id"],query["board"] ?? "overall");
+                    if (OmitGetPlayer) board.player = null;
+                    return Reply(board);
                 }
                 throw new Exception("unexpected endpoint");
             } finally { Interlocked.Decrement(ref Active); }
@@ -123,12 +131,14 @@ internal static class LiveBehavior
     }
     static async Task LiveValidityTests(string root)
     {
-        var wire=new Transport();var client=Client(root,"sdlpal-live-validity",wire,new Auth());
+        foreach(string family in new[]{"sdlpal-geshi-easy","sdlpal-dream222","sdlpal-dreamspace39x"}) {
+        var wire=new Transport {Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceFeature}};var client=Client(root,"sdlpal-live-validity-"+family,wire,new Auth());
         await Until(()=>client.Enabled,"SDL live validity fixture is enabled");
-        var assisted=Observe("assisted",0);assisted.Gameplay.family="sdlpal-geshi-easy";
+        var assisted=Observe("assisted",0);assisted.Gameplay.family=family;assisted.ReleaseRevision="r53";
         assisted.LiveTimingValid=true;assisted.ValidationError="游戏已读档或重启";assisted.BeganHere=false;
         client.Publish(assisted);client.PublishClock(assisted.Token,1200,true,Stopwatch.GetTimestamp());
         await Until(()=>wire.Last?.observation?.state=="running","SDL assisted run streams a valid running clock");
+        Check(wire.Last.observation.release_revision=="r53","live heartbeat carries maintenance revision "+family);
         Check(assisted.Context.Issues.Contains("timing-validation: "+assisted.ValidationError)&&!assisted.Context.BeganHere,
             "live validity preserves score review issues and missing start evidence");
         await client.CloseAsync();
@@ -154,20 +164,63 @@ internal static class LiveBehavior
         Check(state()=="running","legacy core with a fresh valid clock keeps running behavior");
         assisted.ValidationError="legacy review";assisted.Finished=true;
         Check(state()=="finished","legacy finish precedence remains compatible");
-        assisted.Gameplay.family="sdlpal-geshi-easy";assisted.LiveTimingValid=true;
+        assisted.Gameplay.family=family;assisted.LiveTimingValid=true;
         assisted.RestartMilliseconds=CompetitionProtocol.MaxMilliseconds+1;
         Check(state()=="invalid","live validity cannot bypass restart bounds");
+        await client.CloseAsync();
+        }
+    }
+    static async Task IdentityLiveTests(string root)
+    {
+        string game = Path.Combine(root, "identity-live-game"); Directory.CreateDirectory(game);
+        string file = Path.Combine(game, LocalPlayerIdentity.RelativePath);
+        LocalPlayerIdentity.Save(game, LocalPlayerIdentity.Manual("鼻祖"), null, false);
+        byte[] before = File.ReadAllBytes(file);
+        var wire = new Transport { OmitRegistrationPlayer = true, OmitGetPlayer = true, OmitStandings = true,
+            Player = new CompetitionPlayer { bound = true, id = "11111111-1111-4111-8111-111111111111", display_name = "Captain船长2092" } };
+        using (var process = Process.GetCurrentProcess()) {
+            var client = new CompetitionClient(new CompetitionStorage(Path.Combine(root, "identity-live"), () => "fixture-live-identity"), wire, new Auth(), true,
+                resolveGame: p => new CompetitionGameResolution { Settings = new CompetitionSettings { Enabled = true, Server = "https://fixture.invalid" },
+                    IdentityRoot = game, ProcessId = process.Id, CreatedAt = process.StartTime.ToUniversalTime().ToFileTimeUtc(), Executable = process.MainModule.FileName });
+            client.ObserveTarget(process.Id, 1);
+            await Until(() => client.LiveCaption == " [已连接:1042]", "identity live fixture connected in menu");
+            Check(before.SequenceEqual(File.ReadAllBytes(file)), "menu heartbeat never rewrites identity");
+            int updates = wire.Updates;
+            client.Publish(Observe("identity-live", 0)); client.Publish(Observe("identity-live", 1));
+            client.PublishClock("identity-live", 1000, true, Stopwatch.GetTimestamp()); client.Retry();
+            await Until(() => wire.Updates > updates && wire.Last.compare != null, "gameplay start sends live comparison");
+            await Task.Delay(300);
+            Check(before.SequenceEqual(File.ReadAllBytes(file)), "ordinary ACK without standings cannot complete identity sync");
+            wire.OmitStandings = false; wire.WrongRank = true; updates = wire.Updates; client.Retry();
+            await Until(() => wire.Updates > updates, "mismatched standings received"); await Task.Delay(300);
+            Check(before.SequenceEqual(File.ReadAllBytes(file)), "wrong comparison checkpoint cannot publish identity");
+            wire.WrongRank = false; wire.WrongAck = true; updates = wire.Updates; client.Retry();
+            await Until(() => wire.Updates > updates, "wrong sequence ACK received"); await Task.Delay(300);
+            Check(before.SequenceEqual(File.ReadAllBytes(file)), "invalid ACK cannot publish identity");
+            wire.WrongAck = false; client.Retry();
+            await Until(() => LocalPlayerIdentity.Load(game).Value?.display_name == "Captain船长2092", "validated standings ACK completes pending gameplay-start sync");
+            LocalPlayerIdentity.Save(game, LocalPlayerIdentity.Manual("鼻祖"), null, false); before = File.ReadAllBytes(file);
+            updates = wire.Updates; client.Retry(); await Until(() => wire.Updates > updates, "later valid standings ACK received"); await Task.Delay(300);
+            Check(before.SequenceEqual(File.ReadAllBytes(file)), "successful session sync is not repeated by later live ACKs");
+            Check(wire.MaxActive == 1, "identity sync preserves serialized network requests");
+            await client.CloseAsync();
+        }
     }
     static async Task Run(string root)
     {
+        await ConnectivityRecoveryTests(root);
+        await LoopbackHttpTests(root);
+        await IdentityLiveTests(root);
         await LiveValidityTests(root);
         string gameRoot=Path.Combine(root,"geshi-root");Directory.CreateDirectory(Path.Combine(gameRoot,"palmod"));
         string settingsFile=Path.Combine(gameRoot,"palmod","common-tools.v1.json");
         File.WriteAllText(settingsFile,"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://www.pallab.top\"}}}");
         var native=new SdlpalSnapshot {verified=true,profile="geshi-easy-v1",gamePath=Path.Combine(gameRoot,"PAL")};
-        foreach(string exe in new[]{"pal.exe","sdlpal.exe"}) {
+        foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
+        foreach(string exe in new[]{"pal.exe","sdlpal.exe","我的 仙剑.exe"}) {
+            native.profile = profile;
             var selected=CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,exe),native);
-            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+exe);
+            Check(selected.Enabled && selected.Server=="https://www.pallab.top" && selected.CustomCompetitionId==null,"dedicated upload reads EXE root for "+profile+" / "+exe);
         }
         native.diagnostic=true;bool denied=false;
         try {CompetitionGameSettings.LoadSdlpal(Path.Combine(gameRoot,"pal.exe"),native);}catch(InvalidDataException){denied=true;}

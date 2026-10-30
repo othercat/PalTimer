@@ -152,23 +152,30 @@ internal static class OnlineModuleLoaderBehavior
         IDisposable lease = null;
         try {
             bool accepted = false;
+            bool compositionOnly = args.Contains("composition-only");
             var loader = typeof(IPalTimerOnlineV1).Assembly.GetType("Pal98Timer.OnlineModuleLoader", true);
             try {
-                lease = (IDisposable)loader.GetMethod("Load", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { AppDomain.CurrentDomain.BaseDirectory });
+                lease = (IDisposable)loader.GetMethod("LoadVerified", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { AppDomain.CurrentDomain.BaseDirectory, !compositionOnly });
                 accepted = true;
             } catch (TargetInvocationException e) { Console.WriteLine("LOAD rejected: " + e.InnerException.GetType().Name); }
             if (accepted != (args[0] == "valid")) throw new Exception("Unexpected component acceptance.");
             if (accepted) {
                 var module = (IPalTimerOnlineV1)lease.GetType().GetField("Module", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(lease);
-                if (module.ApiVersion != 1) throw new Exception("Wrong API.");
-                ConfigurationReaders(module);
-                RestartBridge(module);
+                if (!compositionOnly) {
+                    if (module.ApiVersion != 1) throw new Exception("Wrong API.");
+                    ConfigurationReaders(module); RestartBridge(module);
+                } else {
+                    var online = (Assembly)lease.GetType().GetField("OnlineAssembly", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(lease);
+                    if (!typeof(IPalTimerOnlineStatusV1).IsAssignableFrom(online.GetType("Pal98Timer.OnlineModule", true)))
+                        throw new Exception("Visible status API unavailable.");
+                    Console.WriteLine("PASS verified CLR composition and visible status contract; no client, personal storage or network created");
+                }
                 bool writeRejected = false;
                 try { using (File.Open("PalTimerOnline.dll", FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) { } }
                 catch (IOException) { writeRejected = true; }
                 if (!writeRejected) throw new Exception("Verified composition was replaceable during use.");
-                module.CloseAsync().GetAwaiter().GetResult();
+                module?.CloseAsync().GetAwaiter().GetResult();
             }
             // Optional component failure does not prevent local stopwatch use.
             var local = new PTimer(); local.Start(); Thread.Sleep(35); local.Stop();

@@ -7,7 +7,15 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**当前版本：3.38.3（文件版本 3.38.3.0）；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.4（文件版本 3.38.4.3）/ Online 1.0.0.15；需要 .NET Framework 4.7.2 框架**
+
+2026-10-27 / r59：修复改版自动识别或切换内容后，主窗口分段列表右侧实时计时消失的问题。重建列表时恢复当前阶段、已有分段时间和完成状态，也处理界面回调晚于阶段推进的情况。四套内容适用；主计时、暂停、存读档累计和榜单配置身份不变。EXE、Online、Auth 与公开登记须使用新的配套组合，需独立构建批准。Refs #40。
+
+同版核验四内容与吴强、突脸、隐形组合的 32 份最佳线：自动切换参考时间和名称，加减速共用同一最佳线。补齐同一跑次内资源或玩法变化后的保存保护，避免累计成绩串写新配置；回切和时间线／接力导入均保留变更标记，显式重置后可正常保存。既有最佳线文件不迁移、不改写。Refs #41。
+
+2026-10-27：修复主程序到 Online DLL 的 API 1 快照遗漏 SDL 实际速度观测；初始与最终的 `speed`、`battle_speed` 经可选扩展传递，缺失保持未知，非法值拒绝，不回填默认值。速度仍不进入配置 ID，计时、暂停、存读档和路线不变。此新组件组合须独立批准，冻结 r57 不覆盖。Refs #39。
+
+2026-10-27：四套 SDL 维护内容按资源和玩法效果分类，开局及途中调速不分榜；同进程普通游戏存读档累计本轮时间和节点。支持四内容各普通/吴强共 8 份零时长、未完成的配置登记。新构建需批准且服务端须支持 `sdl-content-effects.v1` 后才发送新格式。详见 [速度与存读档规则](docs/GESHI_DYNAMIC_SPEED.md)。
 
 隔世专用版个人云存档已通过 [100 项离线存读验证](docs/GESHI_CLOUD_SAVE_ACCEPTANCE.md)：实际发布计时器与原生游戏在本地传输替身下完成打包、恢复和失败保护。旧云 ID 尚未激活，真实服务与跨电脑往返仍待实测；本轮不改变已审批程序字节。
 

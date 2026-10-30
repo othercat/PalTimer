@@ -13,12 +13,43 @@ namespace Pal98Timer
     {
         internal const string Marker = "人工合成：仅用于隔世追凶-简单标准配置初始化；非真实通关；禁止加入任何成绩榜";
         internal const string Origin = "https://www.pallab.top";
+        internal static CompetitionRun CreateMaintenance(SdlpalSnapshot snapshot, string hwid, string version,
+            string[] checkpointIds, string id = null, string stamp = null)
+        {
+            if (snapshot == null || snapshot.schema != 1 || !snapshot.verified || snapshot.diagnostic ||
+                !SdlpalBridge.SupportedProfile(snapshot.profile) || !CompetitionProtocol.Digest(snapshot.exeHash) ||
+                snapshot.resourceHashes == null || !CompetitionProtocol.ReleaseRevision(snapshot.releaseRevision) ||
+                checkpointIds == null || checkpointIds.Length == 0 || checkpointIds.Length > 64 ||
+                checkpointIds.Any(p => !CompetitionProtocol.Identifier(p)) || checkpointIds.Distinct(StringComparer.Ordinal).Count() != checkpointIds.Length)
+                throw new InvalidDataException("维护内容初始化需要有效的发行身份与默认节点");
+            var facts = snapshot.RankingFacts();
+            string digest = RankingConfiguration.Digest(facts);
+            var game = new GameplayIdentity { family = SdlpalBridge.ProfileFamily(snapshot.profile), content_id = snapshot.profile,
+                content_sha256 = facts["content"], rules_sha256 = digest, fade_ms = snapshot.fadeCycleMs,
+                map_speed_ticks = 0, walk_frame_ms = snapshot.walkFrameMs, speed = snapshot.speed, battle_speed = snapshot.battleSpeed };
+            var ranking = new RankingConfiguration { configuration_id = digest, covered = true, rules = facts };
+            if (!ranking.Valid(game)) throw new InvalidDataException("初始化资源或加速配置不完整");
+            string route = CompetitionProtocol.RouteHash(checkpointIds);
+            stamp = stamp ?? DateTimeOffset.UtcNow.ToString("o");
+            return new CompetitionRun {
+                protocol = CompetitionProtocol.OnlineV2, run_id = id ?? Guid.NewGuid().ToString("D"), hwid = hwid,
+                started_at = stamp, finished_at = stamp, total_ms = 0, restart_ms = 0, timer_version = version,
+                game_version = "1.0.0.0", pal_dll_sha256 = snapshot.exeHash, release_revision = snapshot.releaseRevision,
+                gameplay = game, ranking = ranking, hardcore = new CompetitionHardcore(),
+                splits = checkpointIds.Select(p => new CompetitionSplit { checkpoint_id = p, status = "in_progress" }).ToArray(),
+                route_sha256 = route, timeline_id = TimelineIdentity.Create(digest, route, false),
+                observations = new CompetitionRunObservations { began_here = false, finished = false,
+                    issues = new[] { "synthetic_configuration_initialization", "人工合成：" + SdlpalBridge.ProfileName(snapshot.profile) +
+                        (snapshot.wuqiang ? "／吴强" : "／普通玩法") + "；仅配置初始化，非真实通关，禁止加入任何成绩榜" },
+                    initial_gameplay = game.Copy(), initial_ranking = ranking.Copy(), initial_hardcore = new CompetitionHardcore() }
+            };
+        }
         internal static CompetitionRun Create(SdlpalSnapshot snapshot, string hwid, string version, string id = null, string stamp = null)
         {
             if (snapshot == null || snapshot.schema != 1 || !snapshot.verified || snapshot.profile != "geshi-easy-v1" ||
                 !CompetitionProtocol.Digest(snapshot.exeHash) || snapshot.resourceHashes == null)
                 throw new InvalidDataException("初始化需要真实资源身份快照");
-            var facts = snapshot.RankingFacts();
+            var facts = snapshot.RankingFacts(true);
             string digest = RankingConfiguration.Digest(facts);
             var game = new GameplayIdentity { family = "sdlpal-geshi-easy", content_id = snapshot.profile,
                 content_sha256 = facts["content"], rules_sha256 = digest, fade_ms = snapshot.fadeCycleMs,
@@ -42,7 +73,7 @@ namespace Pal98Timer
             };
         }
 
-        public static int Execute(string snapshotFile, string outputDirectory)
+        public static int Execute(string snapshotFile, string outputDirectory, string[] checkpointIds = null)
         {
             try
             {
@@ -55,7 +86,7 @@ namespace Pal98Timer
                 try
                 {
                     using (var transport = new CompetitionHttpTransport())
-                        return Upload(snapshot, outputDirectory, Origin, credential, new NativeCompetitionAuth(), transport).GetAwaiter().GetResult();
+                        return Upload(snapshot, outputDirectory, Origin, credential, new NativeCompetitionAuth(), transport, checkpointIds).GetAwaiter().GetResult();
                 }
                 finally { credential.Secret = null; }
             }
@@ -68,7 +99,7 @@ namespace Pal98Timer
         }
 
         internal static async Task<int> Upload(SdlpalSnapshot snapshot, string directory, string origin,
-            CompetitionCredential credential, ICompetitionAuth auth, ICompetitionTransport transport)
+            CompetitionCredential credential, ICompetitionAuth auth, ICompetitionTransport transport, string[] checkpointIds = null)
         {
             Directory.CreateDirectory(directory);
             using (var gate = new FileStream(Path.Combine(directory, "initialization.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
@@ -77,6 +108,9 @@ namespace Pal98Timer
                 if (identity == null || !identity.Valid) throw new InvalidDataException("签封组件与当前计时器不匹配");
                 var cfg = new CompetitionSettings { Server = origin };
                 if (cfg.Validate().Length != 0) throw new InvalidDataException("服务器地址无效");
+                Func<string, string, CompetitionRun> create = (id, stamp) => checkpointIds == null
+                    ? Create(snapshot, credential.Hwid, identity.timer_version, id, stamp)
+                    : CreateMaintenance(snapshot, credential.Hwid, identity.timer_version, checkpointIds, id, stamp);
                 string pendingPath = Path.Combine(directory, "initialization.pending.json");
                 CompetitionPending item;
                 if (File.Exists(pendingPath))
@@ -85,7 +119,7 @@ namespace Pal98Timer
                     if (item?.Run == null || item.Settings?.Server != origin) throw new InvalidDataException("原初始化记录无效");
                     // Retry is byte-for-byte, including timestamp and run id. No
                     // command can turn this pending record into a real finish.
-                    var expected = Create(snapshot, credential.Hwid, identity.timer_version, item.Run.run_id, item.Run.started_at);
+                    var expected = create(item.Run.run_id, item.Run.started_at);
                     if (item.Payload != CompetitionProtocol.SerializeRun(expected) ||
                         item.Payload != CompetitionProtocol.SerializeRun(item.Run)) throw new InvalidDataException("初始化输入已经变化，请使用新的输出目录");
                     var seal = CompetitionAuthProtocol.ReadSeal(item.SealedRun, cfg, item.Run, item.Payload);
@@ -94,7 +128,7 @@ namespace Pal98Timer
                 }
                 else
                 {
-                    var run = Create(snapshot, credential.Hwid, identity.timer_version);
+                    var run = create(null, null);
                     if (CompetitionProtocol.Validate(run).Length != 0) throw new InvalidDataException("初始化记录格式无效");
                     string payload = CompetitionProtocol.SerializeRun(run);
                     string sealedJson = auth.Seal(origin, CompetitionProtocol.Scope, payload);
@@ -130,6 +164,12 @@ namespace Pal98Timer
                         candidateStatus = (await send("POST", "/auth/candidates", new { hwid = credential.Hwid, release = registration }).ConfigureAwait(false)).Status;
                     WriteReport(directory, new { status = "awaiting_build_approval", candidate_http_status = candidateStatus,
                         timer_version = identity.timer_version, timer_exe_sha256 = identity.timer_exe_sha256, key_id = identity.key_id,
+                        configuration_id = item.Run.ranking.configuration_id, run_id = item.Run.run_id, score_uploaded = false, ranked = false });
+                    return 2;
+                }
+                if (item.Run.ranking.SpeedIndependent && status.supported_features?.Contains(CompetitionProtocol.ContentEffectsFeature) != true)
+                {
+                    WriteReport(directory, new { status = "awaiting_server_support", required_feature = CompetitionProtocol.ContentEffectsFeature,
                         configuration_id = item.Run.ranking.configuration_id, run_id = item.Run.run_id, score_uploaded = false, ranked = false });
                     return 2;
                 }

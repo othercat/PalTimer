@@ -38,6 +38,7 @@ namespace Pal98Timer
         public bool? approved { get; set; }
         public string candidate_registration_protocol { get; set; }
         public string[] supported_candidate_protocols { get; set; }
+        public string[] supported_features { get; set; }
         public string live_protocol { get; set; }
     }
     internal interface ICompetitionAuth
