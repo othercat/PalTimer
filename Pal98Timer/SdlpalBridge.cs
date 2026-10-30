@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -59,6 +60,9 @@ namespace Pal98Timer
         public bool monsterRush { get; set; }
         public bool invisibleMonsters { get; set; }
         public bool dreamspaceThrowFormula { get; set; }
+        public string gameplayRuleId { get; set; }
+        public int? gameplayRuleRevision { get; set; }
+        public string gameplayRuleSha256 { get; set; }
         public string respawnRule { get; set; }
         public string releaseRevision { get; set; }
         public string resourceHash { get; set; }
@@ -120,6 +124,11 @@ namespace Pal98Timer
             if (!string.IsNullOrEmpty(respawnRule)) facts["respawn_rule"] = respawnRule;
             if (monsterRush) facts["monster_rush"] = "1";
             if (invisibleMonsters) facts["invisible_monsters"] = "1";
+            if (gameplayRuleId != null) {
+                facts["gameplay.rule"] = gameplayRuleId;
+                facts["gameplay.revision"] = gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                facts["gameplay.sha256"] = gameplayRuleSha256;
+            }
             // The optional throw formula is informational, not a score category.
             return facts;
         }
@@ -127,7 +136,9 @@ namespace Pal98Timer
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
             (wuqiang ? "|wuqiang=1" : "") +
             (!string.IsNullOrEmpty(respawnRule) ? "|respawn_rule=" + respawnRule : "") +
-            (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "");
+            (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "") +
+            (gameplayRuleId == null ? "" : "|gameplay.rule=" + gameplayRuleId + "|gameplay.revision=" +
+                gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|gameplay.sha256=" + gameplayRuleSha256);
         internal string IdentityKey => ResourceEngineIdentity + "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
         internal SdlpalSnapshot WithSpeedConfiguration(SdlpalSnapshot source)
         {
@@ -175,7 +186,65 @@ namespace Pal98Timer
         internal string Error { get; private set; } = "等待隔世追凶-简单";
         [DllImport("kernel32.dll")] internal static extern ulong GetTickCount64();
         internal static bool Digest(string text) => text != null && text.Length == 64 && text.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
+        internal static bool ValidGameplayRule(string profile, string id, string revision, string hash)
+        {
+            int number;
+            return SupportedProfile(profile) && id != null && id.Length <= 96 &&
+                Regex.IsMatch(id, "\\A" + Regex.Escape(profile.Substring(0, profile.Length - 3)) + "-rules-v[1-9][0-9]{0,5}\\z") &&
+                int.TryParse(revision, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) && number > 0 &&
+                revision == number.ToString(System.Globalization.CultureInfo.InvariantCulture) && Digest(hash);
+        }
+        internal static void ValidateGameplayRuleFields(Dictionary<string, object> fields, SdlpalSnapshot value)
+        {
+            string[] names = { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256" };
+            object nested;
+            var identity = fields.TryGetValue("identity", out nested) ? nested as Dictionary<string, object> : null;
+            bool present = names.Any(fields.ContainsKey), inside = identity != null && names.Any(identity.ContainsKey);
+            if (!present && !inside && value.gameplayRuleId == null && value.gameplayRuleRevision == null && value.gameplayRuleSha256 == null) return;
+            if (!names.All(fields.ContainsKey) || identity == null || !names.All(identity.ContainsKey) ||
+                !(fields[names[0]] is string) || !(fields[names[1]] is int) || !(fields[names[2]] is string) ||
+                names.Any(n => !Equals(fields[n], identity[n])) ||
+                !Equals(fields[names[0]], value.gameplayRuleId) || !Equals(fields[names[1]], value.gameplayRuleRevision) || !Equals(fields[names[2]], value.gameplayRuleSha256) ||
+                !ValidGameplayRule(value.profile, value.gameplayRuleId,
+                    value.gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture), value.gameplayRuleSha256))
+                throw new InvalidDataException("公式身份字段不完整、内容不符或内外层不一致");
+        }
+        internal static void ValidateGameplayRuleJson(string json)
+        {
+            // JavaScriptSerializer maps CLR members without case sensitivity
+            // and replaces repeated JSON keys. Check the wire before that
+            // conversion so aliases or duplicate keys cannot hide a binding.
+            var root = new HashSet<string>(StringComparer.Ordinal);
+            var inner = new HashSet<string>(StringComparer.Ordinal);
+            string parent = null;
+            try {
+            using (var reader = System.Runtime.Serialization.Json.JsonReaderWriterFactory.CreateJsonReader(
+                Encoding.UTF8.GetBytes(json), System.Xml.XmlDictionaryReaderQuotas.Max))
+            while (reader.Read())
+            {
+                if (reader.NodeType != System.Xml.XmlNodeType.Element) continue;
+                string name = reader.GetAttribute("item") ?? reader.LocalName;
+                if (reader.Depth == 1) parent = name;
+                if (reader.Depth != 1 && !(reader.Depth == 2 && parent == "identity")) continue;
+                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity" })
+                    if (name.Equals(key, StringComparison.OrdinalIgnoreCase) && name != key)
+                        throw new InvalidDataException("公式身份字段大小写不规范");
+                if (!(reader.Depth == 1 ? root : inner).Add(name))
+                    throw new InvalidDataException("游戏快照含重复身份字段");
+            }
+            } catch (Exception ex) when (ex is System.Xml.XmlException || ex is System.Runtime.Serialization.SerializationException) {
+                throw new InvalidDataException("游戏快照 JSON 无效", ex);
+            }
+        }
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer { MaxJsonLength = Capacity, RecursionLimit = 32 };
+        internal static SdlpalSnapshot ReadSnapshotJson(string json)
+        {
+            ValidateGameplayRuleJson(json);
+            var serializer = Json();
+            var value = serializer.Deserialize<SdlpalSnapshot>(json);
+            ValidateGameplayRuleFields(serializer.Deserialize<Dictionary<string, object>>(json), value);
+            return value;
+        }
         internal static string HashFile(string path)
         {
             using (var file = File.OpenRead(path)) using (var sha = SHA256.Create())
@@ -194,6 +263,7 @@ namespace Pal98Timer
             ulong published = BitConverter.ToUInt64(header, 56);
             if (published > now || now - published > 2000) throw new InvalidDataException("游戏快照已过期");
             string json = new UTF8Encoding(false, true).GetString(payload);
+            ValidateGameplayRuleJson(json);
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(json);
             string[] required = { "schema", "profile", "verified", "diagnostic", "resourceHash", "resourceHashes", "build", "exeHash",
@@ -222,6 +292,7 @@ namespace Pal98Timer
                 releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
                 validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
+            ValidateGameplayRuleFields(fields, value);
             foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
                 if (fields.TryGetValue(key, out object coordinate) && coordinate != null &&
                     (!(coordinate is int) || (int)coordinate < 0 || (int)coordinate > (key == "partyDirection" ? 3 : 65535)))

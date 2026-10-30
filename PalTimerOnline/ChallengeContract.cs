@@ -59,15 +59,34 @@ namespace Pal98.Challenges
         public bool level_one_solo { get; set; }
         public bool individual_flee { get; set; }
         public bool chosen_hero { get; set; }
+        public bool starting_supplies { get; set; }
+        public bool no_coop_magic { get; set; }
+        public bool drop99 { get; set; }
+        public bool steal_all { get; set; }
+        public bool no_invisibility_item { get; set; }
+        public bool invisibility_mana1 { get; set; }
+        public bool silkworm_stats_only { get; set; }
+        public Dictionary<string, int> rule_priorities { get; set; } = new Dictionary<string, int>();
         public string hero { get; set; } = "li-xiaoyao";
-        internal void Validate() { if (schema_version != 1 || !ChallengeContract.HeroIds.Contains(hero)) throw new InvalidDataException("牢局规则版本或人物无效。"); }
-        internal string Ini()
+        internal void Validate() {
+            if (schema_version != 1 || !ChallengeContract.HeroIds.Contains(hero)) throw new InvalidDataException("牢局规则版本或人物无效。");
+            if (rule_priorities == null || rule_priorities.Any(p => !ChallengeContract.RuleKeys.Contains(p.Key) || p.Value < 0 || p.Value > 999))
+                throw new InvalidDataException("牢局规则优先级无效。");
+        }
+        internal int Priority(string key) => rule_priorities.TryGetValue(key, out int value) ? value : 0;
+        internal bool LegacyCompatible => !starting_supplies && !no_coop_magic && !drop99 && !steal_all &&
+            !no_invisibility_item && !invisibility_mana1 && !silkworm_stats_only && rule_priorities.Values.All(p => p == 0);
+        internal string Ini(bool legacy = false)
         {
             Validate();
-            bool[] flags = {solo_art, helpless_husband, true_duel, level_one_solo, individual_flee, chosen_hero};
+            bool[] flags = {solo_art, helpless_husband, true_duel, level_one_solo, individual_flee, chosen_hero,
+                starting_supplies, no_coop_magic, drop99, steal_all, no_invisibility_item, invisibility_mana1, silkworm_stats_only};
             var text = new StringBuilder("[Challenge]\nSchemaVersion=1\n");
-            for (int i = 0; i < flags.Length; ++i) text.Append(ChallengeContract.IniKeys[i]).Append('=').Append(flags[i] ? '1' : '0').Append('\n');
-            return text.Append("Hero=").Append(hero).Append('\n').ToString();
+            for (int i = 0; i < (legacy ? 6 : flags.Length); ++i) text.Append(ChallengeContract.IniKeys[i]).Append('=').Append(flags[i] ? '1' : '0').Append('\n');
+            text.Append("Hero=").Append(hero).Append('\n');
+            if (!legacy) for (int i = 0; i < flags.Length; ++i)
+                text.Append("Priority").Append(ChallengeContract.IniKeys[i]).Append('=').Append(Priority(ChallengeContract.RuleKeys[i]).ToString(CultureInfo.InvariantCulture)).Append('\n');
+            return text.ToString();
         }
     }
     internal sealed class ChallengeItem
@@ -78,6 +97,10 @@ namespace Pal98.Challenges
         public string title { get; set; }
         public int revision { get; set; }
         public int latest_revision { get; set; }
+        public int rules_revision { get; set; }
+        public string approval_status { get; set; }
+        internal bool Current => revision == latest_revision;
+        internal bool Approved => approval_status == "approved";
         public string[] contents { get; set; }
         public ChallengeRules rules { get; set; }
         public ChallengeCover cover { get; set; }
@@ -89,8 +112,10 @@ namespace Pal98.Challenges
             foreach (string content in contents) ChallengeContract.ContentId(content);
             rules.Validate();
             cover?.Validate();
+            if (rules_revision < 0 || approval_status != null && !new[] {"pending", "approved", "rejected"}.Contains(approval_status))
+                throw new InvalidDataException("挑战审批状态无效。");
         }
-        public override string ToString() => title;
+        public override string ToString() => title + (Current ? "" : " [有更新]");
     }
     internal sealed class ChallengePlayer
     {
@@ -108,6 +133,8 @@ namespace Pal98.Challenges
         public string key { get; set; }
         public string name { get; set; }
         public string description { get; set; }
+        public bool default_enabled { get; set; }
+        public int priority { get; set; }
     }
     internal sealed class ChallengeState
     {
@@ -117,6 +144,7 @@ namespace Pal98.Challenges
         public string next_identity_refresh_utc { get; set; }
         public string identity_status { get; set; } = "unbound";
         public string requested_name { get; set; }
+        public int rules_revision { get; set; }
         public ChallengePlayer player { get; set; } = new ChallengePlayer();
         public ChallengeItem[] items { get; set; } = new ChallengeItem[0];
         public ChallengeItem[] enrollments { get; set; } = new ChallengeItem[0];
@@ -136,10 +164,11 @@ namespace Pal98.Challenges
                 throw new InvalidDataException("挑战列表有重复条目。");
             foreach (var pair in contents) { ChallengeContract.ContentId(pair.Key); ChallengeContract.Text(pair.Value, 120); }
             foreach (var pair in heroes) { if (!ChallengeContract.HeroIds.Contains(pair.Key)) throw new InvalidDataException("人物列表无效。"); ChallengeContract.Text(pair.Value, 60); }
-            if (rules.Length != 0 && (rules.Length != 6 || rules.Select(r => r.key).Distinct().Count() != 6)) throw new InvalidDataException("规则目录不完整。");
+            if (rules.Length != 0 && ((rules.Length != 6 && rules.Length != ChallengeContract.RuleKeys.Length) || rules.Select(r => r.key).Distinct().Count() != rules.Length)) throw new InvalidDataException("规则目录不完整。");
             foreach (var rule in rules) {
                 if (!ChallengeContract.RuleKeys.Contains(rule.key)) throw new InvalidDataException("规则目录无效。");
                 ChallengeContract.Text(rule.name, 80); ChallengeContract.Text(rule.description, 1000);
+                if (rule.priority < 0 || rule.priority > 999) throw new InvalidDataException("规则优先级超出范围。");
             }
             if (updated_at_utc != null) ChallengeContract.Time(updated_at_utc);
             if (next_identity_refresh_utc != null) ChallengeContract.Time(next_identity_refresh_utc);
@@ -159,7 +188,8 @@ namespace Pal98.Challenges
         {
             if (challenge == null || player == null || !player.bound || !locked || ini_filename != ChallengeContract.IniFile) throw new InvalidDataException("挑战下发不完整。");
             challenge.Validate(); player.Validate(); ChallengeContract.Id(device_id); ChallengeContract.ContentId(content_id);
-            if (!challenge.contents.Contains(content_id) || ini != challenge.rules.Ini()) throw new InvalidDataException("挑战下发配置与规则不一致。");
+            if (!challenge.contents.Contains(content_id) || ini != challenge.rules.Ini() &&
+                !(challenge.rules.LegacyCompatible && ini == challenge.rules.Ini(true))) throw new InvalidDataException("挑战下发配置与规则不一致。");
         }
     }
     internal sealed class ChallengeBridgeReply
@@ -177,8 +207,10 @@ namespace Pal98.Challenges
         internal const string ServerProtocol = "PAL.Challenges.v1", CacheProtocol = "PAL.ChallengeCache.v1", BridgeProtocol = "PAL.ChallengeBridge.v2";
         internal const string CoverFile = "palmod/challenge-cover.v1.txt";
         internal const string CacheFile = "palmod/challenges.v1.json", IniFile = "challenge-rules.ini", SelectionFile = "palmod/challenge-selection.v1.json";
-        internal static readonly string[] RuleKeys = {"solo_art", "helpless_husband", "true_duel", "level_one_solo", "individual_flee", "chosen_hero"};
-        internal static readonly string[] IniKeys = {"SoloArt", "HelplessHusband", "TrueDuel", "LevelOneSolo", "IndividualFlee", "ChosenHero"};
+        internal static readonly string[] RuleKeys = {"solo_art", "helpless_husband", "true_duel", "level_one_solo", "individual_flee", "chosen_hero",
+            "starting_supplies", "no_coop_magic", "drop99", "steal_all", "no_invisibility_item", "invisibility_mana1", "silkworm_stats_only"};
+        internal static readonly string[] IniKeys = {"SoloArt", "HelplessHusband", "TrueDuel", "LevelOneSolo", "IndividualFlee", "ChosenHero",
+            "StartingSupplies", "NoCoopMagic", "Drop99", "StealAll", "NoInvisibilityItem", "InvisibilityMana1", "SilkwormStatsOnly"};
         internal static readonly string[] HeroIds = {"li-xiaoyao", "zhao-linger", "lin-yueru", "anu", "wuhou"};
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer {MaxJsonLength = 8388608, RecursionLimit = 32};
         internal static Dictionary<string, object> Object(string text)
@@ -198,10 +230,17 @@ namespace Pal98.Challenges
         {
             var dict = value as Dictionary<string, object>;
             if (dict != null) foreach (var pair in dict) {
+                if (pair.Key == "rule_priorities") {
+                    var priorities = pair.Value as Dictionary<string, object>;
+                    if (priorities == null || priorities.Any(p => !RuleKeys.Contains(p.Key) || !(p.Value is int) || (int)p.Value < 0 || (int)p.Value > 999))
+                        throw new InvalidDataException("规则优先级字段无效。");
+                    continue;
+                }
                 if ((RuleKeys.Contains(pair.Key) || new[] {"bound", "locked", "ok"}.Contains(pair.Key)) && !(pair.Value is bool)) throw new InvalidDataException("规则布尔字段无效。");
-                if (new[] {"revision", "latest_revision", "schema_version", "retry_after_seconds"}.Contains(pair.Key) && !(pair.Value is int)) throw new InvalidDataException("规则版本字段无效。");
+                if (new[] {"revision", "latest_revision", "rules_revision", "schema_version", "retry_after_seconds", "priority"}.Contains(pair.Key) && !(pair.Value is int)) throw new InvalidDataException("规则版本字段无效。");
                 if (pair.Key == "rules" && pair.Value is Dictionary<string, object> fields &&
-                    (fields.Count != 8 || !RuleKeys.Concat(new[] {"schema_version", "hero"}).All(fields.ContainsKey))) throw new InvalidDataException("牢局规则字段不完整。");
+                    (!RuleKeys.Take(6).Concat(new[] {"schema_version", "hero"}).All(fields.ContainsKey) ||
+                     fields.Keys.Except(RuleKeys.Concat(new[] {"schema_version", "hero", "rule_priorities"})).Any())) throw new InvalidDataException("牢局规则字段不完整。");
                 if (pair.Key == "player") {
                     var player = pair.Value as Dictionary<string, object>; object bound, id, name;
                     if (player == null || !player.TryGetValue("bound", out bound) || !(bound is bool) || !player.TryGetValue("id", out id) || id != null && !(id is string) ||

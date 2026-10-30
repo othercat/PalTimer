@@ -16,7 +16,7 @@ internal static class ChallengeBehavior
     static readonly string playerId = "33333333-3333-4333-8333-333333333333", deviceId = "44444444-4444-4444-8444-444444444444";
     static void Check(bool value, string message) { if (!value) throw new Exception(message); ++checks; Console.WriteLine("PASS " + message); }
     static void Reject(Action call, string message) { try { call(); } catch (Exception) { Check(true, message); return; } throw new Exception(message); }
-    static ChallengeItem Item() => new ChallengeItem {id = challengeId, author_id = author, author_name = "作者", title = "坐牢三剑客挑战1", revision = 1, latest_revision = 1,
+    static ChallengeItem Item() => new ChallengeItem {id = challengeId, author_id = author, author_name = "作者", title = "坐牢三剑客挑战1", revision = 1, latest_revision = 1, approval_status = "approved",
         contents = new[] {"pal98-classic-v6"}, rules = new ChallengeRules {solo_art = true, true_duel = true}};
     sealed class Fake : ICompetitionTransport
     {
@@ -112,45 +112,143 @@ internal static class ChallengeBehavior
         Reject(() => ChallengeContract.Read<ChallengeRules>("{\"schema_version\":1,\"solo_art\":1}"), "numeric booleans rejected");
         Reject(() => ChallengeContract.ReadState(cache.Replace("\"bound\":false", "\"bound\":\"false\"")), "cache boolean coercion rejected");
         Reject(() => ChallengeContract.Object("{} trailing"), "trailing JSON rejected");
-        Check(new ChallengeRules {chosen_hero = true, hero = "wuhou"}.Ini().EndsWith("Hero=wuhou\n"), "hero selection has fixed INI spelling");
+        Check(new ChallengeRules {chosen_hero = true, hero = "wuhou"}.Ini().Contains("Hero=wuhou\n"), "hero selection has fixed INI spelling");
+    }
+    static async Task<Dictionary<string, object>> HttpJson(HttpClient client, string method, string path, object body, int expected, string label)
+    {
+        using (var request = new HttpRequestMessage(new HttpMethod(method), path)) {
+            if (body != null) request.Content = new StringContent(ChallengeContract.Json().Serialize(body), Encoding.UTF8, "application/json");
+            using (var response = await client.SendAsync(request)) {
+                Check((int)response.StatusCode == expected, label);
+                return ChallengeContract.Object(await response.Content.ReadAsStringAsync());
+            }
+        }
+    }
+    static ChallengeItem HttpItem(Dictionary<string, object> response)
+    {
+        var item = ChallengeContract.Read<ChallengeItem>(ChallengeContract.Json().Serialize(response["challenge"])); item.Validate(); return item;
+    }
+    static void HttpRejected(ChallengeBridgeReply reply, string code, string cacheFile, string expectedCache, string label)
+    {
+        Check(!reply.ok && reply.code == code && reply.code != "network_unavailable" && reply.activation == null && File.ReadAllText(cacheFile) == expectedCache, label);
     }
     static async Task Integration(string output, string server)
     {
+        var origin = new Uri(server);
+        Check(origin.Scheme == "http" && origin.IsLoopback && origin.AbsolutePath == "/" && origin.Query.Length == 0 && origin.UserInfo.Length == 0, "HTTP integration accepts loopback fixture only");
         string root = Path.Combine(output, "http-game"); Directory.CreateDirectory(Path.Combine(root, "palmod")); Directory.CreateDirectory(Path.Combine(root, "patches"));
         File.WriteAllText(Path.Combine(root, "config.ini"), "[Patch]\nDefaultPatch=pal98-classic-v6\n");
         File.WriteAllText(Path.Combine(root, "palmod/common-tools.v1.json"), ChallengeContract.Json().Serialize(new {schema = "PAL98.ToolLaunchSettings.v1", competition_upload = new {schema = "PAL98.TimerOnlineSettings.v1", xiaorou = new {enabled = false, server = server}}}));
         var storage = new CompetitionStorage(Path.Combine(output, "http-personal"), () => "http-challenge-fixture");
         var clock = DateTimeOffset.UtcNow;
+        string workshop = "/api/v1/timer/challenge-workshop", challenges = "/api/v1/timer/challenges", administration = "/api/v1/timer/admin";
         using (var transport = new CompetitionHttpTransport())
-        using (var admin = new HttpClient(new HttpClientHandler {AllowAutoRedirect = false}) {BaseAddress = new Uri(server)}) {
+        using (var admin = new HttpClient(new HttpClientHandler {AllowAutoRedirect = false}) {BaseAddress = origin})
+        using (var authorClient = new HttpClient(new HttpClientHandler {AllowAutoRedirect = false}) {BaseAddress = origin})
+        using (var deviceClient = new HttpClient(new HttpClientHandler {AllowAutoRedirect = false, UseCookies = false}) {BaseAddress = origin}) {
+            admin.DefaultRequestHeaders.Add("X-SGS-Admin", "1"); authorClient.DefaultRequestHeaders.Add("X-PAL-Challenge-Client", "1");
+            await HttpJson(admin, "POST", "/api/v1/competitions/admin/login", new {password = "fixture-only-password"}, 200, "HTTP isolated admin session login");
+            await HttpJson(admin, "POST", administration + "/challenge-authors", new {username = "fixture-author", password = "fixture-author-password"}, 201, "HTTP administrator creates disposable author");
+            await HttpJson(authorClient, "POST", workshop + "/login", new {username = "fixture-author", password = "fixture-author-password"}, 200, "HTTP author has separate session");
+            var rules = new ChallengeRules {solo_art = true, true_duel = true, starting_supplies = true, no_coop_magic = true, drop99 = true,
+                steal_all = true, no_invisibility_item = true, invisibility_mana1 = true, silkworm_stats_only = true,
+                rule_priorities = new Dictionary<string, int> {{"steal_all", 9}, {"solo_art", 4}}};
+            var item = HttpItem(await HttpJson(authorClient, "POST", workshop + "/challenges", new {title = "HTTP第一版挑战", rules = rules}, 201, "HTTP owner creates revision 1 with thirteen-rule contract"));
             Func<object, Task<ChallengeBridgeReply>> invoke = value => new ChallengeService(root, storage, transport, () => clock).Execute(ChallengeContract.Json().Serialize(value), CancellationToken.None);
             var reply = await invoke(new {action = "refresh"});
-            Check(reply.ok && reply.state.items.Length == 1 && reply.state.identity_status == "unbound", "HTTP cold catalog and device registration");
-            var item = reply.state.items[0];
+            Check(reply.ok && reply.state.items.Length == 1 && reply.state.rules.Length == 13 && reply.state.rules_revision == 1 && reply.state.identity_status == "unbound", "HTTP cold catalog and device registration");
             reply = await invoke(new {action = "submit_identity", display_name = "跨组件玩家"});
-            Check(reply.ok && reply.state.identity_status == "pending", "HTTP name-only application reaches pending approval");
-            admin.DefaultRequestHeaders.Add("X-SGS-Admin", "1"); admin.DefaultRequestHeaders.Add("X-PAL-Challenge-Client", "1");
-            Func<string, object, Task<HttpResponseMessage>> post = (path, value) => admin.PostAsync(path, new StringContent(ChallengeContract.Json().Serialize(value), Encoding.UTF8, "application/json"));
-            Check((await post("/api/v1/competitions/admin/login", new {password = "fixture-only-password"})).IsSuccessStatusCode, "HTTP existing admin session login");
-            var pending = ChallengeContract.Object(await admin.GetStringAsync("/api/v1/timer/admin/binding-requests"));
-            var requests = (object[])pending["items"]; var request = (Dictionary<string, object>)requests[0];
-            Check((await post("/api/v1/timer/admin/binding-requests/" + request["id"], new {approved = true, display_name = "跨组件玩家", reason = "fixture approval"})).IsSuccessStatusCode, "HTTP existing approval workflow accepts name");
+            Check(reply.ok && reply.state.identity_status == "pending", "HTTP global name application reaches pending");
+            var pending = await HttpJson(admin, "GET", administration + "/binding-requests", null, 200, "HTTP admin reads global identity application");
+            var request = (Dictionary<string, object>)((object[])pending["items"]).Single();
+            await HttpJson(admin, "POST", administration + "/binding-requests/" + request["id"], new {approved = true, display_name = "跨组件玩家", reason = "fixture approval"}, 200, "HTTP global identity approval");
             clock = clock.AddSeconds(61); reply = await invoke(new {action = "refresh_identity"});
-            Check(reply.ok && reply.state.player.bound && reply.state.player.display_name == "跨组件玩家", "HTTP refreshed identity observes approval");
+            Check(reply.ok && reply.state.player.bound && reply.state.player.display_name == "跨组件玩家", "HTTP identity refresh sees bound player");
             var player = reply.state.player;
-            var choice = new Dictionary<string, object> {{"action", "enroll"}, {"challenge_id", item.id}, {"revision", item.revision}, {"player_id", player.id}, {"display_name", player.display_name}};
-            reply = await invoke(choice); Check(reply.ok && reply.state.enrollments.Length == 1, "HTTP enrollment persists per device");
+            var credential = storage.Credential(server);
+            deviceClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", credential.Secret);
+            deviceClient.DefaultRequestHeaders.Add("X-PAL-HWID", credential.Hwid);
+            var choice = new Dictionary<string, object> {{"action", "enroll"}, {"challenge_id", item.id}, {"revision", 1}, {"player_id", player.id}, {"display_name", player.display_name}};
+            Func<int, object> activation = revision => new {player_id = player.id, display_name = player.display_name, revision = revision, content_id = "pal98-classic-v6", cover_version = 1};
+            reply = await invoke(choice);
+            Check(reply.ok && reply.state.enrollments.Single().approval_status == "pending", "HTTP enrollment is pending despite globally bound identity");
+            clock = clock.AddSeconds(61); reply = await invoke(new {action = "refresh_identity"});
+            Check(reply.ok && !reply.state.enrollments.Single().Approved, "HTTP identity refresh does not approve challenge application");
+            string cacheFile = Path.Combine(root, ChallengeContract.CacheFile), before = File.ReadAllText(cacheFile);
             choice["action"] = "activate"; choice["content_id"] = "pal98-classic-v6";
-            reply = await invoke(choice); Check(reply.ok && reply.activation.locked && reply.activation.ini == item.rules.Ini(), "HTTP activation returns exact cross-language INI");
+            HttpRejected(await invoke(choice), "http_409", cacheFile, before, "HTTP pending challenge cannot activate or become offline");
+            var rejected = await HttpJson(deviceClient, "POST", challenges + "/" + item.id + "/activate", activation(1), 409, "HTTP pending activation status is 409");
+            Check((string)rejected["code"] == "approval_pending", "HTTP pending rejection has explicit business code");
+            var applicants = await HttpJson(admin, "GET", administration + "/challenge-approvals?challenge_id=" + item.id, null, 200, "HTTP admin selects challenge applicant");
+            var applicant = (Dictionary<string, object>)((object[])applicants["items"]).Single();
+            Check((string)applicant["player_id"] == player.id && (string)applicant["status"] == "pending", "HTTP application belongs to bound player identity");
+            await HttpJson(admin, "POST", administration + "/challenge-approvals/" + item.id + "/" + player.id, new {status = "approved"}, 200, "HTTP administrator approves this challenge identity");
+            Check(!ChallengeContract.ReadState(File.ReadAllText(cacheFile)).enrollments.Single().Approved, "HTTP approval does not silently replace client status");
+            clock = clock.AddSeconds(61); reply = await invoke(new {action = "refresh_identity"});
+            Check(reply.ok && reply.state.enrollments.Single().Approved, "HTTP explicit refresh observes challenge approval");
+            reply = await invoke(choice);
+            Check(reply.ok && reply.activation.locked && reply.activation.ini == item.rules.Ini() && reply.activation.challenge.Current && reply.activation.challenge.Approved, "HTTP approved latest revision activates with exact INI");
             string device = reply.activation.device_id;
-            Check((await post("/api/v1/timer/challenge-workshop/login", new {username = "fixture-author", password = "fixture-author-password"})).IsSuccessStatusCode, "HTTP author login separate from admin");
-            using (var edit = new HttpRequestMessage(HttpMethod.Put, "/api/v1/timer/challenge-workshop/challenges/" + item.id)) {
-                edit.Content = new StringContent(ChallengeContract.Json().Serialize(new {title = "第二版挑战", expected_revision = 1, rules = new {true_duel = false}}), Encoding.UTF8, "application/json");
-                Check((await admin.SendAsync(edit)).IsSuccessStatusCode, "HTTP owner publishes revision 2");
-            }
-            reply = await invoke(choice); Check(reply.ok && reply.activation.challenge.revision == 1 && reply.activation.challenge.rules.true_duel, "HTTP registered player retains revision 1 after edit");
-            Check((await post("/api/v1/timer/admin/devices/" + device + "/binding", new {unbind = true})).IsSuccessStatusCode, "HTTP administrator unbinds fixture device");
-            reply = await invoke(choice); Check(!reply.ok && reply.code == "http_409" && reply.activation == null, "HTTP changed binding rejects old challenge activation");
+            rules.true_duel = false;
+            var second = HttpItem(await HttpJson(authorClient, "PUT", workshop + "/challenges/" + item.id, new {title = "HTTP第二版挑战", expected_revision = 1, rules = rules}, 200, "HTTP owner publishes revision 2"));
+            before = File.ReadAllText(cacheFile);
+            HttpRejected(await invoke(choice), "http_409", cacheFile, before, "HTTP edit immediately rejects revision 1 without changing local configuration");
+            rejected = await HttpJson(deviceClient, "POST", challenges + "/" + item.id + "/activate", activation(1), 409, "HTTP stale revision status is 409");
+            Check((string)rejected["code"] == "revision_outdated", "HTTP stale revision has explicit update-required code");
+            reply = await invoke(new {action = "refresh"});
+            var enrolled = reply.state.enrollments.Single();
+            Check(reply.ok && enrolled.revision == 1 && enrolled.latest_revision == 2 && !enrolled.Current && enrolled.rules.true_duel && enrolled.Approved && enrolled.ToString().Contains("[有更新]"), "HTTP refresh exposes update while retaining old enrolled rules");
+            Check(reply.state.items.Single().revision == 2 && !reply.state.items.Single().rules.true_duel, "HTTP catalog exposes explicit latest revision separately");
+            choice["action"] = "enroll"; choice["revision"] = 2; reply = await invoke(choice);
+            Check(reply.ok && reply.state.enrollments.Single().Current && reply.state.enrollments.Single().Approved, "HTTP confirmed update preserves same-player approval");
+            choice["action"] = "activate"; reply = await invoke(choice);
+            Check(reply.ok && reply.activation.challenge.revision == 2 && reply.activation.ini == second.rules.Ini() && !reply.activation.challenge.rules.true_duel, "HTTP explicitly updated revision 2 can activate");
+            var other = HttpItem(await HttpJson(authorClient, "POST", workshop + "/challenges", new {title = "HTTP另一个旧挑战", rules = new ChallengeRules()}, 201, "HTTP second live challenge created before directory import"));
+            var exported = await HttpJson(admin, "GET", administration + "/challenge-rules", null, 200, "HTTP administrator exports full rule directory");
+            var directory = (Dictionary<string, object>)exported["catalog"];
+            var firstRule = (Dictionary<string, object>)((object[])directory["rules"])[0]; firstRule["description"] = "HTTP上传后的规则说明"; firstRule["priority"] = 8;
+            var imported = await HttpJson(admin, "PUT", administration + "/challenge-rules", directory, 200, "HTTP administrator uploads validated rule JSON");
+            Check((int)imported["updated_challenges"] == 2 && (int)((Dictionary<string, object>)imported["catalog"])["revision"] == 2, "HTTP directory import revises every live challenge atomically");
+            var latest = HttpItem(await HttpJson(admin, "GET", challenges + "/" + item.id, null, 200, "HTTP explicit latest challenge detail"));
+            var otherLatest = HttpItem(await HttpJson(admin, "GET", challenges + "/" + other.id, null, 200, "HTTP other old challenge detail"));
+            Check(latest.revision == 3 && otherLatest.revision == 2 && latest.rules_revision == 2 && otherLatest.rules_revision == 2, "HTTP all previous challenge revisions advanced after rule upload");
+            before = File.ReadAllText(cacheFile);
+            HttpRejected(await invoke(choice), "http_409", cacheFile, before, "HTTP rule upload immediately rejects previously current revision 2");
+            rejected = await HttpJson(deviceClient, "POST", challenges + "/" + item.id + "/activate", activation(2), 409, "HTTP imported-rule stale activation status is 409");
+            Check((string)rejected["code"] == "revision_outdated", "HTTP rule upload requires explicit revision update");
+            clock = clock.AddSeconds(61); reply = await invoke(new {action = "refresh_identity"}); enrolled = reply.state.enrollments.Single();
+            Check(reply.ok && reply.state.rules_revision == 2 && enrolled.revision == 2 && enrolled.latest_revision == 3 && !enrolled.Current && enrolled.Approved, "HTTP identity refresh shows pending version update without silent reenrollment");
+            choice["action"] = "enroll"; choice["revision"] = 3; reply = await invoke(choice);
+            Check(reply.ok && reply.state.enrollments.Single().Current && reply.state.enrollments.Single().Approved, "HTTP latest rules update keeps approved identity");
+            choice["action"] = "activate"; reply = await invoke(choice);
+            Check(reply.ok && reply.activation.challenge.revision == 3 && reply.activation.challenge.rules_revision == 2 && reply.activation.ini == latest.rules.Ini(), "HTTP latest revision activates after directory update");
+            string verifiedIni = Path.Combine(output, "last-verified-rules.ini"); File.WriteAllText(verifiedIni, reply.activation.ini);
+            string expectedIni = File.ReadAllText(verifiedIni); before = File.ReadAllText(cacheFile);
+            Check(!File.Exists(Path.Combine(root, ChallengeContract.IniFile)), "HTTP timer does not bypass config tool transaction to apply rules");
+            string fault = Path.Combine(output, "http-fault-mode.fixture");
+            try {
+                foreach (int status in new[] {401, 403, 404, 408, 409, 422, 429, 500, 503}) {
+                    File.WriteAllText(fault, status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    HttpRejected(await invoke(new {action = "refresh"}), "http_" + status, cacheFile, before, "HTTP " + status + " response never grants offline fallback");
+                }
+                foreach (string mode in new[] {"oversized", "invalid-utf8"}) {
+                    File.WriteAllText(fault, mode);
+                    HttpRejected(await invoke(new {action = "refresh"}), "http_0", cacheFile, before, "HTTP received " + mode + " response is not a network outage");
+                }
+                File.WriteAllText(fault, "invalid-json");
+                HttpRejected(await invoke(new {action = "refresh"}), "invalid_or_unavailable", cacheFile, before, "HTTP malformed successful body is not a network outage");
+            } finally { if (File.Exists(fault)) File.Delete(fault); }
+            await HttpJson(admin, "POST", administration + "/devices/" + device + "/binding", new {unbind = true}, 200, "HTTP administrator unbinds fixture device");
+            HttpRejected(await invoke(choice), "http_409", cacheFile, before, "HTTP changed global binding rejects prior challenge activation");
+            File.WriteAllText(Path.Combine(output, "stop-http.fixture"), "stop isolated loopback service");
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (!File.Exists(Path.Combine(output, "http-stopped.fixture")) && DateTime.UtcNow < deadline) await Task.Delay(25);
+            Check(File.Exists(Path.Combine(output, "http-stopped.fixture")), "HTTP local service stopped and port closed before offline check");
+            reply = await invoke(choice);
+            Check(!reply.ok && reply.code == "network_unavailable" && reply.activation == null && reply.detail.Contains("离线") && File.ReadAllText(cacheFile) == before && File.ReadAllText(verifiedIni) == expectedIni,
+                "HTTP no-response outage alone permits retaining verified offline configuration");
+            var cached = ChallengeContract.ReadState(File.ReadAllText(cacheFile));
+            Check(cached.enrollments.Single().Current && cached.enrollments.Single().Approved && cached.enrollments.Single().revision == 3, "HTTP outage preserves validated current challenge rather than inventing an activation");
         }
     }
     static int Main(string[] args)

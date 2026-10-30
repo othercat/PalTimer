@@ -7,7 +7,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**维护构建：3.38.4（文件版本 3.38.4.3）/ Online 1.0.0.15；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.4（文件版本 3.38.4.9）/ Online 1.0.0.21；需要 .NET Framework 4.7.2 框架**
+
+2026-10-30 / #50：接收维护引擎发布的内容公式 ID、修订号和 SHA-256。三项必须在快照根部与 identity 中完整且一致，缺项、类型错误、其他内容的规则及非法摘要均拒绝；旧引擎完全没有这些字段时保留原身份。新公式进入榜单、最佳线和接力身份，运行中更换后即使切回也须重置才能保存最佳线。地图速度和梦时空投掷选项仍遵循既有分组约定。计时器只使用引擎实际数值，不重新计算角色或伤害。此开发版尚未发行；EXE、Online、Auth 的正式配套登记与批准仍需另行完成，本地通过不表示线上可用。Refs othercat/sdlpal-lostedit#170。
 
 2026-10-27 / r59：修复改版自动识别或切换内容后，主窗口分段列表右侧实时计时消失的问题。重建列表时恢复当前阶段、已有分段时间和完成状态，也处理界面回调晚于阶段推进的情况。四套内容适用；主计时、暂停、存读档累计和榜单配置身份不变。EXE、Online、Auth 与公开登记须使用新的配套组合，需独立构建批准。Refs #40。
 

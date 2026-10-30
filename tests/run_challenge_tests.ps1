@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OutputDirectory, [Parameter(Mandatory=$true)][string]$RuntimeDirectory, [string]$Server = '')
+param([Parameter(Mandatory=$true)][string]$OutputDirectory, [Parameter(Mandatory=$true)][string]$RuntimeDirectory, [string]$Server = '', [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = [IO.Path]::GetFullPath($OutputDirectory)
@@ -14,6 +14,7 @@ $exe = Join-Path $out 'ChallengeBehavior.exe'
 if ($LASTEXITCODE) { Get-Content -LiteralPath (Join-Path $out 'build.log'); throw 'Challenge tests did not build.' }
 Copy-Item -LiteralPath (Join-Path $repo 'Pal98Timer\lib\System.Web.Script.Serialization.dll'), (Join-Path $RuntimeDirectory 'Pal98Timer.exe'), (Join-Path $RuntimeDirectory 'TimerPluginBase.dll') -Destination $out
 Copy-Item -LiteralPath (Join-Path $repo 'Pal98Timer\App.config') -Destination ($exe + '.config')
+if ($BuildOnly) { Write-Output "Challenge test host: $exe"; return }
 $arguments = @((Join-Path $out 'data')); if ($Server) { $arguments += $Server }
 & $exe @arguments *> (Join-Path $out 'result.txt')
 Get-Content -LiteralPath (Join-Path $out 'result.txt') -Tail 12

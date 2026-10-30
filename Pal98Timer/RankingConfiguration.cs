@@ -39,6 +39,12 @@ namespace Pal98Timer
             var keys = new HashSet<string>(new[] { "family", "content", "profile" }, StringComparer.Ordinal);
             if (!SpeedIndependent) keys.UnionWith(new[] { "fade_ms", "map_speed_ticks", "walk_frame_ms", "speed", "battle_speed" });
             foreach (var resource in resources) keys.Add("resource." + resource);
+            var gameplay = new[] { "gameplay.rule", "gameplay.revision", "gameplay.sha256" };
+            if (gameplay.Any(rules.ContainsKey)) {
+                if (!gameplay.All(rules.ContainsKey) || !SdlpalBridge.ValidGameplayRule(Value("profile"),
+                    Value("gameplay.rule"), Value("gameplay.revision"), Value("gameplay.sha256"))) return false;
+                keys.UnionWith(gameplay);
+            }
             if (rules.ContainsKey("wuqiang"))
             {
                 if (Value("wuqiang") != "1") return false;

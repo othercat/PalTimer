@@ -66,7 +66,11 @@ namespace Pal98Timer
                         await Catalog(cancellation).ConfigureAwait(false);
                         if (state.RefreshSeconds(now()) == 0 || state.updated_at_utc == null) await Identity(cancellation).ConfigureAwait(false);
                         await Enrollments(cancellation).ConfigureAwait(false);
-                    } else if (action == "refresh_identity") await Identity(cancellation).ConfigureAwait(false);
+                    } else if (action == "refresh_identity") {
+                        await Identity(cancellation).ConfigureAwait(false);
+                        await Catalog(cancellation).ConfigureAwait(false);
+                        await Enrollments(cancellation).ConfigureAwait(false);
+                    }
                     else if (action == "submit_identity") {
                         string name = Required(request, "display_name").Trim(); ChallengeContract.Text(name, 60);
                         ApplyIdentity(await Send("POST", "/challenges/identity", new {display_name = name}, cancellation).ConfigureAwait(false));
@@ -84,7 +88,8 @@ namespace Pal98Timer
                         state.player = confirmed; state.identity_status = "bound"; state.requested_name = null;
                         if (action == "activate") {
                             activation = Convert<ChallengeActivation>(reply); activation.Validate();
-                            if (activation.device_id != deviceId || activation.content_id != (string)choice["content_id"]) throw new InvalidDataException("服务器设备或游戏包确认不一致。");
+                            if (activation.device_id != deviceId || activation.content_id != (string)choice["content_id"] ||
+                                !activation.challenge.Current || !activation.challenge.Approved) throw new InvalidDataException("挑战需要最新版本和管理员批准的身份。");
                         } else await Enrollments(cancellation).ConfigureAwait(false);
                     }
                     state.updated_at_utc = now().ToString("o"); state.Validate();
@@ -103,7 +108,7 @@ namespace Pal98Timer
             } catch (ChallengeFailure error) {
                 return new ChallengeBridgeReply {ok = false, code = error.Code, detail = error.Message, retry_after_seconds = error.Retry, state = state};
             } catch (OperationCanceledException) {
-                return new ChallengeBridgeReply {ok = false, code = "unavailable", detail = "服务器连接超时，请稍后重试。", state = state};
+                return new ChallengeBridgeReply {ok = false, code = "cancelled", detail = "挑战请求已超时，请刷新后重试。", state = state};
             } catch (Exception error) when (error is IOException || error is InvalidDataException || error is UnauthorizedAccessException || error is ArgumentException || error is InvalidOperationException || error is System.Security.Cryptography.CryptographicException) {
                 storage.LogNetwork("challenge-invalid-or-unavailable", 0);
                 return new ChallengeBridgeReply {ok = false, code = "invalid_or_unavailable", detail = "挑战信息或本机配置无法读取，请检查配套版本后重试。", state = state};
@@ -144,6 +149,7 @@ namespace Pal98Timer
                 if (collected.Count > 5000) throw new InvalidDataException("挑战目录超过本地容量。");
                 state.contents = Convert<Dictionary<string, string>>(Field(reply, "contents"));
                 state.heroes = Convert<Dictionary<string, string>>(Field(reply, "heroes")); state.rules = Convert<ChallengeRuleInfo[]>(Field(reply, "rules"));
+                object rulesRevision; state.rules_revision = reply.TryGetValue("rules_revision", out rulesRevision) && rulesRevision is int ? (int)rulesRevision : 0;
                 object next = Field(reply, "next_offset");
                 if (next == null) break;
                 if (!(next is int) || (int)next != offset + page.Length || page.Length == 0) throw new InvalidDataException("挑战目录分页未前进。");
@@ -163,6 +169,8 @@ namespace Pal98Timer
             var reply = await transport.Send(method, settings.Endpoint + path, credential.Hwid, credential.Secret,
                 value == null ? null : ChallengeContract.Json().Serialize(value), 5000, cancellation).ConfigureAwait(false);
             if (!reply.Success) {
+                if (reply.Status == 0 && !reply.ReceivedResponse)
+                    throw new ChallengeFailure("network_unavailable", "当前无法连接挑战服务器，已保存的挑战配置可以离线游玩。");
                 string message = reply.Status == 401 ? "本机计时器设备身份未通过服务器验证，请检查身份凭据。" : reply.Status == 409 ? "身份、HWID或挑战版本不匹配，请刷新身份状态并重新选择挑战。"
                     : reply.Status == 404 ? "服务器尚未提供此挑战，请更新或刷新挑战信息。" : reply.Status == 429 ? "操作过于频繁，请等待后重试。" : "服务器暂时不可用，已有本地配置保留。";
                 throw new ChallengeFailure("http_" + reply.Status, message, reply.RetryAfterSeconds);

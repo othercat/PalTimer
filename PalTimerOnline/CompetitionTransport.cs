@@ -12,6 +12,7 @@ namespace Pal98Timer
     internal sealed class CompetitionHttpResult
     {
         internal int Status;
+        internal bool ReceivedResponse;
         internal string Body = "";
         internal int RetryAfterSeconds;
         internal DateTimeOffset? ServerDate, ReceivedAt;
@@ -43,11 +44,14 @@ namespace Pal98Timer
                 if (method == "GET" || new Uri(url).AbsolutePath.StartsWith("/api/v1/timer/challenges/", StringComparison.Ordinal))
                     request.Headers.Add("X-PAL-HWID", hwid);
                 if (body != null) request.Content = new StringContent(body, new UTF8Encoding(false), "application/json");
+                bool receivedResponse = false;
                 try
                 {
                     using (var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false))
                     {
+                        receivedResponse = true;
                         var result = new CompetitionHttpResult { Status = (int)response.StatusCode,
+                            ReceivedResponse = true,
                             ServerDate = response.Headers.Date, ReceivedAt = DateTimeOffset.UtcNow };
                         var retry = response.Headers.RetryAfter;
                         if (retry != null)
@@ -57,14 +61,14 @@ namespace Pal98Timer
                         }
                         // Error response bodies may echo sensitive input; never persist or display them.
                         if (!result.Success) return result;
-                        if (response.Content.Headers.ContentLength > 1048576) return new CompetitionHttpResult();
+                        if (response.Content.Headers.ContentLength > 1048576) return new CompetitionHttpResult {ReceivedResponse = true};
                         using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
                         using (var buffer = new MemoryStream())
                         {
                             byte[] bytes = new byte[8192]; int count;
                             while ((count = await stream.ReadAsync(bytes, 0, bytes.Length, deadline.Token).ConfigureAwait(false)) != 0)
                             {
-                                if (buffer.Length + count > 1048576) return new CompetitionHttpResult();
+                                if (buffer.Length + count > 1048576) return new CompetitionHttpResult {ReceivedResponse = true};
                                 buffer.Write(bytes, 0, count);
                             }
                             result.Body = new UTF8Encoding(false, true).GetString(buffer.ToArray());
@@ -73,7 +77,7 @@ namespace Pal98Timer
                     }
                 }
                 catch (Exception ex) when (ex is HttpRequestException || ex is IOException || ex is OperationCanceledException || ex is DecoderFallbackException)
-                { return new CompetitionHttpResult(); }
+                { return new CompetitionHttpResult {ReceivedResponse = receivedResponse}; }
             }
         }
         public void Dispose() { http.Dispose(); }
