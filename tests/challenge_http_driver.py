@@ -17,9 +17,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     root = args.output.resolve()
-    allowed = Path(r'C:\Workspace\PALWork\artifacts\PalTimer-issue-51\r84').resolve()
-    if not root.is_relative_to(allowed) or root == allowed:
-        raise ValueError('Use a new run directory under the authorized Issue 51 evidence root.')
+    allowed = [Path(r'C:\Workspace\PALWork\artifacts\PalTimer-issue-51\r84').resolve(),
+               Path(r'C:\Workspace\PALWork\artifacts\PalTimer-issue-52').resolve(),
+               Path(r'C:\Workspace\PALWork\artifacts\so-lostedit-issue-189').resolve()]
+    if not any(root.is_relative_to(p) and root != p for p in allowed):
+        raise ValueError('Use a new run directory under the authorized Issue 51/52 evidence root.')
     database = root / 'fixture.sqlite3'
     if any(Path(str(database) + tail).exists() for tail in ('', '-wal', '-shm')):
         raise FileExistsError('Refusing an existing fixture database.')

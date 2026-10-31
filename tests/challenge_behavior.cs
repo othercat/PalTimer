@@ -16,6 +16,17 @@ internal static class ChallengeBehavior
     static readonly string playerId = "33333333-3333-4333-8333-333333333333", deviceId = "44444444-4444-4444-8444-444444444444";
     static void Check(bool value, string message) { if (!value) throw new Exception(message); ++checks; Console.WriteLine("PASS " + message); }
     static void Reject(Action call, string message) { try { call(); } catch (Exception) { Check(true, message); return; } throw new Exception(message); }
+    // The real config tool is the v1 interpreter. Keep its frozen strict
+    // contract as a consumer fixture, separate from the generic timer relay.
+    static async Task<ChallengeBridgeReply> Consumer(Task<Dictionary<string, object>> pending)
+    {
+        var raw = await pending;
+        try {
+            var value = ChallengeContract.Read<ChallengeBridgeReply>(ChallengeContract.Json().Serialize(raw));
+            if (value.ok) {value.state.Validate(); value.activation?.Validate();}
+            return value;
+        } catch (InvalidDataException) {return new ChallengeBridgeReply {ok = false, code = "invalid_or_unavailable", detail = "Consumer rejected unsupported game rules."};}
+    }
     static ChallengeItem Item() => new ChallengeItem {id = challengeId, author_id = author, author_name = "作者", title = "坐牢三剑客挑战1", revision = 1, latest_revision = 1, approval_status = "approved",
         contents = new[] {"pal98-classic-v6"}, rules = new ChallengeRules {solo_art = true, true_duel = true}};
     sealed class Fake : ICompetitionTransport
@@ -44,7 +55,7 @@ internal static class ChallengeBehavior
                 if (method == "POST") { RequestedName = (string)ChallengeContract.Object(body)["display_name"]; Status = "pending"; }
                 value["status"] = Status; value["player"] = Player; value["requested_name"] = RequestedName;
                 value["refresh_interval_seconds"] = 60;
-            } else if (path.EndsWith("/enrollments")) value["items"] = Enrolled ? new[] {Item()} : new ChallengeItem[0];
+            } else if (path.Split('?')[0].EndsWith("/enrollments")) value["items"] = Enrolled ? new[] {Item()} : new ChallengeItem[0];
             else if (path.EndsWith("/enroll") || path.EndsWith("/activate")) {
                 if (!Player.bound) return Task.FromResult(new CompetitionHttpResult {Status = 409});
                 var request = ChallengeContract.Object(body);
@@ -89,7 +100,7 @@ internal static class ChallengeBehavior
         Directory.CreateDirectory(root); Directory.CreateDirectory(Path.Combine(root, "patches")); File.WriteAllText(Path.Combine(root, "config.ini"), "[Game]\nPatch=pal98-classic-v6\n");
         var clock = DateTimeOffset.Parse("2026-10-29T00:00:00Z"); var fake = new Fake();
         var storage = new CompetitionStorage(personal, () => "challenge-fixture-device");
-        Func<string, Task<ChallengeBridgeReply>> request = json => new ChallengeService(root, storage, fake, () => clock).Execute(json, CancellationToken.None);
+        Func<string, Task<ChallengeBridgeReply>> request = json => Consumer(new ChallengeService(root, storage, fake, () => clock).Execute(json, CancellationToken.None));
         var result = await request("{\"action\":\"refresh\"}");
         Check(result.ok && result.state.items.Length == 1 && result.state.identity_status == "unbound", "cold startup retrieves catalog and unbound identity");
         Check(result.state.RefreshSeconds(clock) == 60, "refresh starts visible 60 second cooldown");
@@ -124,7 +135,11 @@ internal static class ChallengeBehavior
         Check(!result.ok && result.code == "http_401" && File.ReadAllText(cacheFile) == before, "invalid device credentials preserve cache");
         fake.RejectStatus = 0; fake.InvalidBoolean = true;
         result = await request("{\"action\":\"refresh\"}");
-        Check(!result.ok && File.ReadAllText(cacheFile) == before, "string boolean cannot become active rule");
+        Check(!result.ok && File.ReadAllText(cacheFile).Contains("\"solo_art\":\"true\"") && !File.Exists(Path.Combine(root, ChallengeContract.IniFile)),
+            "relay preserves payload while the config consumer rejects a string boolean before activation");
+        fake.InvalidBoolean = false;
+        result = await request("{\"action\":\"refresh\"}");
+        Check(result.ok, "valid server data restores the interpretable directory without changing game files");
         fake.InvalidBoolean = false; clock = clock.AddSeconds(61); fake.FailingIdentity = true;
         result = await request("{\"action\":\"refresh_identity\"}");
         Check(!result.ok && result.state.RefreshSeconds(clock) == 60, "failed refresh still has explicit cooldown");
@@ -176,7 +191,7 @@ internal static class ChallengeBehavior
                 steal_all = true, no_invisibility_item = true, invisibility_mana1 = true, silkworm_stats_only = true, advanced_trade = true,
                 rule_priorities = new Dictionary<string, int> {{"steal_all", 9}, {"solo_art", 4}, {"advanced_trade", 7}}};
             var item = HttpItem(await HttpJson(authorClient, "POST", workshop + "/challenges", new {title = "HTTP第一版挑战", rules = rules}, 201, "HTTP owner creates revision 1 with fourteen-rule contract"));
-            Func<object, Task<ChallengeBridgeReply>> invoke = value => new ChallengeService(root, storage, transport, () => clock).Execute(ChallengeContract.Json().Serialize(value), CancellationToken.None);
+            Func<object, Task<ChallengeBridgeReply>> invoke = value => Consumer(new ChallengeService(root, storage, transport, () => clock).Execute(ChallengeContract.Json().Serialize(value), CancellationToken.None));
             var reply = await invoke(new {action = "refresh"});
             Check(reply.ok && reply.state.items.Length == 1 && reply.state.rules.Length == 14 && reply.state.rules_revision == 1 && reply.state.identity_status == "unbound", "HTTP cold catalog and device registration");
             reply = await invoke(new {action = "submit_identity", display_name = "跨组件玩家"});

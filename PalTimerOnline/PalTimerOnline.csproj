@@ -23,7 +23,7 @@
     <Compile Include="GeshiConfigurationInitialization.cs"/>
     <Compile Include="CompetitionBuildRegistration.cs"/>
     <Compile Include="CompetitionTransport.cs"/>
-    <Compile Include="ChallengeContract.cs"/>
+    <Compile Include="ChallengeRelayContract.cs"/>
     <Compile Include="ChallengeJsonSyntax.cs"/>
     <Compile Include="ChallengeBridge.cs"/>
     <Compile Include="CompetitionStorage.cs"/>

@@ -1,4 +1,5 @@
-// Shared wire contract for the timer-owned bridge and the maintenance config UI.
+// Frozen v1 consumer fixture for compatibility tests; not compiled into Online.
+// Rule interpretation belongs to ConfigTool, not the timer relay (#52).
 using System;
 using System.Collections;
 using System.Collections.Generic;
