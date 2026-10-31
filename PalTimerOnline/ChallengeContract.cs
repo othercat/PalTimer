@@ -66,6 +66,7 @@ namespace Pal98.Challenges
         public bool no_invisibility_item { get; set; }
         public bool invisibility_mana1 { get; set; }
         public bool silkworm_stats_only { get; set; }
+        public bool advanced_trade { get; set; }
         public Dictionary<string, int> rule_priorities { get; set; } = new Dictionary<string, int>();
         public string hero { get; set; } = "li-xiaoyao";
         internal void Validate() {
@@ -75,16 +76,17 @@ namespace Pal98.Challenges
         }
         internal int Priority(string key) => rule_priorities.TryGetValue(key, out int value) ? value : 0;
         internal bool LegacyCompatible => !starting_supplies && !no_coop_magic && !drop99 && !steal_all &&
-            !no_invisibility_item && !invisibility_mana1 && !silkworm_stats_only && rule_priorities.Values.All(p => p == 0);
-        internal string Ini(bool legacy = false)
+            !no_invisibility_item && !invisibility_mana1 && !silkworm_stats_only && !advanced_trade && rule_priorities.Values.All(p => p == 0);
+        internal string Ini(bool legacy = false, bool preAdvanced = false)
         {
             Validate();
             bool[] flags = {solo_art, helpless_husband, true_duel, level_one_solo, individual_flee, chosen_hero,
-                starting_supplies, no_coop_magic, drop99, steal_all, no_invisibility_item, invisibility_mana1, silkworm_stats_only};
+                starting_supplies, no_coop_magic, drop99, steal_all, no_invisibility_item, invisibility_mana1, silkworm_stats_only, advanced_trade};
+            int count = legacy ? 6 : preAdvanced ? flags.Length - 1 : flags.Length;
             var text = new StringBuilder("[Challenge]\nSchemaVersion=1\n");
-            for (int i = 0; i < (legacy ? 6 : flags.Length); ++i) text.Append(ChallengeContract.IniKeys[i]).Append('=').Append(flags[i] ? '1' : '0').Append('\n');
+            for (int i = 0; i < count; ++i) text.Append(ChallengeContract.IniKeys[i]).Append('=').Append(flags[i] ? '1' : '0').Append('\n');
             text.Append("Hero=").Append(hero).Append('\n');
-            if (!legacy) for (int i = 0; i < flags.Length; ++i)
+            if (!legacy) for (int i = 0; i < count; ++i)
                 text.Append("Priority").Append(ChallengeContract.IniKeys[i]).Append('=').Append(Priority(ChallengeContract.RuleKeys[i]).ToString(CultureInfo.InvariantCulture)).Append('\n');
             return text.ToString();
         }
@@ -164,7 +166,10 @@ namespace Pal98.Challenges
                 throw new InvalidDataException("挑战列表有重复条目。");
             foreach (var pair in contents) { ChallengeContract.ContentId(pair.Key); ChallengeContract.Text(pair.Value, 120); }
             foreach (var pair in heroes) { if (!ChallengeContract.HeroIds.Contains(pair.Key)) throw new InvalidDataException("人物列表无效。"); ChallengeContract.Text(pair.Value, 60); }
-            if (rules.Length != 0 && ((rules.Length != 6 && rules.Length != ChallengeContract.RuleKeys.Length) || rules.Select(r => r.key).Distinct().Count() != rules.Length)) throw new InvalidDataException("规则目录不完整。");
+            if (rules.Length != 0 && ((rules.Length != 6 && rules.Length != 13 && rules.Length != ChallengeContract.RuleKeys.Length) || rules.Select(r => r.key).Distinct().Count() != rules.Length)) throw new InvalidDataException("规则目录不完整。");
+            if (rules.Length != 0 && (!ChallengeContract.RuleKeys.Take(rules.Length).All(k => rules.Any(r => r.key == k)) ||
+                rules.Length < ChallengeContract.RuleKeys.Length && items.Concat(enrollments).Any(i => i.rules.advanced_trade)))
+                throw new InvalidDataException("规则目录与高级买卖能力不一致。");
             foreach (var rule in rules) {
                 if (!ChallengeContract.RuleKeys.Contains(rule.key)) throw new InvalidDataException("规则目录无效。");
                 ChallengeContract.Text(rule.name, 80); ChallengeContract.Text(rule.description, 1000);
@@ -189,7 +194,8 @@ namespace Pal98.Challenges
             if (challenge == null || player == null || !player.bound || !locked || ini_filename != ChallengeContract.IniFile) throw new InvalidDataException("挑战下发不完整。");
             challenge.Validate(); player.Validate(); ChallengeContract.Id(device_id); ChallengeContract.ContentId(content_id);
             if (!challenge.contents.Contains(content_id) || ini != challenge.rules.Ini() &&
-                !(challenge.rules.LegacyCompatible && ini == challenge.rules.Ini(true))) throw new InvalidDataException("挑战下发配置与规则不一致。");
+                !(challenge.rules.LegacyCompatible && ini == challenge.rules.Ini(true)) &&
+                !(!challenge.rules.advanced_trade && challenge.rules.Priority("advanced_trade") == 0 && ini == challenge.rules.Ini(false, true))) throw new InvalidDataException("挑战下发配置与规则不一致。");
         }
     }
     internal sealed class ChallengeBridgeReply
@@ -208,9 +214,9 @@ namespace Pal98.Challenges
         internal const string CoverFile = "palmod/challenge-cover.v1.txt";
         internal const string CacheFile = "palmod/challenges.v1.json", IniFile = "challenge-rules.ini", SelectionFile = "palmod/challenge-selection.v1.json";
         internal static readonly string[] RuleKeys = {"solo_art", "helpless_husband", "true_duel", "level_one_solo", "individual_flee", "chosen_hero",
-            "starting_supplies", "no_coop_magic", "drop99", "steal_all", "no_invisibility_item", "invisibility_mana1", "silkworm_stats_only"};
+            "starting_supplies", "no_coop_magic", "drop99", "steal_all", "no_invisibility_item", "invisibility_mana1", "silkworm_stats_only", "advanced_trade"};
         internal static readonly string[] IniKeys = {"SoloArt", "HelplessHusband", "TrueDuel", "LevelOneSolo", "IndividualFlee", "ChosenHero",
-            "StartingSupplies", "NoCoopMagic", "Drop99", "StealAll", "NoInvisibilityItem", "InvisibilityMana1", "SilkwormStatsOnly"};
+            "StartingSupplies", "NoCoopMagic", "Drop99", "StealAll", "NoInvisibilityItem", "InvisibilityMana1", "SilkwormStatsOnly", "AdvancedTrade"};
         internal static readonly string[] HeroIds = {"li-xiaoyao", "zhao-linger", "lin-yueru", "anu", "wuhou"};
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer {MaxJsonLength = 8388608, RecursionLimit = 32};
         internal static Dictionary<string, object> Object(string text)

@@ -2,7 +2,7 @@ param([Parameter(Mandatory=$true)][string]$OutputDirectory, [Parameter(Mandatory
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $out = [IO.Path]::GetFullPath($OutputDirectory)
-if ($out -notmatch '[\\/]PALWork[\\/]artifacts[\\/]PalTimer-issue-(46|48)[\\/]' -or (Test-Path -LiteralPath $out)) { throw 'Choose a fresh PalTimer-issue-46 or PalTimer-issue-48 evidence directory.' }
+if ($out -notmatch '[\\/]PALWork[\\/]artifacts[\\/]PalTimer-issue-(46|48|51)[\\/]' -or (Test-Path -LiteralPath $out)) { throw 'Choose a fresh PalTimer-issue-46/48/51 evidence directory.' }
 New-Item -ItemType Directory -Path $out | Out-Null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1

@@ -63,6 +63,28 @@ internal static class ChallengeBehavior
     }
     static async Task Cases(string output)
     {
+        var advanced = new ChallengeRules {advanced_trade = true, rule_priorities = new Dictionary<string, int> {{"advanced_trade", 7}}};
+        Check(ChallengeContract.RuleKeys.Length == 14 && !new ChallengeRules().advanced_trade &&
+            advanced.Ini().Contains("AdvancedTrade=1\n") && advanced.Ini().Contains("PriorityAdvancedTrade=7\n"),
+            "fourteenth advanced trade rule defaults off and roundtrips its priority");
+        var activation = new ChallengeActivation {challenge = Item(), player = new ChallengePlayer {bound = true, id = playerId, display_name = "旧挑战玩家"},
+            device_id = deviceId, content_id = "pal98-classic-v6", locked = true, ini_filename = ChallengeContract.IniFile};
+        activation.challenge.rules.starting_supplies = true;
+        activation.challenge.rules.rule_priorities["solo_art"] = 3;
+        activation.ini = activation.challenge.rules.Ini(false, true);
+        activation.Validate(); Check(true, "pre-advanced thirteen-rule downloads retain flags and priorities");
+        activation.challenge.rules.advanced_trade = true;
+        Reject(() => activation.Validate(), "missing advanced INI field cannot enable advanced trading");
+        activation.challenge.rules = new ChallengeRules {solo_art = true};
+        activation.ini = activation.challenge.rules.Ini(true);
+        activation.Validate(); Check(true, "original six-rule downloads remain readable with advanced trading off");
+        var oldCache = new ChallengeState {server_origin = "https://fixture.invalid", items = new[] {Item()},
+            rules = ChallengeContract.RuleKeys.Take(13).Select(key => new ChallengeRuleInfo {key = key, name = key, description = "原规则"}).ToArray()};
+        oldCache.Validate(); Check(true, "thirteen-rule cached directory remains valid while advanced trading is off");
+        oldCache.items[0].rules.advanced_trade = true;
+        Reject(() => oldCache.Validate(), "old cached directory cannot claim an unsupported advanced rule");
+        Reject(() => ChallengeContract.Read<ChallengeRules>("{\"schema_version\":1,\"hero\":\"li-xiaoyao\",\"advanced_trade\":1}"),
+            "advanced trading requires a strict boolean on the wire");
         string root = Path.Combine(output, "game"), personal = Path.Combine(output, "personal");
         Directory.CreateDirectory(root); Directory.CreateDirectory(Path.Combine(root, "patches")); File.WriteAllText(Path.Combine(root, "config.ini"), "[Game]\nPatch=pal98-classic-v6\n");
         var clock = DateTimeOffset.Parse("2026-10-29T00:00:00Z"); var fake = new Fake();
@@ -151,12 +173,12 @@ internal static class ChallengeBehavior
             await HttpJson(admin, "POST", administration + "/challenge-authors", new {username = "fixture-author", password = "fixture-author-password"}, 201, "HTTP administrator creates disposable author");
             await HttpJson(authorClient, "POST", workshop + "/login", new {username = "fixture-author", password = "fixture-author-password"}, 200, "HTTP author has separate session");
             var rules = new ChallengeRules {solo_art = true, true_duel = true, starting_supplies = true, no_coop_magic = true, drop99 = true,
-                steal_all = true, no_invisibility_item = true, invisibility_mana1 = true, silkworm_stats_only = true,
-                rule_priorities = new Dictionary<string, int> {{"steal_all", 9}, {"solo_art", 4}}};
-            var item = HttpItem(await HttpJson(authorClient, "POST", workshop + "/challenges", new {title = "HTTP第一版挑战", rules = rules}, 201, "HTTP owner creates revision 1 with thirteen-rule contract"));
+                steal_all = true, no_invisibility_item = true, invisibility_mana1 = true, silkworm_stats_only = true, advanced_trade = true,
+                rule_priorities = new Dictionary<string, int> {{"steal_all", 9}, {"solo_art", 4}, {"advanced_trade", 7}}};
+            var item = HttpItem(await HttpJson(authorClient, "POST", workshop + "/challenges", new {title = "HTTP第一版挑战", rules = rules}, 201, "HTTP owner creates revision 1 with fourteen-rule contract"));
             Func<object, Task<ChallengeBridgeReply>> invoke = value => new ChallengeService(root, storage, transport, () => clock).Execute(ChallengeContract.Json().Serialize(value), CancellationToken.None);
             var reply = await invoke(new {action = "refresh"});
-            Check(reply.ok && reply.state.items.Length == 1 && reply.state.rules.Length == 13 && reply.state.rules_revision == 1 && reply.state.identity_status == "unbound", "HTTP cold catalog and device registration");
+            Check(reply.ok && reply.state.items.Length == 1 && reply.state.rules.Length == 14 && reply.state.rules_revision == 1 && reply.state.identity_status == "unbound", "HTTP cold catalog and device registration");
             reply = await invoke(new {action = "submit_identity", display_name = "跨组件玩家"});
             Check(reply.ok && reply.state.identity_status == "pending", "HTTP global name application reaches pending");
             var pending = await HttpJson(admin, "GET", administration + "/binding-requests", null, 200, "HTTP admin reads global identity application");
