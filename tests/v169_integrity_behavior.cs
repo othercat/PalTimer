@@ -120,9 +120,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.38.4.5","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.4.5","file version");
-        Check(GForm.CurrentVersion=="3.38.4","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.38.5.0","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.5.0","file version");
+        Check(GForm.CurrentVersion=="3.38.5","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -919,7 +919,7 @@ internal static class V169IntegrityBehavior
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2236416L,new string('e',64))==null,"relay same-size unknown bytes remain unrecognized");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
-        Check((long)Property(v173Dll,"size")==2233344 && (string)Property(v173Dll,"sha256")=="9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7","v1.7.3 catalog pins the final configuration-fallback DLL");
+        Check((long)Property(v173Dll,"size")==2206208 && (string)Property(v173Dll,"sha256")=="b67309544504a1a7223eff1324d8ac42b2ed8bc4e9b3663d645b05eb20d3a95f","v1.7.3 catalog pins the final original challenge release DLL");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v173Dll,"size"),(string)Property(v173Dll,"sha256")) as string == "1.7.3.0","final v1.7.3 bytes select the matching embedded catalog");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2186240L,"fbfff524849dbaab4cfdf73593fbc90ad24b0b339a3fde77302de153dec399bd")==null,"superseded v1.7.3 candidate is not silently treated as this release");
         var v172=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.0");

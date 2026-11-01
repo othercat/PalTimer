@@ -11,7 +11,7 @@ namespace Pal98Timer
 {
     public partial class GForm : NoneBoardFormEx
     {
-        public const string CurrentVersion = "3.38.4";
+        public const string CurrentVersion = "3.38.5";
         public static string bgpath { get { return TimerUserSettings.GetPath("bg.png"); } }
         private TimerCore core;
         private bool IsAutoLuck = false;

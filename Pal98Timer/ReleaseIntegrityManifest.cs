@@ -212,7 +212,7 @@ namespace Pal98Timer
             // General v1.72 package: owner-designated 2026-10-13 display revision.
             if (size == 2233344 && string.Equals(hash, "01d8b88fef06232b857be88aba9de6d8d00577d3496fb3032381de4a55a20afa", StringComparison.OrdinalIgnoreCase)) return "1.7.2.1";
             if (size == 2233344 && string.Equals(hash, "e882561826fe5e44db113739a91cef67654f9f27e0fda5cc2e2919158a1b8f0d", StringComparison.OrdinalIgnoreCase)) return "1.7.2.1";
-            if (size == 2233344 && string.Equals(hash, "9b7a8a35d2bc92c44ca203c74407d42fa368a14c924b72be16c3adec1f4ee4c7", StringComparison.OrdinalIgnoreCase)) return "1.7.3.0";
+            if (size == 2206208 && string.Equals(hash, "b67309544504a1a7223eff1324d8ac42b2ed8bc4e9b3663d645b05eb20d3a95f", StringComparison.OrdinalIgnoreCase)) return "1.7.3.0";
             if (size == 2183168 && string.Equals(hash, "58cb4b5b25ebcc230488dfa9e0aec37121bcdfed69e147039128f8a1b2ed5f39", StringComparison.OrdinalIgnoreCase)) return "1.7.2.0";
             // v1.71 native repair: Anu dying dialogue in the scripted automatic Stone Elder battle.
             if (size == 2156032 && string.Equals(hash, "a15d3a922103ea8a4154106d93f1f73414ab8a869277943b0925968025899b48", StringComparison.OrdinalIgnoreCase)) return "1.7.1.2";
