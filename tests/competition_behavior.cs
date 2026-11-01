@@ -196,8 +196,9 @@ internal static partial class CompetitionBehavior
         await Until(() => approvalWire.Registers > 0, "waiting approval fixture registered");
         approvalClient.Publish(Observation("before-approval",0));
         var waitingFinish = Observation("before-approval",2); waitingFinish.RestartMilliseconds = 1234; approvalClient.Publish(waitingFinish);
-        await Until(() => approvalStore.LoadPending(Config()).Any(), "unapproved record retained");
-        Check(approvalStore.LoadPending(Config()).Single().UploadFormat == CompetitionPending.Unselected && approvalWire.Posts == 0,
+        CompetitionPending waitingRecord = null;
+        await Until(() => (waitingRecord = approvalStore.LoadPending(Config()).SingleOrDefault()) != null, "unapproved record retained");
+        Check(waitingRecord.UploadFormat == CompetitionPending.Unselected && approvalWire.Posts == 0,
             "unapproved run does not prematurely freeze compatibility format");
         approvalWire.Features = new[] { CompetitionProtocol.RestartTimeFeature }; approvalWire.Approved = true; approvalClient.Retry();
         await Until(() => approvalWire.Posts == 1, "approval after server upgrade uses full original");
