@@ -64,7 +64,7 @@ namespace Pal98Timer
             CompetitionSettings result = null;
             string identityRoot = null;
             // The selected process's bridge identifies SDL even when named pal.exe.
-            // Only classic PAL without this mapping uses PALDLL configuration locks.
+            // Only classic PAL without this mapping uses the original-edition defaults.
             using (var candidate = Process.GetProcessById(process.Id))
             using (var bridge = new SdlpalBridge())
             {
@@ -95,10 +95,13 @@ namespace Pal98Timer
             string file = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(executable)), PathInGame);
             return Parse(File.Exists(file) ? CompetitionStorage.ReadBounded(file, 1024 * 1024) : null);
         }
-        internal static CompetitionSettings LoadDirectory(string root)
+        internal static CompetitionSettings LoadDirectory(string root, string localAppData = null)
         {
-            string path = Pal98.Storage.UserDataStore.ReadGamePath(root, PathInGame);
-            return Parse(Pal98.Storage.UserDataStore.FileExists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
+            string path = Pal98.Storage.UserDataStore.ReadGamePath(root, PathInGame, localAppData);
+            var settings = Parse(Pal98.Storage.UserDataStore.FileExists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
+            settings.Enabled = true;
+            settings.CustomCompetitionId = null;
+            return settings;
         }
     }
 }
