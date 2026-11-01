@@ -26,16 +26,24 @@ namespace Pal98Timer
                 Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
                 bool startupCheck = System.Array.IndexOf(Environment.GetCommandLineArgs(), "--startup-check") >= 0;
                 var arguments = Environment.GetCommandLineArgs();
+                bool challengeRequest = arguments.Length > 1 && arguments[1] == "--challenge-request";
                 bool initializeMaintenance = arguments.Length > 1 && arguments[1] == "--initialize-sdlpal-configuration";
                 bool initializeConfiguration = initializeMaintenance || arguments.Length > 1 && arguments[1] == "--initialize-geshi-configuration";
                 StartupDependencies.WriteLog("start version=" + typeof(Program).Assembly.GetName().Version + " os=" + Environment.OSVersion + " clr=" + Environment.Version + " x64=" + Environment.Is64BitProcess);
                 if (!StartupDependencies.Check(AppDomain.CurrentDomain.BaseDirectory, (message, fatal) => {
                     string log = StartupDependencies.WriteLog(message);
-                    if (!startupCheck && !initializeConfiguration) MessageBox.Show(message + "\n\n启动日志：" + log, "计时器依赖文件缺失", MessageBoxButtons.OK,
+                    if (!startupCheck && !initializeConfiguration && !challengeRequest) MessageBox.Show(message + "\n\n启动日志：" + log, "计时器依赖文件缺失", MessageBoxButtons.OK,
                         fatal ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
-                })) { Environment.ExitCode = 1; return; }
+                })) { WriteChallengeStartupFailure("dependency_missing"); Environment.ExitCode = 1; return; }
                 if (startupCheck) {
                     CheckStartupComposition(); return;
+                }
+                if (challengeRequest) {
+                    if (arguments.Length != 5) { Environment.ExitCode = 1; return; }
+                    using (var lease = OnlineModuleLoader.LoadVerified(AppDomain.CurrentDomain.BaseDirectory,false))
+                        Environment.ExitCode = (int)lease.OnlineAssembly.GetType("Pal98Timer.OnlineEntryPoint",true)
+                            .GetMethod("ExecuteChallengeRequest").Invoke(null,new object[] {arguments[2],arguments[3],arguments[4]});
+                    return;
                 }
                 if (initializeConfiguration)
                 {
@@ -59,13 +67,30 @@ namespace Pal98Timer
                 RunApplication();
             } catch (Exception ex) {
                 string log = StartupDependencies.WriteLog(ex.ToString());
-                if (!(ex is TimerSettingsException) && Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-geshi-configuration") < 0 &&
+                WriteChallengeStartupFailure("online_module_unavailable");
+                if (!(ex is TimerSettingsException) && Array.IndexOf(Environment.GetCommandLineArgs(), "--challenge-request") < 0 &&
+                    Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-geshi-configuration") < 0 &&
                     Array.IndexOf(Environment.GetCommandLineArgs(), "--initialize-sdlpal-configuration") < 0)
                     TimerUserSettings.ShowError("计时器启动失败：" + ex.GetType().Name + "\n" + ex.Message + "\n\n请提供启动日志：" + log, "计时器启动失败");
                 // A failed constructor can leave worker threads alive. Do not
                 // resume its message loop or leave an invisible timer process.
                 Environment.Exit(1);
             }
+        }
+
+        private static void WriteChallengeStartupFailure(string code)
+        {
+            var args = Environment.GetCommandLineArgs();
+            if (args.Length != 5 || args[1] != "--challenge-request") return;
+            // This fallback deliberately needs no Online module or JSON library.
+            // Never copy exception text (which may include local credentials).
+            string detail = code == "dependency_missing" ? "计时器依赖文件缺失，请使用配套完整包；详细缺失项见计时器启动日志。" :
+                "计时器联机组件无法通过加载验证，请更新完整配套工具；详细原因见计时器启动日志。";
+            try {
+                if (!File.Exists(args[4])) File.WriteAllText(args[4],
+                    "{\"protocol\":\"PAL.ChallengeBridge.v2\",\"ok\":false,\"code\":\"" + code +
+                    "\",\"detail\":\"" + detail + "\",\"retry_after_seconds\":0}", new System.Text.UTF8Encoding(false));
+            } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]

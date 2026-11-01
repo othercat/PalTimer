@@ -11,6 +11,8 @@ namespace Pal98Timer
     {
         public static int InitializeGeshiConfiguration(string snapshotFile, string outputDirectory) =>
             GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory);
+        public static int ExecuteChallengeRequest(string gameRoot, string requestFile, string responseFile) =>
+            ChallengeBridge.Execute(gameRoot, requestFile, responseFile);
         public static int InitializeSdlpalConfiguration(string snapshotFile, string outputDirectory, string[] checkpointIds) =>
             GeshiConfigurationInitialization.Execute(snapshotFile, outputDirectory, checkpointIds);
         public static IPalTimerOnlineV1 Create(int apiVersion, string timerVersion)
@@ -22,6 +24,8 @@ namespace Pal98Timer
     internal sealed class OnlineModule : IPalTimerOnlineV1, IPalTimerOnlineStatusV1
     {
         private readonly CompetitionClient client;
+        private readonly System.Threading.CancellationTokenSource challengeStop = new System.Threading.CancellationTokenSource();
+        private Task challengeRefresh;
         private CompetitionSettingsForm settingsForm;
         private CompetitionOverlayForm overlay;
         private CompetitionClockWarningForm clockWarningForm;
@@ -29,12 +33,15 @@ namespace Pal98Timer
         private int pid;
         private long generation;
         private bool closing;
+        private int disposed;
         public int ApiVersion => 1;
         public bool Enabled => client.Enabled;
         public string LiveCaption => client.LiveCaption;
         public string StatusCaption => client.StatusCaption;
         public string StatusDetail => client.StatusDetail;
-        internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) { }
+        internal OnlineModule(string timerVersion) : this(new CompetitionClient(gameManaged: true, timerVersion: timerVersion)) {
+            challengeRefresh = ChallengeBridge.RefreshInstallation(AppDomain.CurrentDomain.BaseDirectory,challengeStop.Token);
+        }
         internal OnlineModule(CompetitionClient client) { this.client = client; }
         public void ObserveTarget(int processId, long epoch)
         {
@@ -139,7 +146,18 @@ namespace Pal98Timer
             }
             if (!cfg.Overlay && overlay != null && !overlay.IsDisposed) overlay.Close();
         }
-        public async Task<bool> CloseAsync() { closing = true; bool closed = await client.CloseAsync(); if (!closed) closing = false; return closed; }
-        public void Dispose() { closing = true; clockWarningForm?.Close(); overlay?.Close(); settingsForm?.Close(); client.Dispose(); }
+        public async Task<bool> CloseAsync() {
+            if (System.Threading.Volatile.Read(ref disposed) != 0) return true;
+            closing = true; challengeStop.Cancel();
+            if (challengeRefresh != null) await Task.WhenAny(challengeRefresh,Task.Delay(2000));
+            bool closed = await client.CloseAsync(); if (!closed) closing = false; return closed;
+        }
+        public void Dispose() {
+            if (System.Threading.Interlocked.Exchange(ref disposed,1) != 0) return;
+            closing = true; challengeStop.Cancel(); clockWarningForm?.Close(); overlay?.Close(); settingsForm?.Close(); client.Dispose();
+            // The refresh can still be unwinding its linked cancellation source.
+            if (challengeRefresh == null || challengeRefresh.IsCompleted) challengeStop.Dispose();
+            else challengeRefresh.ContinueWith(_ => challengeStop.Dispose(), TaskScheduler.Default);
+        }
     }
 }
