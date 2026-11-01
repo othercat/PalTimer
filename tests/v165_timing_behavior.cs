@@ -298,7 +298,7 @@ internal static class V165TimingBehavior
         Check(Error(0,0,null)=="","Other legacy cores unchanged");
         Check(TimerCore.GetAllCores().Contains("Pal98Dx9Fast800Speed"),"Third established core exists");
         Check(!TimerCore.GetAllCores().Any(n=>n.Contains("1200Speed")||n.Contains("NonSpeedrun")),"No new core/timeline");
-        Check(TimerCore.GetAllCores().Any(n=>n.Contains("Hunqian")||n.Contains("魂牵")),"Hunqian core retained");
+        Check(!TimerCore.GetAllCores().Any(n=>n.Contains("Hunqian")||n.Contains("魂牵")),"Hunqian story core retired");
         Check(TimerCore.GetAllCores().Any(n=>n.Contains("Dream220")||n.Contains("梦幻")),"Dream core retained");
     }
     static void CrossConfigurationRestore(TimerCore target,int category,object actual,HObj incoming,string name)
