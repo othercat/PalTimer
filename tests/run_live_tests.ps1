@@ -13,6 +13,8 @@ $sources += Join-Path $PSScriptRoot 'live_connectivity.cs'
 $sources += @('TimingModeReader.cs', 'Dx9TimingCategory.cs', 'HObj.cs') | ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_) }
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
 $sources += Join-Path $PalSharedSourceRoot 'PalUserData.cs'
+$sources += Join-Path $repo 'Pal98Timer\OriginalChallengeIdentity.cs'
+$sources += @('ChallengeRelayContract.cs','ChallengeJsonSyntax.cs','OriginalChallengeRuntimeContract.cs') | ForEach-Object { Join-Path $PalSharedSourceRoot $_ }
 $sources += Join-Path $repo 'Pal98Timer\SdlpalBridge.cs'
 $exe = Join-Path $out 'LiveBehavior.exe'
 & $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.dll /reference:System.Data.dll /reference:System.Web.dll /reference:System.Security.dll /reference:System.Net.Http.dll "/reference:$repo\Pal98Timer\lib\System.Web.Script.Serialization.dll" $sources *> (Join-Path $out 'build.log')

@@ -359,6 +359,7 @@ namespace Pal98Timer
             observation.TimelineId = frozen ?? identity;
             if (current == null || !current.covered || current.ranking?.covered != true || validation.Length != 0) observation.ValidationError = "本局玩法未登记或证据无效";
             if (GameplayContinuationError.Length != 0) observation.ValidationError = GameplayContinuationError;
+            OriginalChallengeIdentity.Apply(current, observation);
         }
         protected override string GetExportPath(DateTime now) => Path.Combine(Path.GetDirectoryName(GetScoreSavePath(now)), now.ToString("yyyyMMddHHmmssfff") + ".json");
         protected override void FillReferenceIdentity(HObj data) {
@@ -395,6 +396,7 @@ namespace Pal98Timer
         protected override string FormatGameTitle(string version)
         {
             var snapshot = selected;
+            if (snapshot?.Challenge != null) return snapshot.Challenge.Title;
             return version + "－" + GameplayPresentation.Label(snapshot, RecordedTimingMode, requested);
         }
         public override void InitUI()

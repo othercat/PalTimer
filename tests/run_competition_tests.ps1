@@ -12,6 +12,7 @@ $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**
 if (!$csc) { throw 'VS 2026 Roslyn not found' }
 $sources = @('RankingConfiguration.cs','GameplayIdentity.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs','CompetitionWindows.cs') | ForEach-Object { $component = Join-Path $repo ('PalTimerOnline\' + $_); if (Test-Path -LiteralPath $component) { $component } else { Join-Path $repo ('Pal98Timer\' + $_) } }
 $sources += Join-Path $PSScriptRoot 'competition_behavior.cs'
+$sources += Join-Path $PSScriptRoot 'original_challenge_online_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'identity_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'maintenance_initialization.cs'
 $sources += Join-Path $PSScriptRoot 'online_snapshot_speed_behavior.cs'
@@ -19,6 +20,8 @@ $sources += Join-Path $repo 'PalTimerOnline\GeshiConfigurationInitialization.cs'
 $sources += @('TimingModeReader.cs', 'Dx9TimingCategory.cs', 'HObj.cs') | ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_) }
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
 $sources += Join-Path $PalSharedSourceRoot 'PalUserData.cs'
+$sources += Join-Path $repo 'Pal98Timer\OriginalChallengeIdentity.cs'
+$sources += @('ChallengeRelayContract.cs','ChallengeJsonSyntax.cs','OriginalChallengeRuntimeContract.cs') | ForEach-Object { Join-Path $PalSharedSourceRoot $_ }
 $sources += Join-Path $repo 'Pal98Timer\SdlpalBridge.cs'
 $sources += Join-Path $repo 'PalTimerOnline\CompetitionLive.cs'
 $exe = Join-Path $out 'CompetitionBehavior.exe'

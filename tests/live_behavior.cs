@@ -46,6 +46,7 @@ internal static partial class LiveBehavior
         internal CompetitionPlayer Player = new CompetitionPlayer { bound = true, id = "11111111-1111-4111-8111-111111111111", display_name = "实时测试玩家" };
         internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature };
         internal bool LastHasRestart;
+        internal bool LastHasRanking;
         internal int UnsupportedFields;
         internal int ServerClockOffset, ExpiryAdjustment;
         internal int Active, MaxActive, Updates, Gets, Sessions, Challenges, UpdateStatus = 200;
@@ -90,6 +91,7 @@ internal static partial class LiveBehavior
                 if (url.EndsWith("/live/updates")) {
                     var fields = json.Deserialize<Dictionary<string, object>>(body);
                     LastHasRestart = ((Dictionary<string, object>)fields["observation"]).ContainsKey("restart_ms");
+                    LastHasRanking = ((Dictionary<string, object>)fields["observation"]).ContainsKey("maintenance_ranking");
                     if (Features?.Contains(CompetitionProtocol.RestartTimeFeature) != true && LastHasRestart)
                     { UnsupportedFields++; return new CompetitionHttpResult { Status = 422 }; }
                     var request = json.Deserialize<Request>(body); Last = request; Interlocked.Increment(ref Updates);
@@ -208,6 +210,18 @@ internal static partial class LiveBehavior
     }
     static async Task Run(string root)
     {
+        var challengeWire=new Transport();var challengeClient=Client(root,"original-challenge-live",challengeWire,new Auth());
+        await Until(()=>challengeClient.Enabled,"original challenge client enabled");challengeClient.Invalidate("challenge");
+        var challengeObservation=Observe("challenge",0);
+        var challengeIdentity=new OriginalChallengeIdentity {Id=Guid.NewGuid().ToString(),Revision=1,Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64)};
+        challengeObservation.Ranking=challengeIdentity.Decorate(challengeObservation.Ranking);
+        challengeClient.Publish(challengeObservation);
+        await Until(()=>challengeWire.Last?.observation.configuration_id==challengeObservation.Ranking.configuration_id,"original challenge legacy live observation sent");
+        Check(!challengeWire.LastHasRanking,"old server is not sent the new live ranking field");
+        challengeWire.Features=new[]{CompetitionProtocol.RestartTimeFeature,"original-challenge-ranking.v1"};challengeClient.Retry();
+        await Until(()=>challengeWire.Last?.observation.maintenance_ranking!=null,"capable server receives actual challenge ranking");
+        Check(challengeWire.Last.observation.maintenance_ranking.Value("challenge.id")==challengeIdentity.Id,"live observation preserves pinned challenge UUID");
+        await challengeClient.CloseAsync();
         await ConnectivityRecoveryTests(root);
         await LoopbackHttpTests(root);
         await IdentityLiveTests(root);
