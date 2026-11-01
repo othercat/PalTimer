@@ -75,7 +75,7 @@ internal static class HardcoreBehavior
     static void Nostalgia()
     {
         Func<byte[]> create=()=>{
-            var b=Bytes(); U32(b,12,0x01070300); U32(b,32,5); U32(b,36,0); U32(b,68,3);
+            var b=Bytes(); U32(b,12,0x01070203); U32(b,32,5); U32(b,36,0); U32(b,68,3);
             Array.Clear(b,64,4); Array.Clear(b,137,321); return b;
         };
         var bytes=create(); var snapshot=Decode(bytes);

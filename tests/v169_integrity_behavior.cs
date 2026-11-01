@@ -120,8 +120,8 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.38.5.0","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.5.0","file version");
+        Check(Product.GetName().Version.ToString()=="3.38.5.1","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.5.1","file version");
         Check(GForm.CurrentVersion=="3.38.5","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
@@ -917,6 +917,12 @@ internal static class V169IntegrityBehavior
         Check((long)Property(relayDll,"size")==2236416 && (string)Property(relayDll,"sha256")=="2ce7c6817456bf1b5ad6dc5114bcbffb38cc1f9bc16ecd8e70140be65f371c1a","relay build pins exact native bytes while retaining old release");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2236416L,(string)Property(relayDll,"sha256")) as string=="1.7.2.2","relay exact build recognized locally");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2236416L,new string('e',64))==null,"relay same-size unknown bytes remain unrecognized");
+        var maintenance=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.3");
+        var maintenanceDll=((IEnumerable)Property(maintenance,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(maintenanceDll,"size")==2206208 && (string)Property(maintenanceDll,"sha256")=="54b4fbf397c22a4eb7910f6719fbae1c8331bd586aa819b20183ca991e8c30f8","v1.72 maintenance pins exact native bytes");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206208L,(string)Property(maintenanceDll,"sha256")) as string=="1.7.2.3","maintenance build selects its matching embedded catalog");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206208L,new string('e',64))==null,"same-size unknown maintenance bytes remain rejected");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206209L,(string)Property(maintenanceDll,"sha256"))==null,"wrong-size maintenance build remains rejected");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v173Dll,"size")==2206208 && (string)Property(v173Dll,"sha256")=="b67309544504a1a7223eff1324d8ac42b2ed8bc4e9b3663d645b05eb20d3a95f","v1.7.3 catalog pins the final original challenge release DLL");

@@ -103,7 +103,7 @@ namespace Pal98Timer
     internal sealed class HardcoreModeReader : IHardcoreModeReader
     {
         internal const int SnapshotSize = 1024;
-        internal const uint NostalgiaProducerVersion = 0x01070300u;
+        internal const uint NostalgiaProducerVersion = 0x01070203u;
         internal const uint LocalConfirmationProducerVersion = 0x01060701u;
         internal const string MappingPrefix = "Local\\PAL98.HardcoreMode.v1.";
 
