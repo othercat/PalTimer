@@ -19,8 +19,9 @@ internal static partial class CompetitionBehavior
     static async Task Until(Func<bool> condition, string name, int ms = 7000)
     {
         var watch = Stopwatch.StartNew();
-        while (!condition() && watch.ElapsedMilliseconds < ms) await Task.Delay(20);
-        Check(condition(), name);
+        bool ready;
+        while (!(ready = condition()) && watch.ElapsedMilliseconds < ms) await Task.Delay(20);
+        Check(ready, name);
     }
     static CompetitionObservation Observation(string token, int step, int fade = 1200, int speed = 10)
     {
