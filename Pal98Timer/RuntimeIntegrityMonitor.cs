@@ -25,18 +25,9 @@ namespace Pal98Timer
         internal IntegrityCheckState Files, Code, PalDll;
         internal string Summary(bool cloudCertified)
         {
-            var parts = new List<string>();
-            if ((StickyAlerts & 1) != 0) parts.Add("[数值改写已拦截]");
-            if (CodeMismatchSeen || (StickyAlerts & 4) != 0) parts.Add("[运行完整性异常]");
-            if ((StickyAlerts & 2) != 0) parts.Add("[随机数待核验]");
-            if (PalDllMismatchSeen || PalDll == IntegrityCheckState.Mismatch) parts.Add("[测试版]");
-            if ((StickyAlerts & 8) != 0) parts.Add("[采样不完整]");
-            if ((StickyAlerts & (16 | 32)) != 0) parts.Add("[随机运行异常]");
-            // Progress, success, activation and expected coverage states belong
-            // in metadata. The player-facing summary contains problems only.
-            if (ReadFailed) parts.Add("[核验读取失败]");
-            if (Runtime != null && Runtime.Protection == 4 || (StickyAlerts & 64) != 0) parts.Add("[保护不可用]");
-            return string.Join("", parts);
+            // Runtime diagnostics remain in score metadata. Only the current DLL
+            // classification belongs in the player-facing title.
+            return PalDllMismatchSeen || PalDll == IntegrityCheckState.Mismatch ? "[测试版]" : "";
         }
         internal void Fill(HObj target, bool cloudCertified)
         {

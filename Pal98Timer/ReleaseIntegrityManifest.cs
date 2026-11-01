@@ -209,6 +209,8 @@ namespace Pal98Timer
             if (size == 2206208 && string.Equals(hash, "54b4fbf397c22a4eb7910f6719fbae1c8331bd586aa819b20183ca991e8c30f8", StringComparison.OrdinalIgnoreCase)) return "1.7.2.3";
             // Original v1.72 maintenance release; bind exact bytes independently of display version.
             if (size == 2206208 && string.Equals(hash, "4ad3fe1853546f72c4eb46512b0e9f1aae6b275b8d0ddf9b0dfdf606b9270748", StringComparison.OrdinalIgnoreCase)) return "1.7.2.4";
+            // Original v1.72 maintenance release; bind exact bytes independently of display version.
+            if (size == 2204672 && string.Equals(hash, "42e5ac90f1b39a5f55d33647e1ad1f03091454f02ad1304f4dfbf2d201ac2e50", StringComparison.OrdinalIgnoreCase)) return "1.7.2.5";
             // Same-version relay/content recognition update; exact local build only.
             if (size == 2236416 && string.Equals(hash, "2ce7c6817456bf1b5ad6dc5114bcbffb38cc1f9bc16ecd8e70140be65f371c1a", StringComparison.OrdinalIgnoreCase)) return "1.7.2.2";
             // Owner-requested v1.72 / 1.7.2.2 Wine God and relay release.

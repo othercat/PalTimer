@@ -19,8 +19,9 @@ internal static partial class CompetitionBehavior
     static async Task Until(Func<bool> condition, string name, int ms = 7000)
     {
         var watch = Stopwatch.StartNew();
-        while (!condition() && watch.ElapsedMilliseconds < ms) await Task.Delay(20);
-        Check(condition(), name);
+        bool ready;
+        while (!(ready = condition()) && watch.ElapsedMilliseconds < ms) await Task.Delay(20);
+        Check(ready, name);
     }
     static CompetitionObservation Observation(string token, int step, int fade = 1200, int speed = 10)
     {
@@ -196,8 +197,9 @@ internal static partial class CompetitionBehavior
         await Until(() => approvalWire.Registers > 0, "waiting approval fixture registered");
         approvalClient.Publish(Observation("before-approval",0));
         var waitingFinish = Observation("before-approval",2); waitingFinish.RestartMilliseconds = 1234; approvalClient.Publish(waitingFinish);
-        await Until(() => approvalStore.LoadPending(Config()).Any(), "unapproved record retained");
-        Check(approvalStore.LoadPending(Config()).Single().UploadFormat == CompetitionPending.Unselected && approvalWire.Posts == 0,
+        CompetitionPending waitingRecord = null;
+        await Until(() => (waitingRecord = approvalStore.LoadPending(Config()).SingleOrDefault()) != null, "unapproved record retained");
+        Check(waitingRecord.UploadFormat == CompetitionPending.Unselected && approvalWire.Posts == 0,
             "unapproved run does not prematurely freeze compatibility format");
         approvalWire.Features = new[] { CompetitionProtocol.RestartTimeFeature }; approvalWire.Approved = true; approvalClient.Retry();
         await Until(() => approvalWire.Posts == 1, "approval after server upgrade uses full original");
