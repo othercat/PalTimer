@@ -1,7 +1,7 @@
-param([switch]$SkipBuild, [string]$NativeSnapshotFile, [string]$TimerDirectory, [string]$KeyboardExe)
+param([switch]$SkipBuild, [string]$NativeSnapshotFile, [string]$TimerDirectory, [string]$KeyboardExe, [string]$PalSharedSourceRoot, [Parameter(Mandatory)][string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$out = Join-Path $repo ('artifacts\hardcore-behavior-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$out = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($out) | Out-Null
 $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
@@ -13,9 +13,14 @@ if (!$SkipBuild) {
 }
 # Compile the exact project sources with an offline entry point. This gives the
 # host access to internal transport/display seams without exposing them publicly.
+if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
+$PalSharedSourceRoot = (Resolve-Path -LiteralPath $PalSharedSourceRoot).Path
 [xml]$project = Get-Content -LiteralPath (Join-Path $repo 'Pal98Timer\Pal98Timer.csproj')
 $sources = @($project.Project.ItemGroup.Compile | Where-Object { $_.Include } |
-    ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_.Include) })
+    ForEach-Object {
+        $source = $_.Include.Replace('$(PalSharedSourceRoot)', $PalSharedSourceRoot)
+        if ([IO.Path]::IsPathRooted($source)) { $source } else { Join-Path (Join-Path $repo 'Pal98Timer') $source }
+    })
 $references = @($project.Project.ItemGroup.Reference | Where-Object { $_.Include } | ForEach-Object {
     if ($_.HintPath) { '/reference:' + (Join-Path $repo ('Pal98Timer\' + $_.HintPath)) }
     else { '/reference:' + $_.Include.Split(',')[0] + '.dll' }

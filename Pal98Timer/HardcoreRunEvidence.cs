@@ -81,7 +81,7 @@ namespace Pal98Timer
                         return;
                     }
                     if (snapshot == null) Invalidate("本局运行时证据中断");
-                    else if (!identity.SameRun(snapshot)) Invalidate("本局曾切换进程、规则或键盘绑定");
+                    else if (!identity.SameRun(snapshot)) Invalidate("本局曾切换进程、规则或输入策略");
                     else if (snapshot.State != HardcoreState.Active && snapshot.State != HardcoreState.Disconnected &&
                         snapshot.State != HardcoreState.Unfocused) Invalidate("本局硬核请求曾等待、关闭或被拒绝");
                     else if (snapshot.DisconnectCount < segmentDisconnects || snapshot.ReconnectCount < segmentReconnects ||
@@ -149,7 +149,7 @@ namespace Pal98Timer
             if(snapshot==null || identity.SameRun(snapshot)) return true;
             if(snapshot.Pid!=result.NewPid || snapshot.ProcessCreation!=result.NewCreation || !snapshot.Requested ||
                 !snapshot.RulesSupported || !identity.SamePolicy(snapshot)) {
-                Invalidate("重启后规则、配置或键盘绑定发生变化"); return true;
+                Invalidate("重启后规则、配置或输入策略发生变化"); return true;
             }
             if(snapshot.State==HardcoreState.Rejected || snapshot.State==HardcoreState.Off) {
                 Invalidate("重启后硬核状态失效"); return true;
@@ -157,7 +157,7 @@ namespace Pal98Timer
             if(!string.IsNullOrEmpty(observedRuntimeIdentity) && observedRuntimeIdentity!=runtimeIdentity) {
                 Invalidate("重启后 DLL 或内容身份发生变化"); return true;
             }
-            // Local confirmation and asynchronous identity verification must both
+            // Runtime activation and asynchronous identity verification must both
             // finish before a resumed run can again be exported as verified.
             if(snapshot.State!=HardcoreState.Active || string.IsNullOrEmpty(observedRuntimeIdentity)) return true;
             consumedTickets.Add(restartRequest.Ticket); restartRequest=null; ++restarts;
@@ -177,7 +177,7 @@ namespace Pal98Timer
                 string text = RestartPending ? "硬核等待重启衔接" : current == null ? "硬核未知" : current.StateLabel;
                 if (current != null && current.Requested)
                 {
-                    text += " 断开" + current.DisconnectCount + "/恢复" + current.ReconnectCount;
+                    if (!current.AnyKeyboard) text += " 断开" + current.DisconnectCount + "/恢复" + current.ReconnectCount;
                     if (current.State == HardcoreState.Rejected) text += " " + HardcoreSnapshot.SingleLine(current.ReasonText);
                 }
                 if (started && invalid) text += " · 本局硬核未验证";
