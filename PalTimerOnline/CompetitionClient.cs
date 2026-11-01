@@ -44,7 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
-        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects;
+        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects, serverSupportsOriginalChallenges;
         private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
@@ -281,7 +281,7 @@ namespace Pal98Timer
                 if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
-                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = false;
+                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = serverSupportsOriginalChallenges = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
@@ -499,6 +499,7 @@ namespace Pal98Timer
                 serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
                 serverSupportsMaintenance = reply.supported_features?.Contains(CompetitionProtocol.MaintenanceFeature) == true;
                 serverSupportsContentEffects = reply.supported_features?.Contains(CompetitionProtocol.ContentEffectsFeature) == true;
+                serverSupportsOriginalChallenges = reply.supported_features?.Contains("original-challenge-ranking.v1") == true;
                 PublishResponse(epoch, serial, token, reply.player != null && reply.player.bound ? "联机实时参考" : "等待主办方绑定玩家名字", false, reply);
                 return true;
             }
@@ -624,6 +625,12 @@ namespace Pal98Timer
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
                 item.LastStatus = "服务器尚未支持改版同配置规则；原始签封已保留，等待服务器升级";
                 storage.SavePending(item); storage.LogNetwork("awaiting-content-effects-server", 0); return;
+            }
+            if (item.Run.ranking?.Value("challenge.id") != null && !serverSupportsOriginalChallenges)
+            {
+                item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
+                item.LastStatus = "服务器尚未支持原版挑战榜单；原始签封已保留，等待服务器升级";
+                storage.SavePending(item); storage.LogNetwork("awaiting-original-challenge-server", 0); return;
             }
             string format = item.UploadFormat == CompetitionPending.Unselected
                 ? serverSupportsRestartTime && (item.Run.release_revision == null || serverSupportsMaintenance) ? CompetitionPending.Original : CompetitionPending.Legacy

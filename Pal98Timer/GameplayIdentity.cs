@@ -54,6 +54,8 @@ namespace Pal98Timer
         public Dictionary<string, string> rules { get; set; }
         internal uint Generation;
         internal string OrdinaryTimelineId, HardcoreTimelineId;
+        internal OriginalChallengeIdentity Challenge;
+        internal string ChallengeError;
         internal GameplayIdentity Identity => new GameplayIdentity { rules_sha256 = rules_sha256, content_id = content_id,
             content_sha256 = content_sha256, family = family, fade_ms = fade_ms, map_speed_ticks = map_speed_ticks };
         // Public display abbreviations never replace canonical rules or saved identities.
@@ -219,7 +221,7 @@ namespace Pal98Timer
         {
             var frame = ReadFrame(process); string route = Route;
             return new GameplayStartObservation(frame == null ? Task.FromResult<GameplaySnapshot>(null) :
-                Task.Run(() => DecodeFrame(frame, route)), frame?.CapturedAt ?? Stopwatch.GetTimestamp());
+                Task.Run(() => DecodeFrame(frame, route, process)), frame?.CapturedAt ?? Stopwatch.GetTimestamp());
         }
         private static Frame ReadFrame(Process process)
         {
@@ -243,13 +245,19 @@ namespace Pal98Timer
                 e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { }
             return null;
         }
-        private static GameplaySnapshot DecodeFrame(Frame frame, string route)
+        private static GameplaySnapshot DecodeFrame(Frame frame, string route, Process process)
         {
             if (frame == null) return null;
             var value = Decode(frame.Bytes, frame.Pid, frame.Creation, frame.Sequence, frame.Sequence);
             if (value != null && CompetitionProtocol.Digest(route)) {
                 value.OrdinaryTimelineId = TimelineIdentity.Create(value.rules_sha256, route, false);
                 value.HardcoreTimelineId = TimelineIdentity.Create(value.rules_sha256, route, true);
+            }
+            if (value != null) {
+                try { value.Challenge = OriginalChallengeIdentity.Read(Path.GetDirectoryName(process.MainModule.FileName), value); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is InvalidOperationException || e is System.ComponentModel.Win32Exception) {
+                    value.ChallengeError = "挑战信息未核验，请重新选择挑战后启动游戏。";
+                }
             }
             return value;
         }
@@ -267,7 +275,7 @@ namespace Pal98Timer
                     {
                         var frame = ReadFrame(process);
                         capturedAt = frame?.CapturedAt ?? Stopwatch.GetTimestamp();
-                        value = DecodeFrame(frame, Route);
+                        value = DecodeFrame(frame, Route, process);
                         if (process.HasExited) value = null;
                     }
                     catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is InvalidOperationException || e is System.ComponentModel.Win32Exception) { }

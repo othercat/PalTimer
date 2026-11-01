@@ -929,7 +929,7 @@ internal static partial class CompetitionBehavior
         }
         try { root = args[0]; Directory.CreateDirectory(root); if (args.Length > 1) Integration(args[1]).GetAwaiter().GetResult(); else { CompatibilityCases().GetAwaiter().GetResult(); CredentialRecoveryCases().GetAwaiter().GetResult(); ModelCases(); DeviceIdentityCases().GetAwaiter().GetResult(); ClientCases().GetAwaiter().GetResult(); ActivationCases().GetAwaiter().GetResult(); ManagedConfigurationCases().GetAwaiter().GetResult(); GameplayCases().GetAwaiter().GetResult(); SdlpalCases().GetAwaiter().GetResult(); BuildRegistrationCases().GetAwaiter().GetResult(); }
             if (args.Length == 1) { MaintenanceCases().GetAwaiter().GetResult(); MaintenanceInitializationCases().GetAwaiter().GetResult(); SpeedIndependentClientCases().GetAwaiter().GetResult(); LocalIdentityCases().GetAwaiter().GetResult(); IdentityProgramCases().GetAwaiter().GetResult(); }
-            if (args.Length == 1) SpeedSnapshotBridgeCases().GetAwaiter().GetResult();
+            if (args.Length == 1) { SpeedSnapshotBridgeCases().GetAwaiter().GetResult(); OriginalChallengeOnlineCases().GetAwaiter().GetResult(); }
             Console.WriteLine("PASS total=" + count); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

@@ -178,6 +178,11 @@
     <Compile Include="TimerUserSettings.cs" />
     <Compile Include="CloudSessionRunner.cs" />
     <Compile Include="RankingConfiguration.cs" />
+    <Compile Include="OriginalChallengeIdentity.cs" />
+    <Compile Include="$(PalSharedSourceRoot)\ChallengeRelayContract.cs"><Link>ChallengeRelayContract.cs</Link></Compile>
+    <Compile Include="$(PalSharedSourceRoot)\ChallengeJsonSyntax.cs"><Link>ChallengeJsonSyntax.cs</Link></Compile>
+    <Compile Include="$(PalSharedSourceRoot)\OriginalChallengeRuntimeContract.cs"><Link>OriginalChallengeRuntimeContract.cs</Link></Compile>
+    <EmbeddedResource Include="$(PalSharedSourceRoot)\..\docs\PAL98_ORIGINAL_CHALLENGE_RUNTIME.v1.json"><LogicalName>OriginalChallenges.Runtime.json</LogicalName></EmbeddedResource>
     <Compile Include="GameplayIdentity.cs" />
     <Compile Include="Pal98Dx9Automatic.cs" />
     <Compile Include="LocalTimelineConfiguration.cs" />

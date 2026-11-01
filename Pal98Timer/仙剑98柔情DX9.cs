@@ -532,6 +532,7 @@ namespace Pal98Timer
             if (snapshot == null || !snapshot.covered || snapshot.ranking?.covered != true)
                 observation.ValidationError = "本局联机玩法未完整识别，成绩需服务端审核";
             if (GameplayContinuationError.Length != 0) observation.ValidationError = GameplayContinuationError;
+            OriginalChallengeIdentity.Apply(snapshot, observation);
         }
 
         internal override Process CompetitionGameProcess { get { return PalProcess; } }
@@ -593,6 +594,7 @@ namespace Pal98Timer
         protected virtual string FormatGameTitle(string version)
         {
             var snapshot = DisplayGameplaySnapshot;
+            if (snapshot?.Challenge != null) return snapshot.Challenge.Title;
             var mode = RecordedTimingMode;
             if (snapshot != null || GameplayPresentation.ContentName(mode).Length != 0)
                 return version + "－" + GameplayPresentation.Label(snapshot, mode, CaptureHardcoreEvidence().requested);
