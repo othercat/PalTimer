@@ -1,18 +1,14 @@
-param([switch]$SkipBuild)
+param([Parameter(Mandatory)][string]$OutputDirectory,
+    [Parameter(Mandatory)][string]$RuntimeDirectory)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$runRoot = Join-Path $repoRoot ('artifacts\v165-timing-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$runRoot = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($runRoot) | Out-Null
 $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
-$msbuild = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
-if (-not $msbuild -or -not $csc) { throw 'VS 2026 MSBuild/Roslyn was not found.' }
-if (-not $SkipBuild) {
-    & $msbuild (Join-Path $repoRoot 'Pal98Timer.sln') /p:Configuration=Release /p:Platform=x64 /m /v:minimal /nologo *> (Join-Path $runRoot 'build.log')
-    if ($LASTEXITCODE -ne 0) { throw "Release build failed: $runRoot\build.log" }
-}
-$runtime = Join-Path $repoRoot 'Pal98Timer\bin\x64\Release'
+if (-not $csc) { throw 'VS 2026 MSBuild/Roslyn was not found.' }
+$runtime = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
 Get-ChildItem -LiteralPath $runtime -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'Pal98Timer.exe' } |
     Copy-Item -Destination $runRoot
 $hostExe = Join-Path $runRoot 'V165TimingBehavior.exe'
