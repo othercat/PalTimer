@@ -72,6 +72,28 @@ internal static class HardcoreBehavior
         Array.Clear(rejected,458,256);Check(Decode(rejected)==null,"Rejected requires reason text");
     }
 
+    static void Nostalgia()
+    {
+        Func<byte[]> create=()=>{
+            var b=Bytes(); U32(b,12,0x01070300); U32(b,32,5); U32(b,36,0); U32(b,68,3);
+            Array.Clear(b,64,4); Array.Clear(b,137,321); return b;
+        };
+        var bytes=create(); var snapshot=Decode(bytes);
+        Check(snapshot!=null && snapshot.AnyKeyboard && snapshot.RulesSupported && snapshot.StateLabel=="怀旧生效" &&
+            snapshot.DeviceLabel=="", "nostalgia has no hardware identity or confirmation");
+        var run=new HardcoreRunEvidence(); run.Observe(snapshot,false); run.Observe(snapshot,true);
+        Check(Verified(run) && run.CaptureCompetition().requested && run.CaptureCompetition().run_verified &&
+            run.CaptureCompetition().rules_version==5, "nostalgia retains hardcore wire evidence");
+        Check(!run.CaptureDisplay().Status.Contains("断开"),"nostalgia does not display device counters");
+        foreach(Action<byte[]> bad in new Action<byte[]>[]{b=>U32(b,12,0x01070202),b=>U32(b,36,1),
+            b=>U16(b,64,1),b=>Text(b,137,new string('b',64)),b=>Text(b,202,"device"),b=>U32(b,48,1),
+            b=>{U32(b,28,1);U32(b,44,11);Text(b,458,"confirm");}}) {
+            var b=create();bad(b);Check(Decode(b)==null,"nostalgia rejects contradictory legacy fields");
+        }
+        U32(bytes,32,6); snapshot=Decode(bytes);
+        Check(snapshot!=null && snapshot.Requested && !snapshot.RulesSupported,"future nostalgia rules cannot certify scores");
+    }
+
     static void RuleVersions()
     {
         foreach(uint version in new uint[]{1,2,3,4,5,uint.MaxValue})
@@ -171,9 +193,9 @@ internal static class HardcoreBehavior
         var bytes=File.ReadAllBytes(path);
         var s=HardcoreModeReader.Decode(bytes,BitConverter.ToInt32(bytes,8),BitConverter.ToInt64(bytes,16),
             BitConverter.ToInt32(bytes,24),BitConverter.ToInt32(bytes,24));
-        Check(s!=null&&s.Requested&&s.RulesSupported&&s.RulesVersion==4,"current native host snapshot accepted by actual timer consumer");
+        Check(s!=null&&s.Requested&&s.RulesSupported&&s.RulesVersion==5 && s.AnyKeyboard,"current native host snapshot accepted by actual timer consumer");
         var run=new HardcoreRunEvidence();run.Observe(s,false);
-        Check(run.CaptureDisplay().Visible,"actual native waiting snapshot has a hardcore display");
+        Check(run.CaptureDisplay().Visible,"actual native snapshot has a hardcore display");
         string directory=Path.GetDirectoryName(path);
         string controlFile=Path.Combine(directory,"control-final.bin"), restartFile=Path.Combine(directory,"restart-final.bin");
         if(File.Exists(controlFile)&&File.Exists(restartFile)) {
@@ -577,7 +599,7 @@ internal static class HardcoreBehavior
     {
         typeof(TimerUserSettings).GetField("store", BindingFlags.Static | BindingFlags.NonPublic).SetValue(null,
             new TimerSettingsStore(AppDomain.CurrentDomain.BaseDirectory, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user")));
-        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();ControlAndRestart();PauseIntegration();
+        try{host=Process.GetCurrentProcess();creation=host.StartTime.ToUniversalTime().ToFileTimeUtc();Decoder(); Nostalgia();RuleVersions();ToolVersions();PublishedRequestProtection();KeyChangerExecution();TransportAndConfirmation();Runs();Guard();Cores();ControlAndRestart();PauseIntegration();
             if(args.Length==1)NativeSnapshot(args[0]);
             foreach(string operation in new[]{"export","reset","finish","import"})ConcurrentBoundary(operation);Display();
             Console.WriteLine("CHECKS="+checks+" FAILURES=0");return 0;}

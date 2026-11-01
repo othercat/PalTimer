@@ -1,5 +1,7 @@
 > 历史规则（3.38.2 的云档恢复已放宽，见下文）：v3.37.3 使用 `PAL98.TimingMode.v2` 核对实际内容与时序。正式速通包仍严格对应三类；非速通内容允许四种组合（含 1.2秒&快走速）。只要当前跑次允许计时，任何内容包及设置都可保存到所选核心的最佳时间线；非速通记录不填写传统英文榜单名。新记录携带内容 ID、版本及哈希；跨内容/实际模式导入或接力被拒绝，运行中切换须重置。旧运行时不能核验新记录，旧成绩保留原文件及参考用途。
 
+2026-11-01 原版怀旧模式（Refs othercat/PALDLL_DX9#256）：文件版本 3.38.4.5 支持配套 PAL.dll 1.7.3.0 的规则 5，界面显示“怀旧”，不再显示键盘身份、断开或恢复次数。仍以原硬核字段上传并加入硬核榜单；旧规则读取兼容，计时、F9 暂停及 P 重启衔接保持。新组件的最终配套登记与玩家验收由 PALDLL_DX9#253 跟踪。
+
 # 自动计时器使用说明
 > Repository Owner and current maintainer: `othercat`. Historical upstream: `ihouou/PalTimer`; original authors and contributors remain credited in the application.
 
