@@ -13,7 +13,7 @@ static class UnifiedProductBehavior
     {
         try {
             var product = Assembly.LoadFrom(args[0]);
-            Check(product.GetName().Version.ToString() == "3.38.6.0", "unified EXE version");
+            Check(product.GetName().Version.ToString() == "3.38.6.1", "unified EXE version");
             var cores = (List<string>)product.GetType("Pal98Timer.TimerCore").GetMethod("GetAllCores", F).Invoke(null, null);
             foreach (string name in new[] {"Pal98Dx9Automatic", "Pal98Dx9Fast800", "Pal98Dx9Fast800Speed", "SdlpalGeshi"})
                 Check(cores.Contains(name), "shared product enumerates " + name);
