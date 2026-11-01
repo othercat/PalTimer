@@ -268,8 +268,6 @@
     <Compile Include="SRPGSaveBundleTransport.cs" />
     <Compile Include="PalProcessOpenRetryPolicy.cs" />
     <Compile Include="PalLiveProcessIdentity.cs" />
-    <Compile Include="TournamentLockInfoReader.cs" />
-    <Compile Include="TournamentTimerCapability.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="StartupDependencies.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -346,12 +344,6 @@
     <EmbeddedResource Include="release_integrity.1.7.0.0.v1.json">
       <LogicalName>Pal98Timer.release_integrity.1.7.0.0.v1.json</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="TournamentIntegrityKey.txt" Condition="Exists('TournamentIntegrityKey.txt')">
-      <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="TournamentIntegrityDevelopmentKey.txt" Condition="!Exists('TournamentIntegrityKey.txt') And '$(Configuration)' != 'Release'">
-      <LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName>
-    </EmbeddedResource>
     <EmbeddedResource Include="BestEditForm.resx">
       <DependentUpon>BestEditForm.cs</DependentUpon>
     </EmbeddedResource>
@@ -396,7 +388,6 @@
       <DependentUpon>Upload.cs</DependentUpon>
     </EmbeddedResource>
     <None Include="app.config" />
-    <None Include="TournamentIntegrityDevelopmentKey.txt" />
     <None Include="Pal98Timer_TemporaryKey.pfx" />
     <None Include="Properties\app.manifest" />
     <None Include="Properties\Settings.settings">

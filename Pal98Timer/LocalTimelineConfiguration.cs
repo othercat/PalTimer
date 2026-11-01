@@ -77,7 +77,6 @@ namespace Pal98Timer
 
     internal static class LocalConfigurationReader
     {
-        internal const string Pointer = "palmod/Configurations/current.json";
         internal sealed class Dependency { public string path { get; set; } public long size { get; set; } public string sha256 { get; set; } }
         internal sealed class Preset
         {
@@ -93,7 +92,6 @@ namespace Pal98Timer
             public Dependency[] dependencies { get; set; }
             public string content_sha256 { get; set; }
         }
-        private sealed class Selection { public string id { get; set; } public string content_sha256 { get; set; } public string storage_key { get; set; } }
         private sealed class ProfilePointer {
             public string schema { get; set; } public string profile_id { get; set; } public string profile_version { get; set; }
             public string descriptor_sha256 { get; set; } public string staging_relative_path { get; set; }
@@ -138,32 +136,10 @@ namespace Pal98Timer
         {
             string transaction = Pal98.Storage.UserDataStore.ReadGamePath(root, "hardcore-transaction.pending", localAppData);
             if (File.Exists(transaction)) throw new InvalidDataException("配置事务尚未完成，请先在配置工具恢复配置。");
-            string pointerPath = Pal98.Storage.UserDataStore.ReadGamePath(root, Pointer, localAppData);
-            string before = ReadText(pointerPath, 16384);
-            var selection = LocalTimelineConfiguration.Json().Deserialize<Selection>(before);
-            if (selection == null || !Guid.TryParseExact(selection.id, "D", out _) || !CompetitionProtocol.Digest(selection.content_sha256))
-                throw new InvalidDataException("当前配置指针无效，请明确选择本地配置。");
-            string directory = Path.GetDirectoryName(pointerPath);
-            IEnumerable<string> files;
-            if (!string.IsNullOrEmpty(selection.storage_key)) {
-                if (Path.GetFileName(selection.storage_key) != selection.storage_key || !SafePath(selection.storage_key) ||
-                    !selection.storage_key.EndsWith(".pal98config", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("当前配置文件名无效。");
-                files = new[] { Path.Combine(directory, selection.storage_key) };
-            } else files = Directory.EnumerateFiles(directory, "*.pal98config").Take(1001).ToArray();
-            Preset match = null;
-            foreach (string path in files) {
-                Preset candidate;
-                try { candidate = Parse(ReadText(path, 24 * 1024 * 1024)); }
-                catch (Exception e) when (string.IsNullOrEmpty(selection.storage_key) && ReadError(e)) { continue; }
-                if (candidate.id != selection.id || candidate.content_sha256 != selection.content_sha256) continue;
-                if (match != null) throw new InvalidDataException("当前配置有重复身份，请明确选择本地配置。");
-                match = candidate;
-            }
-            if (match == null) throw new InvalidDataException("当前配置缺失或已被替换，请明确选择本地配置。");
             var live = new SortedDictionary<string, string>(StringComparer.Ordinal);
             var extra = new SortedDictionary<string, string>(StringComparer.Ordinal);
             var observed = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-            var paths = new HashSet<string>(match.files.Keys.Where(p => !PresentationFile(p.ToLowerInvariant())), StringComparer.OrdinalIgnoreCase);
+            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             paths.UnionWith(new[] { "config.ini", "mod.ini", "dxwrapper.ini", "palmod/random-skill-selection.v1.json" });
             string scripts = Pal98.Storage.UserDataStore.ReadGamePath(root, "copymen_scripts", localAppData);
             if (Directory.Exists(scripts)) foreach (string script in Directory.EnumerateFiles(scripts).Take(1025)) {
@@ -180,27 +156,34 @@ namespace Pal98Timer
                 else live[relative] = Convert.ToBase64String(bytes);
             }
             if (!live.ContainsKey("config.ini")) throw new InvalidDataException("当前生效 config.ini 不可读，请明确选择本地配置。");
-            // The container intentionally strips per-machine Hardcore settings;
-            // grouping must use the effective files, including local overlays.
-            match.files = live;
+            var ini = NormalizeIni("config.ini", Decode(Convert.FromBase64String(live["config.ini"])));
+            string content; ini.TryGetValue("patch/defaultpatch", out content);
+            content = string.IsNullOrWhiteSpace(content) ? "原版内容" : content.Split('\n')[0];
+            if (content.Length > 160) throw new InvalidDataException("内容名称过长。");
+            string stableId = Guid.ParseExact(CompetitionProtocol.Hash("PAL98.LiveContent.v1\n" + content.ToLowerInvariant()).Substring(0, 32), "N").ToString("D");
+            var match = new Preset { id = stableId, name = content, files = live, dependencies = new Dependency[0] };
+            // Enabled module payloads are gameplay inputs even when no legacy
+            // preset listed them. Hash their actual bytes, not manifest claims.
+            foreach (var module in live.Where(p => p.Key.StartsWith("copymen_scripts/", StringComparison.OrdinalIgnoreCase) && p.Key.EndsWith(".module.json", StringComparison.OrdinalIgnoreCase))) {
+                var metadata = LocalTimelineConfiguration.Json().Deserialize<Dictionary<string, object>>(Decode(Convert.FromBase64String(module.Value)));
+                object enabled, payload;
+                if (metadata != null && metadata.TryGetValue("enabled", out enabled) && enabled is bool && !(bool)enabled) continue;
+                if (metadata == null || !metadata.TryGetValue("payload", out payload) || !(payload is string) || !SafePath((string)payload))
+                    throw new InvalidDataException("脚本模块资源路径无效：" + module.Key);
+                string physical = Pal98.Storage.UserDataStore.ReadGamePath(root, (string)payload, localAppData);
+                byte[] bytes = ReadOptionalBytes(physical, 16 * 1024 * 1024); observed[physical] = bytes;
+                extra["module-payload:" + ((string)payload).ToLowerInvariant()] = bytes == null ? "missing" : HashBytes(bytes);
+            }
             var replacements = ReadProfile(root, localAppData, Decode(Convert.FromBase64String(live["config.ini"])), extra, observed);
             foreach (string resource in new[] { "DATA.MKF", "SSS.MKF", "MAP.MKF", "WORD.DAT", "M.MSG", "ABC.MKF", "FIRE.MKF" }) {
                 string hash = replacements.TryGetValue(resource, out string replacement) ? replacement : HashOptionalFile(Path.Combine(root, resource));
                 extra["resource:" + resource.ToLowerInvariant()] = hash ?? "missing";
-            }
-            foreach (var dependency in match.dependencies ?? new Dependency[0]) {
-                if (dependency == null || !SafePath(dependency.path)) throw new InvalidDataException("配置依赖路径无效。");
-                string path = dependency.path.ToLowerInvariant();
-                if (PresentationFile(path) || ProfilePointerFile(path) || path.StartsWith("tools/", StringComparison.Ordinal)) continue;
-                if (new[] { ".mkf", ".zip", ".json", ".rule", ".txt" }.Contains(Path.GetExtension(path)))
-                    extra["effective-dependency:" + path] = HashOptionalFile(Pal98.Storage.UserDataStore.ReadGamePath(root, dependency.path, localAppData)) ?? "missing";
             }
             var value = FromPreset(match, route, extra);
             foreach (var file in observed) {
                 byte[] after = ReadOptionalBytes(file.Key, 16 * 1024 * 1024);
                 if (file.Value == null ? after != null : after == null || !file.Value.SequenceEqual(after)) throw new InvalidDataException("读取期间配置已改变。");
             }
-            if (before != ReadText(pointerPath, 16384)) throw new InvalidDataException("读取期间配置已切换，等待重新读取。");
             if (File.Exists(transaction)) throw new InvalidDataException("读取期间配置事务尚未完成。");
             return value;
         }
@@ -305,14 +288,6 @@ namespace Pal98Timer
         internal static LocalTimelineConfiguration FromFile(string path, string route)
         {
             var preset = Parse(ReadText(path, 24 * 1024 * 1024));
-            string parent = Path.GetDirectoryName(Path.GetFullPath(path));
-            string game = Directory.GetParent(parent)?.Parent?.FullName;
-            if (game != null && parent.Equals(Path.Combine(game, "palmod", "Configurations"), StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(game, "PAL.exe"))) {
-                try {
-                    var pointer = LocalTimelineConfiguration.Json().Deserialize<Selection>(ReadText(Pal98.Storage.UserDataStore.ReadGamePath(game, Pointer), 16384));
-                    if (pointer?.id == preset.id && pointer.content_sha256 == preset.content_sha256) return ReadCurrent(game, route);
-                } catch (Exception e) when (ReadError(e)) { }
-            }
             var reference = FromPreset(preset, route);
             reference.source = "manual"; reference.name += "（文件参考）";
             if (reference.name.Length > 160) reference.name = reference.name.Substring(0, 154) + "（文件参考）";

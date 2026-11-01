@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $out | Out-Null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
 if (!$csc) { throw 'VS 2026 Roslyn required' }
-$names = @('RankingConfiguration.cs','OnlineGameplayModels.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs','TournamentLockInfoReader.cs','CompetitionLive.cs')
+$names = @('RankingConfiguration.cs','OnlineGameplayModels.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs','CompetitionLive.cs')
 $sources = @($names | ForEach-Object {
     $path = Join-Path $repo ('PalTimerOnline\' + $_)
     if (Test-Path -LiteralPath $path) { $path } else { Join-Path $repo ('Pal98Timer\' + $_) }

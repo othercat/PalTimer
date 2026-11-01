@@ -120,9 +120,9 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.38.3.0","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.3.0","file version");
-        Check(GForm.CurrentVersion=="3.38.3","player-facing timer version");
+        Check(Product.GetName().Version.ToString()=="3.38.4.5","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.4.5","file version");
+        Check(GForm.CurrentVersion=="3.38.4","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
         var legacy=Snapshot();Put(legacy,24,BitConverter.GetBytes(0x01060900u));
@@ -498,78 +498,7 @@ internal static class V169IntegrityBehavior
             finally { ((IDisposable)monitor).Dispose(); }
         }
     }
-    static void VersionCompatibility()
-    {
-        foreach(string version in new[]{"1.6.8.1","1.6.8.2"})Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions",version,"PAL98.Settings.v1","1.6.8.1","3.37.4.4"),"legacy signed lock supported");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.9.0","PAL98.Settings.v1","1.6.9.0","3.37.5.0"),"current lock supported");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.10","PAL98.Settings.v1","1.6.8.10","3.37.5.0"),"r10 lock supported");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.11","PAL98.Settings.v1","1.6.8.11","3.37.6.1"),"r11 lock supported");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.12","PAL98.Settings.v1","1.6.8.12","3.37.6.2"),"r12 lock supported");
-        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.2","PAL98.Settings.v1","1.6.9.0","3.37.5.0"),"mixed version tuple rejected");
-    }
-    static void WriteLock(string root, string producer, int version=2)
-    {
-        string active=Path.Combine(root,"palmod","TournamentLock","v1"), snapshots=Path.Combine(active,"snapshots");
-        Directory.CreateDirectory(snapshots);var files=new List<object>();
-        foreach(string name in version==1?new[]{"config.ini","mod.ini","dxwrapper.ini"}:new[]{"config.ini","mod.ini","dxwrapper.ini","palmod/common-tools.v1.json"})
-        {
-            byte[] bytes=Encoding.UTF8.GetBytes(name.EndsWith(".json")?"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"tools\":[{\"id\":\"browser\",\"executable\":\"Tools/browser.exe\",\"sha256\":\""+new string('a',64)+"\"}]}":"[extra]\nMapSpeedTicks=10\n");
-            string target=Path.Combine(snapshots,name);Directory.CreateDirectory(Path.GetDirectoryName(target));File.WriteAllBytes(target,bytes);
-            files.Add(new Dictionary<string,object>{{"name",name},{"snapshot","snapshots/"+name},{"size",bytes.Length},{"sha256",Hash(bytes)}});
-        }
-        var data=new HObj();data["schema"]="PAL98.TournamentLock.v"+version;data["version"]=version;data["locked"]=true;
-        data["locker_name"]="AB12CD34";data["competition_name"]="测试";data["competition_display_name"]="测试比赛专用";
-        data["display_lines"]=new[]{"line1","line2","line3","line4"};data["locked_footer_line"]="本次游戏内容不可更改 锁定者 AB12CD34";
-        data["files"]=files.ToArray();
-        if(version==2)
-        {
-            data["configuration_id"]=Guid.NewGuid().ToString("D");data["configuration_sha256"]=new string('c',64);
-            data["producer_version"]=producer;data["settings_contract"]="PAL98.Settings.v1";
-            bool recent=producer=="1.6.9.0"||producer=="1.6.8.10"||producer=="1.6.8.11"||producer=="1.6.8.12";
-            data["minimum_runtime"]=recent?producer:"1.6.8.1";data["minimum_timer"]=producer=="1.6.8.12"?"3.37.6.2":producer=="1.6.8.11"?"3.37.6.1":recent?"3.37.5.0":"3.37.4.4";
-            File.WriteAllBytes(Path.Combine(root,"DATA.MKF"),new byte[]{1,2,3});
-            data["dependencies"]=new object[]{new Dictionary<string,object>{{"path","DATA.MKF"},{"size",3},{"sha256",Hash(new byte[]{1,2,3})}}};data["absent_files"]=new string[0];
-        }
-        byte[] manifest=Encoding.UTF8.GetBytes(data.ToJson());File.WriteAllBytes(Path.Combine(active,"manifest.json"),manifest);
-        // Use the already embedded test subject's key; never log or persist it.
-        byte[] key=Encoding.ASCII.GetBytes((string)Static("TournamentLockInfoReader","GetIntegrityKey"));
-        using(var hmac=new HMACSHA256(key))File.WriteAllText(Path.Combine(active,"manifest.sig"),BitConverter.ToString(hmac.ComputeHash(manifest)).Replace("-","").ToLowerInvariant(),Encoding.ASCII);
-        Array.Clear(key,0,key.Length);
-    }
-    static void SignedLocks()
-    {
-        foreach(string producer in new[]{"1.6.8.1","1.6.8.2","1.6.9.0","1.6.8.10","1.6.8.11","1.6.8.12"})
-        {
-            string root=Path.Combine(Directory.GetCurrentDirectory(),producer);Directory.CreateDirectory(root);WriteLock(root,producer);
-            string signature=Path.Combine(root,"palmod","TournamentLock","v1","manifest.sig");byte[] before=File.ReadAllBytes(signature);
-            Check(Property(Static("TournamentLockInfoReader","Load",root),"State").ToString()=="Locked","signed lock "+producer);
-            Directory.CreateDirectory(Path.Combine(root,"Tools"));File.WriteAllBytes(Path.Combine(root,"Tools","browser.exe"),new byte[]{5,6,7});
-            Check(Property(Static("TournamentLockInfoReader","Load",root),"State").ToString()=="Locked","tool update keeps old lock valid");
-            Check(before.SequenceEqual(File.ReadAllBytes(signature)),"old signature never rewritten");
-            File.WriteAllBytes(Path.Combine(root,"DATA.MKF"),new byte[]{7,2,3});
-            Check(Property(Static("TournamentLockInfoReader","Load",root),"State").ToString()=="Invalid","game resource remains strict");
-            WriteLock(root,producer);File.AppendAllText(signature,"0");
-            Check(Property(Static("TournamentLockInfoReader","Load",root),"State").ToString()=="Invalid","damaged signature rejected");
-        }
-        string legacy=Path.Combine(Directory.GetCurrentDirectory(),"v1");Directory.CreateDirectory(legacy);WriteLock(legacy,"",1);
-        Check(Property(Static("TournamentLockInfoReader","Load",legacy),"State").ToString()=="Locked","original v1 lock remains valid");
-        string migrated=Path.Combine(Directory.GetCurrentDirectory(),"migrated-lock"), local=Path.Combine(migrated,"isolated-user");
-        Directory.CreateDirectory(migrated);WriteLock(migrated,"1.6.8.12");
-        var store=new Pal98.Storage.UserDataStore(migrated,local);
-        string userRoot=store.ComponentDirectory("game"), lockRelative="palmod/TournamentLock/v1";
-        foreach(string file in Directory.GetFiles(Path.Combine(migrated,lockRelative),"*",SearchOption.AllDirectories)) {
-            string relative=file.Substring(migrated.Length+1);store.Resolve("game",relative,file);
-        }
-        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Locked","timer reads migrated signed lock with resources still in package");
-        File.WriteAllBytes(Path.Combine(migrated,"DATA.MKF"),new byte[]{7,2,3});
-        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Invalid","migrated lock still rejects changed package resource");
-        File.WriteAllBytes(Path.Combine(migrated,"DATA.MKF"),new byte[]{1,2,3});
-        Directory.Move(Path.Combine(userRoot,lockRelative),Path.Combine(userRoot,"unlocked-history"));
-        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Unlocked","timer sees user unlock instead of package lock");
-        store.WriteText("game","hardcore-transaction.pending","pending");
-        Check(Property(Static("TournamentLockInfoReader","LoadFromStorage",migrated,local),"State").ToString()=="Invalid","user pending transaction fails closed in timer");
-    }
-    static void WaitUntil(Func<bool> predicate, string message)
+                static void WaitUntil(Func<bool> predicate, string message)
     {
         var watch=Stopwatch.StartNew();while(!predicate() && watch.ElapsedMilliseconds<3000)Thread.Sleep(5);
         Check(predicate(),message);
@@ -1007,9 +936,6 @@ internal static class V169IntegrityBehavior
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size"),(string)Property(v172Dll,"sha256")) as string == "1.7.2.0","v1.7.2 exact bytes approved");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size"),new string('b',64)) == null,"same v1.7.2 DLL size cannot promote different bytes");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v172Dll,"size")+1,(string)Property(v172Dll,"sha256")) == null,"v1.7.2 approval also requires exact size");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.2.0","3.37.8.0"),"v1.7.2 matching lock readable");
-        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.1.1","3.37.8.0"),"v1.7.2 mixed runtime lock rejected");
-        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.2.0","PAL98.Settings.v1","1.7.2.0","3.37.7.17"),"v1.7.2 old timer lock rejected");
         var v171AnuDll=((IEnumerable)Property(v171Anu,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v171AnuDll,"size")==2156032 && (string)Property(v171AnuDll,"sha256")=="a15d3a922103ea8a4154106d93f1f73414ab8a869277943b0925968025899b48","v1.71 Anu dialogue repair frozen DLL identity");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v171AnuDll,"size"),(string)Property(v171AnuDll,"sha256")) as string == "1.7.1.2","v1.71 Anu dialogue repair exact hash approved");
@@ -1017,14 +943,11 @@ internal static class V169IntegrityBehavior
         var v171DisplayDll=((IEnumerable)Property(v171Display,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v171DisplayDll,"size")==2153472 && (string)Property(v171DisplayDll,"sha256")=="5dd696bc4fe887cbbfac037a63b91d0e2d0767a81ede590e3b792b9947912f8f","v1.71 display revision frozen DLL identity");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v171DisplayDll,"size"),(string)Property(v171DisplayDll,"sha256")) as string == "1.7.1.1","v1.71 display revision exact hash approved");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.1.1","PAL98.Settings.v1","1.7.1.1","3.37.7.17"),"v1.71 display revision lock readable");
         var v171=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.1.0");
         var v171Dll=((IEnumerable)Property(v171,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v171Dll,"size")==2149376 && (string)Property(v171Dll,"sha256")=="468eb5f8a2686cdcc6fce519819536806937faa69718603ce99834d183d4d6fb","v1.71 embeds frozen DLL identity");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v171Dll,"size"),(string)Property(v171Dll,"sha256")) as string == "1.7.1.0","v1.71 is approved by exact hash");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v171Dll,"size"),new string('b',64)) == null,"same DLL size and declared release cannot promote other bytes");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.1.0","PAL98.Settings.v1","1.7.1.0","3.37.7.17"),"v1.71 locked preset is readable");
-        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.1.0","PAL98.Settings.v1","1.7.0.0","3.37.7.17"),"v1.71 cannot silently run against old lock semantics");
         var v170=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.0.0");
         var v170Files=((IEnumerable)Property(v170,"files")).Cast<object>().ToArray();
         const string daliManifest="copymen_scripts/20251216-rule_dali.module.json";
@@ -1037,9 +960,6 @@ internal static class V169IntegrityBehavior
         Check(((string[])Property(v170Directory,"entries")).Contains("20251216-rule_dali.module.json"),"restored Dali module is registered in the release directory");
         var v170Dll=((IEnumerable)Property(v170,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(v170Dll,"size"),(string)Property(v170Dll,"sha256")) as string == "1.7.0.0","v1.70 uses its own approved hash and verification baseline");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.0.0","PAL98.Settings.v1","1.7.0.0","3.37.7.16"),"v1.70 signed preset reader accepts the matching companion contract");
-        Check((bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.6.8.17","PAL98.Settings.v1","1.6.8.17","3.37.7.6"),"existing v1.68 lock remains readable without resigning");
-        Check(!(bool)Static("TournamentLockInfoReader","SupportedLockVersions","1.7.0.0","PAL98.Settings.v1","1.6.8.17","3.37.7.16"),"mixed release contract is rejected");
         var integratedDll=((IEnumerable)Property(integrated,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",(long)Property(integratedDll,"size"),(string)Property(integratedDll,"sha256")) as string == "1.6.8.17","integrated dev DLL selects its own exact code baseline");
         var restartDll=((IEnumerable)Property(restart,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
@@ -1060,7 +980,7 @@ internal static class V169IntegrityBehavior
             Birth=Host.StartTime.ToUniversalTime().ToFileTimeUtc();
             Scenario("contract",Contract);Scenario("manifest_files",ManifestsAndFiles);Scenario("readonly_fixups",ReadOnlyAndFixups);
             Scenario("migrated_verification",MigratedVerifierReadsEffectiveSettings);
-            Scenario("live_diagnostics",LiveDiagnosticsAndNoTimingGate);Scenario("legacy_versions",VersionCompatibility);Scenario("signed_locks",SignedLocks);
+            Scenario("live_diagnostics",LiveDiagnosticsAndNoTimingGate);
             Scenario("heartbeat_loss",HeartbeatLossCannotSuppressCode);Scenario("target_switch",TargetSwitchPublication);
             Scenario("indirect_trampoline",IndirectTrampoline);Scenario("settings_comments",SettingsValuesAndComments);Scenario("exact_scripts",ExactScriptDirectory);Scenario("settings_budget",SettingsBudgetAndCache);Scenario("module_duplicates",DuplicateModuleIdentity);Scenario("real_proxy_paths",RealProxyModulePaths);
             Scenario("r10_module_switches",R10ModuleSwitches);Scenario("r10_unknown_content",R10UncoveredStillChecksCore);Scenario("r10_setting_ranges",R10SettingRanges);

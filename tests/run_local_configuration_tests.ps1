@@ -1,30 +1,28 @@
-param([switch]$SkipBuild, [string]$PresetDirectory)
+param([Parameter(Mandatory)][string]$OutputDirectory,
+    [Parameter(Mandatory)][string]$RuntimeDirectory,
+    [Parameter(Mandatory)][string]$PalSharedSourceRoot, [string]$PresetDirectory)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$out = Join-Path $repo ('artifacts\local-configuration-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$out = [IO.Path]::GetFullPath($OutputDirectory)
+if (Test-Path -LiteralPath $out) { throw 'Use a fresh output directory.' }
 [IO.Directory]::CreateDirectory($out) | Out-Null
 $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
 $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\Roslyn\csc.exe' | Select-Object -First 1
-$msbuild = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-if (!$csc -or !$msbuild) { throw 'VS 2026 MSBuild/Roslyn not found' }
-if (!$SkipBuild) {
-    & $msbuild (Join-Path $repo 'Pal98Timer.sln') /p:Configuration=Release /p:Platform=x64 /m /v:minimal /nologo *> (Join-Path $out 'build.log')
-    if ($LASTEXITCODE -ne 0) { throw "Release build failed: $out" }
-}
+if (!$csc) { throw 'VS 2026 Roslyn not found' }
 [xml]$project = Get-Content -LiteralPath (Join-Path $repo 'Pal98Timer\Pal98Timer.csproj')
-$sources = @($project.Project.ItemGroup.Compile | Where-Object { $_.Include } | ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_.Include) })
+$sources = @($project.Project.ItemGroup.Compile | Where-Object { $_.Include } | ForEach-Object { if ($_.Include.Contains('$(PalSharedSourceRoot)')) { $_.Include.Replace('$(PalSharedSourceRoot)', $PalSharedSourceRoot) } else { Join-Path $repo ('Pal98Timer\' + $_.Include) } })
 $references = @($project.Project.ItemGroup.Reference | Where-Object { $_.Include } | ForEach-Object {
     if ($_.HintPath) { '/reference:' + (Join-Path $repo ('Pal98Timer\' + $_.HintPath)) }
     else { '/reference:' + $_.Include.Split(',')[0] + '.dll' }
 })
-$runtime = Join-Path $repo 'Pal98Timer\bin\x64\Release'
+$runtime = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
 $references += '/reference:System.Core.dll', ('/reference:' + (Join-Path $runtime 'TimerPluginBase.dll'))
 $exe = Join-Path $out 'LocalConfigurationBehavior.exe'
 & $csc /nologo /noconfig /target:exe /platform:x64 /main:LocalConfigurationBehavior "/out:$exe" $references $sources (Join-Path $PSScriptRoot 'local_configuration_behavior.cs') *> (Join-Path $out 'host-build.log')
 if ($LASTEXITCODE -ne 0) { throw "Local configuration host compilation failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe.config') -Destination ($exe + '.config')
-Copy-Item -LiteralPath (Join-Path $repo 'KeyChanger\bin\Release\KeyChanger.exe') -Destination $out
+Copy-Item -LiteralPath (Join-Path $runtime 'KeyChanger.exe') -Destination $out
 $hostArgs = @()
 if ($PresetDirectory) { $hostArgs += (Resolve-Path -LiteralPath $PresetDirectory).Path }
 Push-Location -LiteralPath $out

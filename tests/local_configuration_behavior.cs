@@ -42,7 +42,7 @@ internal static class LocalConfigurationBehavior
         p.files=new SortedDictionary<string,string>(p.files,StringComparer.Ordinal);p.tournament=new SortedDictionary<string,string>(p.tournament,StringComparer.Ordinal);
         p.content_sha256=LocalConfigurationReader.PresetDigest(p);
         Put(directory,"palmod/Configurations/"+filename,LocalTimelineConfiguration.Json().Serialize(p));
-        if(pointer)Put(directory,LocalConfigurationReader.Pointer,LocalTimelineConfiguration.Json().Serialize(new { p.id,p.content_sha256,storage_key=filename }));
+        if(pointer)Put(directory,"palmod/Configurations/current.json",LocalTimelineConfiguration.Json().Serialize(new { p.id,p.content_sha256,storage_key=filename }));
         foreach(var file in p.files) { string path=Path.Combine(directory,file.Key.Replace('/',Path.DirectorySeparatorChar)); Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllBytes(path,Convert.FromBase64String(file.Value)); }
     }
     static LocalTimelineConfiguration Read(string directory,string route=null) => LocalConfigurationReader.ReadCurrent(directory,route??routeA,local);
@@ -87,9 +87,18 @@ internal static class LocalConfigurationBehavior
         var withMap=Read(game);Put(game,"music-new.ini","changed music");Check(Read(game).key==withMap.key,"live music change keeps line");
         Put(game,"copymen_scripts/new.rule","new live rules");Check(Read(game).key!=withMap.key,"new effective script outside container participates");
         var old=Clone(p);old.files["config.ini"]=Enc("[Patch]\nDefaultPatch=Old\n");Publish(game,old,"old.pal98config",false);Publish(game,p);
-        Check(Read(game).configuration_id==p.id,"storage_key selects correct same-ID preset");
+        Check(Read(game).configuration_id==a.configuration_id,"legacy preset IDs do not replace live content identity");
         var changed=Clone(p);changed.name="forged without checksum";Put(game,"palmod/Configurations/selected.pal98config",LocalTimelineConfiguration.Json().Serialize(changed));
-        Throws<InvalidDataException>(()=>Read(game),"stale or edited container checksum rejected");Publish(game,p);
+        Check(Read(game).configuration_id==a.configuration_id,"legacy stale or edited containers are inert");Publish(game,p);
+        var current=Read(game);
+        File.Delete(Path.Combine(game,"palmod/Configurations/current.json"));
+        Check(Read(game).key==current.key,"live settings work without retired preset pointer");
+        Put(game,"palmod/TournamentLock/v1/manifest.json","broken retired signature");
+        Check(Read(game).key==current.key,"invalid retired lock does not block local timeline");
+        Put(game,"copymen_scripts/live.module.json","{\"schema\":\"PAL98.CopymenScriptModule.v1\",\"enabled\":true,\"payload\":\"palmod/live.json\"}");
+        Put(game,"palmod/live.json","first payload"); var module=Read(game);
+        Put(game,"palmod/live.json","second payload");
+        Check(Read(game).key!=module.key,"live module payload bytes partition local best line");
         string fallback=Path.Combine(new Pal98.Storage.UserDataStore(game,local).DirectoryPath,"game");Publish(fallback,p);
         Put(fallback,"config.ini","[Patch]\nDefaultPatch=UserOverlay\n");Check(Read(game).key!=a.key,"user-directory effective configuration has priority");
         File.Move(Path.Combine(fallback,"config.ini"),Path.Combine(fallback,"config.ini.missing"));Throws<InvalidDataException>(()=>Read(game),"missing user config never silently uses package config");
@@ -129,7 +138,7 @@ internal static class LocalConfigurationBehavior
         };
         string first=publishProfile("1.0.0","first resource");Put(game,"palmod/Profiles/current.json",first);var a=Read(game);
         Put(game,"SSS.MKF","unused root changed");Check(Read(game).key==a.key,"profile overlay ignores unused root resource");
-        Check(LocalConfigurationReader.FromFile(Path.Combine(game,"palmod/Configurations/selected.pal98config"),routeA).key==a.key,"manual current preset resolves the same effective identity as automatic reopening");
+        Check(LocalConfigurationReader.FromFile(Path.Combine(game,"palmod/Configurations/selected.pal98config"),routeA).source=="manual","legacy file remains a manual historical reference");
         string second=publishProfile("1.0.1","second resource");var pointer=json.Deserialize<Dictionary<string,object>>(second);string hash=(string)pointer["descriptor_sha256"];
         Put(game,"palmod/Profiles/updates/"+hash+".json",second);var update=Read(game);Check(update.key!=a.key,"same-profile immutable update pointer follows selected package");
         Put(game,"palmod/Profiles/current.json",second);Check(Read(game).key==update.key,"direct and update-pointer activation have identical effective identity");
@@ -305,11 +314,11 @@ internal static class LocalConfigurationBehavior
             try {
                 Check(process.StandardOutput.ReadLine()=="ready","synthetic process initializes before module observation");
                 var observer=new LocalConfigurationObserver();var capture=observer.CaptureStart(process,routeA);
-                Check(capture.Wait(5000)&&capture.Result?.configuration_id==preset.id,"production observer reads configuration from synthetic PAL process directory");
-                var invalid=Clone(preset);invalid.name="changed without checksum";
-                Put(root,"palmod/Configurations/selected.pal98config",LocalTimelineConfiguration.Json().Serialize(invalid));
+                Check(capture.Wait(5000)&&capture.Result?.name=="Classic","production observer reads live configuration from synthetic PAL process directory");
+                Put(root,"hardcore-transaction.pending","incomplete transaction");
                 var unavailable=new LocalConfigurationObserver().CaptureStart(process,routeA);
                 Check(unavailable.Wait(5000)&&unavailable.Result==null,"production invalid configuration completes unavailable instead of faulting the start task");
+                File.Delete(Path.Combine(root,"hardcore-transaction.pending"));
                 string original=capture.Result.key;process.StandardInput.WriteLine("exit");Check(process.WaitForExit(3000),"synthetic PAL process exits cleanly");
                 Publish(root,Preset("[Patch]\nDefaultPatch=ChangedAfterExit\n"));Check(capture.Result.key==original,"completed start snapshot never rereads configuration changed after exit");
                 var exited=new LocalConfigurationObserver().CaptureStart(process,routeA);Check(exited.Wait(5000)&&exited.Result==null,"exited process cannot contribute a late configuration snapshot");

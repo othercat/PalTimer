@@ -61,7 +61,6 @@ namespace Pal98Timer
         protected void SetHardcoreGameplayRoute(string route) { onlineGameplayReader.Route=route; }
         private readonly object hardcoreObservationSync = new object();
         private RuntimeTimingMode lastConfirmedTimingMode;
-        private string lastConfirmedTournamentDisplayName = "";
         private RuntimeTimingMode runTimingMode;
         private bool timingRunInvalidated;
         private bool timingEvidenceMissingDuringRun;
@@ -71,7 +70,6 @@ namespace Pal98Timer
         protected virtual bool PauseOnTimingValidationError => !importedUnverifiedTiming;
         protected virtual int TimingMapSpeedTicks { get { return TimingModeMs == 0 ? 0 : 10; } }
         protected virtual string RelayFileName { get { return TimingModeMs == 800 ? "SRPG." + CoreName + ".bin" : "SRPG.bin"; } }
-        protected string TournamentDisplayName { get; private set; } = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
 
@@ -557,17 +555,12 @@ namespace Pal98Timer
             {
                 string modeError = GetScoreValidationError();
                 if (modeError.Length != 0) return TimingValidationCaption(modeError);
-                if (!string.IsNullOrEmpty(TournamentDisplayName))
-                {
-                    return FormatGameTitle(TournamentDisplayName);
-                }
                 return FormatGameTitle(Dx9TimingCategory.ClassicCaption(DX9Version));
             }
             else
             {
                 if (lastConfirmedTimingMode != null)
-                    return FormatGameTitle(string.IsNullOrEmpty(lastConfirmedTournamentDisplayName)
-                        ? Dx9TimingCategory.ClassicCaption(DX9Version) : lastConfirmedTournamentDisplayName);
+                    return FormatGameTitle(Dx9TimingCategory.ClassicCaption(DX9Version));
                 return "等待游戏运行";
             }
         }
@@ -596,14 +589,12 @@ namespace Pal98Timer
                 Dx9TimingCategory.ModeLabel(RecordedTimingMode);
         }
 
-        protected bool HasTournamentGameTitle => !string.IsNullOrEmpty(PID != -1 ?
-            TournamentDisplayName : lastConfirmedTournamentDisplayName);
 
         protected virtual string FormatGameTitle(string version)
         {
             var snapshot = DisplayGameplaySnapshot;
             var mode = RecordedTimingMode;
-            if (!HasTournamentGameTitle && (snapshot != null || GameplayPresentation.ContentName(mode).Length != 0))
+            if (snapshot != null || GameplayPresentation.ContentName(mode).Length != 0)
                 return version + "－" + GameplayPresentation.Label(snapshot, mode, CaptureHardcoreEvidence().requested);
             if (snapshot != null && snapshot.DisplayCodes.Length != 0) return version + "-" + snapshot.CompactTimingLabel;
             return FormatPaletteFadeVersion(version);
@@ -635,9 +626,7 @@ namespace Pal98Timer
                         if (current == null)
                         {
                             lastConfirmedTimingMode = null;
-                            lastConfirmedTournamentDisplayName = "";
                         }
-                        else lastConfirmedTournamentDisplayName = TournamentDisplayName;
                         return current;
                     }
                 }
@@ -706,7 +695,6 @@ namespace Pal98Timer
         {
             base.Reset();
             lastConfirmedTimingMode = null;
-            lastConfirmedTournamentDisplayName = "";
             runTimingMode = null;
             timingRunInvalidated = false;
             timingEvidenceMissingDuringRun = false;
@@ -2340,9 +2328,6 @@ namespace Pal98Timer
                         runtimeIntegrity?.SelectTarget(PalProcess);
                         attachedProcessIdentity = openedIdentity;
                         attachedExecutablePath = openedIdentity.ExecutablePath;
-                        TournamentDisplayName = TournamentLockInfoReader
-                            .LoadForProcessExecutable(PalProcess.MainModule.FileName)
-                            .CompetitionDisplayName;
                         GameWindowHandle = res[0].MainWindowHandle;
                         PID = PalProcess.Id;
                         CalcPalMD5();
@@ -2679,7 +2664,6 @@ namespace Pal98Timer
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
             runtimeIntegrity?.SelectTarget(null);
-            TournamentDisplayName = string.Empty;
             PID = -1;
             GMD5 = "none";
             DX9Version = "未知";
@@ -2993,7 +2977,6 @@ namespace Pal98Timer
             exdata["DX9Version"] = FormatPaletteFadeVersion(DX9Version);
             RuntimeTimingMode timing = RecordedTimingMode;
             exdata["GameVersion"] = GetGameVersion();
-            exdata["TournamentDisplayName"] = lastConfirmedTournamentDisplayName;
             exdata["PaletteFadeModeMs"] = timing == null ? 0 : timing.FadeMilliseconds;
             exdata["TimerCore"] = CoreName;
             exdata["TimingModeMs"] = TimingModeMs;
