@@ -1,3 +1,5 @@
+> 2026-11-01：本文是历史说明。DX9 Hunqian167 与 Dream220Visible 已分别按 othercat/PALDLL_DX9#258 / #259 退役；普通原版自动核心和 SDL DREAM22 保留。
+
 # PAL98DX9 计时核心边界
 
 本文记录 PalTimer 3.37.2 的玩家可见名称、内部身份、profile 读取合同和发布门。它只描述公开工具可用的最小兼容信息，不包含 PALDLL_DX9、配置工具或私有资源包源码。
