@@ -37,8 +37,8 @@ namespace Pal98Timer
             if(ini!=ReadFile(root,"challenge-rules.ini",1048576)) throw new InvalidDataException("下载挑战规则已改变。");
             var config=ReadIni(ReadFile(root,"config.ini",1048576));
             var expected=Runtime.Content(content);
-            if(Get(config,"Patch.DefaultPatch")!=Wire.String(expected,"package") || native==null || !native.covered || native.ranking?.covered!=true ||
-                native.content_id!=Wire.String(expected,"content_id")) throw new InvalidDataException("当前运行内容与挑战不一致或尚未核验。");
+            if(Get(config,"Patch.DefaultPatch")!=Wire.String(expected,"package") || native==null || !native.covered || native.ranking?.covered!=true)
+                throw new InvalidDataException("当前运行内容与挑战不一致或尚未核验。");
             bool nostalgia=Get(config,"Hardcore.Enabled")=="1";
             if(!Runtime.Matches(content,Runtime.Values(ini),native.ranking.rules,nostalgia)) throw new InvalidDataException("当前实际玩法与下载挑战不一致。");
             string title=Wire.String(item,"title");

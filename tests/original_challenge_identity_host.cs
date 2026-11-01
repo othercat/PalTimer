@@ -30,6 +30,14 @@ static class OriginalChallengeIdentityHost
             var facts=(Dictionary<string,string>)Get(ranking,"rules");
             Check(facts["random_skills.pool"]=="e5c4deb832d4ce44e6dfc62f29e7ecd5a9e6410e1a7265e3b67ad5499c518aca","native pool includes the existing unusable-definition filter");
             var originalFacts=new Dictionary<string,string>(facts);
+            foreach (string key in new[] { "content", "resource.SKILL.OBJECTS", "resource.SKILL.GLOBAL", "resource.PROFILE.SCRIPT.PLAN" })
+                if (facts.ContainsKey(key)) facts[key]=new string('a',64);
+            Check(Invoke(type,null,"Read",root,native)!=null,"same local content name accepts different valid resource identities");
+            Check(facts["content"]==new string('a',64),"actual content facts are preserved, not replaced by reference hashes");
+            string package=facts["content_package_id"];facts["content_package_id"]="different-content";
+            Rejected(()=>Invoke(type,null,"Read",root,native),"different native package name cannot claim the challenge");
+            facts["content_package_id"]=package;
+            foreach(var pair in originalFacts) facts[pair.Key]=pair.Value;
             string originalId=(string)Get(ranking,"configuration_id"),gameplayHash=(string)Get(native,"rules_sha256");
             object online=Invoke(type,context,"Decorate",ranking);
             Check(originalId==(string)Get(ranking,"configuration_id") && facts.Count==originalFacts.Count && originalFacts.All(p=>facts[p.Key]==p.Value),"online decoration preserves native ranking");
