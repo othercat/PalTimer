@@ -606,6 +606,25 @@ internal static partial class CompetitionBehavior
         Check(parsed.Enabled && parsed.Server == "https://www.pallab.top" && parsed.Event == "wuqiang", "producer contract selects endpoint and IDs");
         bool bad = false; try { CompetitionGameSettings.Parse(json.Replace("https://www.pallab.top/", "http://unsafe.example/")); } catch (InvalidDataException) { bad = true; }
         Check(bad, "unsafe endpoint refused");
+        string originalRoot = Path.Combine(root,"original-online-defaults");Directory.CreateDirectory(originalRoot);
+        var original = CompetitionGameSettings.LoadDirectory(originalRoot);
+        Check(original.Enabled && original.Server == "https://www.pallab.top" && original.CustomCompetitionId == null,"original edition missing file enables default server without custom event");
+        string originalFile = Path.Combine(originalRoot,CompetitionGameSettings.PathInGame);Directory.CreateDirectory(Path.GetDirectoryName(originalFile));
+        File.WriteAllText(originalFile,json.Replace("\"enabled\":true","\"enabled\":false"));
+        original = CompetitionGameSettings.LoadDirectory(originalRoot);
+        Check(original.Enabled && original.CustomCompetitionId == null,"original edition cannot be disabled by legacy configuration");
+        File.WriteAllText(originalFile,"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":false,\"server\":\"https://valid.example\",\"use_custom_competition\":true,\"custom_competition_id\":\"old-event\"}}}");
+        original = CompetitionGameSettings.LoadDirectory(originalRoot);
+        Check(original.Enabled && original.Server == "https://valid.example" && original.CustomCompetitionId == null,"original defaults preserve valid origin and ignore custom event");
+        Check(!CompetitionGameSettings.Parse(File.ReadAllText(originalFile)).Enabled,"generic and SDL parsing still honor disabled configuration");
+        File.WriteAllText(originalFile,json.Replace("https://www.pallab.top/","http://unsafe.example/"));
+        bool originalBad=false;try{CompetitionGameSettings.LoadDirectory(originalRoot);}catch(InvalidDataException){originalBad=true;}
+        Check(originalBad,"original fixed-enable still rejects invalid origins");
+        string fallbackRoot = Path.Combine(root,"original-fallback");
+        var fallback = new Pal98.Storage.UserDataStore(originalRoot,fallbackRoot);
+        fallback.WriteText("game",CompetitionGameSettings.PathInGame,json.Replace("\"enabled\":true","\"enabled\":false").Replace("https://www.pallab.top/","https://fallback.example/"));
+        original = CompetitionGameSettings.LoadDirectory(originalRoot,fallbackRoot);
+        Check(original.Enabled && original.Server == "https://fallback.example" && original.CustomCompetitionId == null,"original forced online keeps effective user configuration origin");
         var store = Store("managed"); var previous = Config(); previous.OverlayFont = "宋体"; previous.OverlayFontSize = 18; previous.OverlayAlignment = "right";
         store.SaveSettings(previous);
         var fake = new Fake(); int reads = 0; bool readOnCallerStack = false, readOnWorker = false, previousEndpointDisabled = false;
