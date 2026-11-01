@@ -933,6 +933,12 @@ internal static class V169IntegrityBehavior
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206208L,(string)Property(namedContentDll,"sha256")) as string=="1.7.2.4","maintenance build selects its matching embedded catalog");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206208L,new string('e',64))==null,"same-size unknown maintenance bytes remain rejected");
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2206209L,(string)Property(namedContentDll,"sha256"))==null,"wrong-size maintenance build remains rejected");
+        var currentOriginal=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.5");
+        var currentOriginalDll=((IEnumerable)Property(currentOriginal,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(currentOriginalDll,"size")==2204672 && (string)Property(currentOriginalDll,"sha256")=="42e5ac90f1b39a5f55d33647e1ad1f03091454f02ad1304f4dfbf2d201ac2e50","v1.72 maintenance pins exact native bytes");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2204672L,(string)Property(currentOriginalDll,"sha256")) as string=="1.7.2.5","maintenance build selects its matching embedded catalog");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2204672L,new string('e',64))==null,"same-size unknown maintenance bytes remain rejected");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2204673L,(string)Property(currentOriginalDll,"sha256"))==null,"wrong-size maintenance build remains rejected");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v173Dll,"size")==2206208 && (string)Property(v173Dll,"sha256")=="b67309544504a1a7223eff1324d8ac42b2ed8bc4e9b3663d645b05eb20d3a95f","v1.7.3 catalog pins the final original challenge release DLL");
