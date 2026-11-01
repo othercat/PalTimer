@@ -471,28 +471,28 @@ internal static class V169IntegrityBehavior
                 var bytes=Snapshot(1|2|8);view.WriteArray(0,bytes,0,bytes.Length);
                 var scheduling=Stopwatch.StartNew();for(int repeat=0;repeat<1000;++repeat)Call(monitor,"Observe",Host);ObserveBatchMs=scheduling.Elapsed.TotalMilliseconds;
                 Check(ObserveBatchMs<1000,"observation only schedules, never hashes synchronously");
-                for(int i=0;i<200 && ((string)Call(monitor,"Summary",false)).IndexOf("数值改写")<0;++i)Thread.Sleep(10);
+                WaitUntil(()=> (Evidence(monitor).GetValue<uint>("Alerts") & 11u)==11u,"runtime alerts published to metadata");
                 string summary=(string)Call(monitor,"Summary",false);
-                Check(!summary.Contains("云认证")&&!summary.Contains("云ID")&&summary.Contains("数值改写已拦截")&&summary.Contains("随机数待核验")&&summary.Contains("采样不完整"),"warning summary excludes redundant cloud labels");
+                Check(summary=="" || summary=="[测试版]","runtime alerts never add title labels");
                 Check(!summary.Contains("核验未完成"),"ordinary scan progress never occupies the title");
                 var data=new HObj();Call(monitor,"Fill",data,false);Check(data.GetValue<HObj>("RuntimeIntegrity").GetValue<bool>("DiagnosticOnly"),"export is diagnostic only");
                 bytes=Snapshot(0);view.WriteArray(0,bytes,0,bytes.Length);Thread.Sleep(260);Call(monitor,"Observe",Host);Thread.Sleep(100);
-                Check(((string)Call(monitor,"Summary",true)).Contains("随机数待核验"),"runtime reset cannot erase anomaly");
+                Check((Evidence(monitor).GetValue<uint>("Alerts") & 2u)!=0,"runtime reset cannot erase diagnostic anomaly");
                 foreach(var core in new TimerCore[]{new 仙剑98柔情(null),new 仙剑98柔情不欢乐模式(null),new 仙剑98柔情DX9(null)})
                 {
                     Call(core,"InitCheckPoints");Set(core,"runtimeIntegrity",monitor);
                     string before=core.GetScoreValidationError();var watch=(PTimer)Field(core,"MT");watch.Start();
-                    Check(core.GetGameVersion().Contains("随机数待核验"),"core title integration");
+                    Check(!core.GetGameVersion().Contains("随机数待核验")&&!core.GetGameVersion().Contains("数值改写"),"all original core titles exclude diagnostics");
                     var roundtrip = new HObj(core.GetRStr());
-                    Check(roundtrip.GetValue<HObj>("RuntimeIntegrity").GetValue<string>("Summary").Contains("随机数待核验"),"record diagnostic round trip");
+                    Check((roundtrip.GetValue<HObj>("RuntimeIntegrity").GetValue<uint>("Alerts") & 2u)!=0,"record diagnostic round trip");
                     Check(watch.IsRunning,"recording warning does not stop timing");
                     Check(core.GetScoreValidationError()==before,"new diagnostics do not change existing timing gate");
-                    core.Reset();Check(((string)Call(monitor,"Summary",false)).Contains("数值改写已拦截"),"score reset preserves process evidence");
+                    core.Reset();Check((Evidence(monitor).GetValue<uint>("Alerts") & 1u)!=0,"score reset preserves process evidence");
                 }
                 var second=New("RuntimeIntegrityMonitor");try {
                     // Wait for asynchronous publication, not an assumed 100 ms
                     // machine-dependent catalog load/scheduler latency.
-                    WaitUntil(()=> { Call(second,"Observe",Host); return ((string)Call(second,"Summary",false)).Contains("数值改写已拦截"); },"new core keeps same-process ledger");
+                    WaitUntil(()=> { Call(second,"Observe",Host); return (Evidence(second).GetValue<uint>("Alerts") & 1u)!=0; },"new core keeps same-process ledger");
                 }finally{((IDisposable)second).Dispose();}
             }
             finally { ((IDisposable)monitor).Dispose(); }
@@ -537,7 +537,7 @@ internal static class V169IntegrityBehavior
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"independent mismatch worker completes");
                 Check(Evidence(monitor).GetValue<bool>("CodeMismatchSeen"),"unconditional code mismatch found despite missing IPC");
                 string summary=(string)Call(monitor,"Summary",false);
-                Check(summary.Contains("运行完整性异常")&&!summary.Contains("运行诊断不可用"),"code evidence stays visible while heartbeat availability remains metadata only");
+                Check(summary=="" || summary=="[测试版]","code and heartbeat diagnostics remain metadata only");
             }
             finally { ((IDisposable)monitor).Dispose(); }
         }
@@ -554,7 +554,7 @@ internal static class V169IntegrityBehavior
                 WaitUntil(()=> (int)Field(monitor,"working")==0,"first target ready");
                 Check(Evidence(monitor).GetValue<int>("ProcessId")==Host.Id,"first target identity");
                 Call(monitor,"SelectTarget",new object[]{null});
-                Check(Evidence(monitor).GetValue<int>("ProcessId")==Host.Id && ((string)Call(monitor,"Summary",false)).Contains("数值改写"),"normal detach retains score evidence");
+                Check(Evidence(monitor).GetValue<int>("ProcessId")==Host.Id && (Evidence(monitor).GetValue<uint>("Alerts") & 1u)!=0,"normal detach retains score evidence");
                 ObserveNow(monitor,Host);WaitUntil(()=> (int)Field(monitor,"working")==0,"same target reattach ready");
                 var session=Field(monitor,"session");
                 object barrier=Type("RuntimeIntegrityMonitor").GetField("ledgerSync",Stat).GetValue(null);
@@ -597,7 +597,7 @@ internal static class V169IntegrityBehavior
                 Check(!summary.Contains("运行诊断不可用")&&!summary.Contains("核验读取失败"),"normal close clears transient availability labels");
                 Check(!record.GetValue<bool>("DiagnosticUnavailable")&&!record.GetValue<bool>("ReadFailed")&&!record.GetValue<bool>("FileRecheckInProgress"),"detached metadata no longer claims a live failed check");
                 Check(record.GetValue<int>("ProcessId")==Host.Id&&record.GetValue<bool>("FileMismatchSeen")==confirmed&&record.GetValue<bool>("CodeMismatchSeen")==confirmed,"detaching keeps target identity and confirmed file/code evidence");
-                Check(confirmed?summary.Contains("[测试版]")&&summary.Contains("数值改写")&&summary.Contains("随机数待核验"):summary=="","only confirmed historical alerts remain after exit");
+                Check(summary==(confirmed?"[测试版]":""),"only confirmed DLL mismatch remains in title after exit");
                 Call(monitor,"Publish",Host,generation,state);
                 Check((string)Call(monitor,"Summary",false)==summary,"late pre-exit worker cannot restore stale availability warning");
                 Call(monitor,"SelectTarget",Host);
@@ -609,12 +609,12 @@ internal static class V169IntegrityBehavior
     {
         var pending=New("RuntimeIntegrityEvidence");
         Check((string)Call(pending,"Summary",false)=="","initial incomplete state is not a player-facing warning");
-        foreach(int protection in new[]{0,1,2})
+        foreach(int protection in new[]{0,1,2,3,4})
         {
             var runtime=New("RuntimeIntegritySnapshot");Set(runtime,"Protection",protection);Set(pending,"Runtime",runtime);
             Check((string)Call(pending,"Summary",false)=="","normal coverage and preparation states stay in metadata");
         }
-        Set(pending,"ReadFailed",true);Check(((string)Call(pending,"Summary",false)).Contains("核验读取失败"),"real read failure is visible");
+        Set(pending,"ReadFailed",true);Check((string)Call(pending,"Summary",false)=="","read failure is not DLL mismatch evidence");
         Set(pending,"ReadFailed",false);Set(pending,"DiagnosticUnavailable",true);
         Check((string)Call(pending,"Summary",false)=="","diagnostic availability never adds a title label");
         var state=New("RuntimeIntegrityEvidence");
@@ -634,7 +634,7 @@ internal static class V169IntegrityBehavior
             Check((string)Call(state,"Summary",true)=="","non-DLL file differences are recorded without a test-version title");
             Set(state,"StickyAlerts",3u);Set(state,"PalDllMismatchSeen",true);
             string warning=(string)Call(state,"Summary",true);
-            Check(warning.Contains("数值改写")&&warning.Contains("随机数待核验")&&warning.Contains("[测试版]"),"actual warnings retained with the requested file-difference label");
+            Check(warning=="[测试版]","DLL mismatch is the only player-facing label");
             Check(!warning.Contains("文件匹配")&&!warning.Contains("云ID")&&!warning.Contains("云认证"),"redundant success/cloud labels absent from warnings too");
         }finally{((IDisposable)monitor).Dispose();}
     }
@@ -658,7 +658,7 @@ internal static class V169IntegrityBehavior
             Set(next,"Code",Enum.Parse(Type("IntegrityCheckState"),"Match"));Call(monitor,"Publish",Host,generation,next);
             var record=Evidence(monitor);string title=(string)Call(monitor,"Summary",false);
             Check(record.GetValue<uint>("Alerts")==3&&record.GetValue<bool>("FileMismatchSeen")&&record.GetValue<bool>("CodeMismatchSeen"),"P restart retains confirmed anomalies from old process segment");
-            Check(title.Contains("随机数待核验")&&title.Contains("运行完整性异常")&&!title.Contains("[测试版]"),"old diagnostic alerts remain without relabelling current approved DLL");
+            Check(title=="","historical diagnostics do not relabel the current approved DLL");
             Check(record.GetValue<bool>("RunPalDllMismatchSeen")&&!record.GetValue<bool>("PalDllMismatchSeen")&&record.GetValue<bool>("PalDllApproved"),"historical DLL mismatch remains separate from current classification");
             Check(record.GetValue<string>("FilesVerifiedAtQpc")=="0"&&!record.GetValue<bool>("ReadFailed")&&record.GetValue<string>("CodeState")=="Match","new target availability and verification states remain independent");
             Check(record.GetValue<int>("LastAlertProcessId")==Host.Id&&record.GetValue<string>("LastAlertProcessCreationTime")==Birth.ToString(),"last alert retains its original process provenance");
@@ -786,7 +786,7 @@ internal static class V169IntegrityBehavior
                 {
                     Set(session,"NextFileScan",0L);AdvanceMonitor(monitor,session,view);
                     for(int i=0;i<30&&!Evidence(monitor).GetValue<bool>("ReadFailed");++i)AdvanceMonitor(monitor,session,view);
-                    Check(Evidence(monitor).GetValue<string>("FileState")=="Incomplete"&&((string)Call(monitor,"Summary",false)).Contains("核验读取失败"),"actual read failure invalidates old success after the identity scan");
+                    Check(Evidence(monitor).GetValue<string>("FileState")=="Incomplete"&&Evidence(monitor).GetValue<bool>("ReadFailed")&&(string)Call(monitor,"Summary",false)=="[测试版]","read failure changes metadata without adding a title label");
                 }
                 Set(session,"NextFileScan",0L);
                 for(int i=0;i<100;++i){AdvanceMonitor(monitor,session,view);if(!Evidence(monitor).GetValue<bool>("FileRecheckInProgress"))break;}
@@ -845,7 +845,9 @@ internal static class V169IntegrityBehavior
         }
         var evidence=New("RuntimeIntegrityEvidence");Set(evidence,"Files",Enum.Parse(Type("IntegrityCheckState"),"Mismatch"));Set(evidence,"FileMismatchSeen",true);
         Set(evidence,"PalDll",Enum.Parse(Type("IntegrityCheckState"),"Match"));Set(evidence,"PalDllVersion","1.14");Set(evidence,"DiagnosticUnavailable",true);
-        Check((string)Call(evidence,"Summary",false)=="","official legacy DLL stays quiet despite modern file and diagnostic differences");
+        Set(evidence,"ReadFailed",true);Set(evidence,"StickyAlerts",127u);Set(evidence,"CodeMismatchSeen",true);
+        var unavailable=New("RuntimeIntegritySnapshot");Set(unavailable,"Protection",4);Set(evidence,"Runtime",unavailable);
+        Check((string)Call(evidence,"Summary",false)==""&&(string)Call(evidence,"Summary",true)=="","approved DLL stays quiet with every diagnostic flag and unavailable protection");
         var export=new HObj();Call(evidence,"Fill",export,false);var details=export.GetValue<HObj>("RuntimeIntegrity");
         Check(details.GetValue<string>("FileState")=="Mismatch"&&details.GetValue<bool>("FileMismatchSeen")&&details.GetValue<bool>("DiagnosticUnavailable"),"other check results remain in score metadata");
         Check(details.GetValue<string>("PalDllState")=="Match"&&details.GetValue<string>("PalDllVersion")=="1.14","DLL classification has independent metadata");
