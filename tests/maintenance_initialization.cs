@@ -44,13 +44,18 @@ internal static partial class CompetitionBehavior
         var categories=new HashSet<string>();
         foreach(string profile in new[]{"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1"})
         foreach(bool wuqiang in new[]{false,true})
+        foreach(bool boundRules in new[]{false,true})
         {
             var snapshot=new SdlpalSnapshot {schema=1,verified=true,diagnostic=false,profile=profile,exeHash=new string('1',64),
                 releaseRevision="r54",resourceHashes=resourceNames.ToDictionary(p=>p,p=>new string('2',64)),
                 fadeCycleMs=800,walkFrameMs=90,speed=0,battleSpeed=0,respawnRule="pal98-current-scene-v1",wuqiang=wuqiang};
+            if(boundRules) {
+                snapshot.gameplayRuleId=profile.Substring(0,profile.Length-3)+"-rules-v1";
+                snapshot.gameplayRuleRevision=1;snapshot.gameplayRuleSha256=new string('3',64);
+            }
             string[] ids=profile=="geshi-easy-v1"?new[]{"geshi-eight-headed-serpent","geshi-ending"}:new[]{"dream-ship","dream-ending"};
             var run=GeshiConfigurationInitialization.CreateMaintenance(snapshot,"fixture-device-init","3.38.3.7",ids);
-            Check(run.ranking.Valid(run.gameplay)&&CompetitionProtocol.Validate(run)==""&&categories.Add(run.ranking.configuration_id),"eight content/effect configurations remain separate");
+            Check(run.ranking.Valid(run.gameplay)&&CompetitionProtocol.Validate(run)==""&&categories.Add(run.ranking.configuration_id),"content/effect/formula configurations remain separate");
             Check(run.total_ms==0&&run.restart_ms==0&&!run.observations.began_here&&!run.observations.finished&&
                 run.splits.All(p=>p.status=="in_progress"&&p.elapsed_ms==null)&&run.observations.issues.Contains("synthetic_configuration_initialization"),"initializer cannot claim a completed playthrough");
             Check(run.release_revision=="r54"&&run.gameplay.speed==0&&run.gameplay.battle_speed==0&&run.ranking.SpeedIndependent,"release and actual speed are observation metadata only");
@@ -59,7 +64,7 @@ internal static partial class CompetitionBehavior
             Check(changed.ranking.configuration_id==run.ranking.configuration_id&&changed.gameplay.speed==10&&changed.gameplay.walk_frame_ms==40,"initial speed never changes a maintenance category");
             var wire=new InitializationWire {Approved=false};var auth=new FakeAuth();
             var credential=new CompetitionCredential{Hwid="fixture-device-init",Secret="fixture-only-not-production"};
-            string directory=Path.Combine(root,"initializers",profile+(wuqiang?"-wuqiang":"-normal"));
+            string directory=Path.Combine(root,"initializers",profile+(wuqiang?"-wuqiang":"-normal")+(boundRules?"-rules":"-legacy"));
             Func<Task<int>> upload=()=>GeshiConfigurationInitialization.Upload(snapshot,directory,"https://fixture.invalid",credential,auth,wire,ids);
             Check(await upload()==2&&wire.Posts==0,"unapproved initialization never sends a record");
             wire.Approved=true;wire.Supports=false;

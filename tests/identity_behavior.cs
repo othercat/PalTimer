@@ -148,6 +148,13 @@ internal static partial class CompetitionBehavior
         }
     }
 
+    static bool PublishedFileContains(string path, string expected)
+    {
+        // A sharing violation during this bounded poll is not a completed write.
+        try { return File.ReadAllText(path).Contains(expected); }
+        catch (IOException error) when ((error.HResult & 0xffff) == 32) { return false; }
+    }
+
     static async Task IdentityProgramCases()
     {
         var json = CompetitionProtocol.Json();
@@ -199,10 +206,10 @@ internal static partial class CompetitionBehavior
             wire.RegistrationBody = failures[1]; await menu(); start(); await Task.Delay(700);
             Check(priorIdentity.SequenceEqual(File.ReadAllBytes(identityPath)) && priorProgram.SequenceEqual(File.ReadAllBytes(behaviorPath)), "invalid remote script preserves both previous files");
             wire.RegistrationBody = File.ReadAllText(fixture).Replace("我大意了", "新的台词"); client.Retry();
-            await Until(() => File.ReadAllText(behaviorPath).Contains("新的台词"), "retry applies a new script without a game build");
+            await Until(() => PublishedFileContains(behaviorPath, "新的台词"), "retry applies a new script without a game build");
             var empty = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(fixture));
             ((Dictionary<string, object>)empty["identity_behaviors"])["bindings"] = new object[0]; wire.RegistrationBody = json.Serialize(empty);
-            await menu(); start(); await Until(() => File.ReadAllText(behaviorPath).Contains("\"bindings\":[]"), "disabled server binding clears previous override");
+            await menu(); start(); await Until(() => PublishedFileContains(behaviorPath, "\"bindings\":[]"), "disabled server binding clears previous override");
             await client.CloseAsync();
         }
         byte[] last = File.ReadAllBytes(Path.Combine(directory, LocalPlayerIdentity.RelativePath));

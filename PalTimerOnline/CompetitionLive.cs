@@ -314,7 +314,9 @@ namespace Pal98Timer
                 route_sha256 = observation == null ? null : route,
                 game_title = LiveText(observation?.GameTitle ?? observation?.GameVersion, 240),
                 release_revision = observation?.ReleaseRevision,
-                maintenance_ranking = observation?.Ranking?.Value("challenge.id") != null ? observation.Ranking.Copy() : null,
+                maintenance_ranking = observation?.Ranking?.Value("challenge.id") != null ||
+                    GameplayIdentity.IsSdlFamily(observation?.Gameplay?.family) && observation?.Ranking?.Valid(observation.Gameplay) == true
+                    ? observation.Ranking.Copy() : null,
                 elapsed_ms = Math.Max(0, Math.Min(86400000, hasClock ? clock.Elapsed : observation?.TotalMilliseconds ?? 0)),
                 // Do not turn an over-capacity observation into a valid finish or
                 // break the live lease with repeated 422s. Its original value is
@@ -370,7 +372,8 @@ namespace Pal98Timer
             var wireObservation = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(CompetitionProtocol.Json().Serialize(snapshot));
             if (!includeRestartTime) wireObservation.Remove("restart_ms");
             if (!serverSupportsMaintenance || snapshot.release_revision == null) wireObservation.Remove("release_revision");
-            if (snapshot.maintenance_ranking == null || !serverSupportsOriginalChallenges) wireObservation.Remove("maintenance_ranking");
+            if (snapshot.maintenance_ranking == null || (GameplayIdentity.IsSdlFamily(snapshot.maintenance_ranking.Value("family"))
+                ? !serverSupportsMaintenanceLive : !serverSupportsOriginalChallenges)) wireObservation.Remove("maintenance_ranking");
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
                 session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
             var identityRequest = CaptureIdentityRequest(cfg);

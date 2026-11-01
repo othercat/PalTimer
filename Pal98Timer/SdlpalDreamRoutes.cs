@@ -11,7 +11,10 @@ namespace Pal98Timer
             new SdlpalSplitRule { Id=id, Name=name, Kind="battle", Team=team, Enemy=enemy, Scenes=scenes };
         internal static SdlpalSplitRule[] ForProfile(string profile)
         {
-            if (!SdlpalBridge.SupportedProfile(profile) || profile == "geshi-easy-v1") throw new ArgumentException("Unknown Dream profile");
+            if (SdlpalClassicRoutes.Supports(profile)) return SdlpalClassicRoutes.ForProfile(profile);
+            if (SdlpalExpandedRoutes.Supports(profile)) return SdlpalExpandedRoutes.ForProfile(profile);
+            if (profile != "dream22-puppet100-v1" && profile != "dream222-normal-v1" && profile != "dream222-hard-v1" && profile != "dreamspace39x-hard-v1")
+                throw new ArgumentException("Unknown Dream profile");
             var caiyi = Battle("dream-caiyi", "过彩依", 39, 468, 108); caiyi.Kind = "battle-end";
             return new[] {
                 Position("dream-ship", "上船", 5, 1076, 1082, 5),

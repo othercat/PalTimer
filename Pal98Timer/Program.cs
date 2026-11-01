@@ -52,7 +52,7 @@ namespace Pal98Timer
                     if (initializeMaintenance)
                     {
                         if (new FileInfo(arguments[2]).Length > SdlpalBridge.Capacity) throw new InvalidDataException("初始化输入超过容量");
-                        var snapshot = SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(File.ReadAllText(arguments[2]));
+                        var snapshot = SdlpalBridge.ReadSnapshotJson(File.ReadAllText(arguments[2]));
                         var rules = SdlpalSplitRule.Defaults(snapshot.profile);
                         SdlpalSplitRule.Validate(rules);
                         inputs = new object[] { arguments[2], arguments[3], rules.Select(p => p.Id).ToArray() };
