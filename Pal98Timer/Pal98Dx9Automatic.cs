@@ -395,10 +395,7 @@ namespace Pal98Timer
         protected override string FormatGameTitle(string version)
         {
             var snapshot = selected;
-            if (!HasTournamentGameTitle)
-                return version + "－" + GameplayPresentation.Label(snapshot, RecordedTimingMode, requested);
-            return snapshot == null ? base.FormatGameTitle(version) + "&未归类" :
-                version + "－" + snapshot.Label(requested);
+            return version + "－" + GameplayPresentation.Label(snapshot, RecordedTimingMode, requested);
         }
         public override void InitUI()
         {

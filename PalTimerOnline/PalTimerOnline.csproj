@@ -36,8 +36,6 @@
     <Compile Include="OnlineEntryPoint.cs"/>
     <Compile Include="AssemblyInfo.cs"/>
     <Compile Include="..\Pal98Timer\RankingConfiguration.cs"><Link>RankingConfiguration.cs</Link></Compile>
-    <Compile Include="..\Pal98Timer\TournamentLockInfoReader.cs"><Link>TournamentLockInfoReader.cs</Link></Compile>
-    <EmbeddedResource Include="..\Pal98Timer\TournamentIntegrityKey.txt" Condition="Exists('..\Pal98Timer\TournamentIntegrityKey.txt')"><LogicalName>Pal98Timer.TournamentIntegrityKey.txt</LogicalName></EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
 </Project>

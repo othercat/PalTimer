@@ -90,19 +90,13 @@ namespace Pal98Timer
             if (snapshot == null || !snapshot.verified || SdlpalBridge.ProfileFamily(snapshot.profile).Length == 0 || snapshot.diagnostic)
                 throw new InvalidDataException("SDLPAL 运行时身份无效或处于诊断模式");
             // GamePath points to resources (normally PAL), never upload settings.
-            // The dedicated tool writes the root file; PALDLL user-data/lock state
+            // The dedicated tool writes the root file; PALDLL user-data state
             // must not replace it or silently disable this edition's defaults.
             string file = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(executable)), PathInGame);
             return Parse(File.Exists(file) ? CompetitionStorage.ReadBounded(file, 1024 * 1024) : null);
         }
         internal static CompetitionSettings LoadDirectory(string root)
         {
-            var locked = TournamentLockInfoReader.Load(root);
-            if (locked.State == TournamentLockReadState.Invalid)
-                throw new InvalidDataException("游戏配置锁未能验证，联机保持关闭：" + locked.Diagnostic);
-            // A legacy lock lacking this signed setting cannot grant upload by
-            // placing a different live file next to it. Do not rewrite old locks.
-            if (locked.State == TournamentLockReadState.Locked) return Parse(locked.CommonToolsSnapshot, true);
             string path = Pal98.Storage.UserDataStore.ReadGamePath(root, PathInGame);
             return Parse(Pal98.Storage.UserDataStore.FileExists(path) ? CompetitionStorage.ReadBounded(path, 1024 * 1024) : null);
         }

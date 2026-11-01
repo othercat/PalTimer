@@ -83,16 +83,11 @@ namespace Pal98Timer
         {
             AutomationArgs.Current = AutomationArgs.Parse(Environment.GetCommandLineArgs());
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
-            using (EventWaitHandle tournamentCapability =
-                TournamentTimerCapability.Publish())
-            using (var presetCapability = TournamentTimerCapability.Publish(@"Local\PAL98.PalTimer.TournamentLock.v2"))
-            {
-                ClearTmpBG();
-                UpdateBestFiles();
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new GForm());
-            }
+            ClearTmpBG();
+            UpdateBestFiles();
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new GForm());
             //Application.Run(new BestEditForm("CUSTOM"));
         }
         static void ClearTmpBG()

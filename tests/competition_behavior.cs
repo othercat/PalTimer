@@ -533,6 +533,11 @@ internal static partial class CompetitionBehavior
         Check(new CompetitionSettings { Server = "http://example.com" }.Validate().Length > 0, "reject insecure remote endpoint");
         Check(new CompetitionSettings { Server = "http://127.0.0.1:8776" }.Validate().Length == 0, "allow loopback test endpoint");
         Check(new CompetitionSettings { Server = "https://user:pw@example.com" }.Validate().Length > 0, "reject credentials in URL");
+        string retired=Path.Combine(root,"retired-lock-game");
+        Directory.CreateDirectory(Path.Combine(retired,"palmod","TournamentLock","v1"));
+        File.WriteAllText(Path.Combine(retired,"palmod","TournamentLock","v1","manifest.json"),"invalid retired lock");
+        File.WriteAllText(Path.Combine(retired,"palmod","common-tools.v1.json"),"{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://fixture.invalid\"}}}");
+        Check(CompetitionGameSettings.LoadDirectory(retired).Enabled,"retired invalid lock cannot disable live server settings");
         Check(CompetitionProtocol.TrackFor(1200, 9) == null, "unsupported fourth mode not mixed into three tracks");
         Check(CompetitionGameSettings.Parse("{\"schema\":\"PAL98.ToolLaunchSettings.v1\",\"competition_upload\":{\"schema\":\"PAL98.TimerOnlineSettings.v1\",\"xiaorou\":{\"enabled\":true,\"server\":\"https://fixture.invalid\",\"use_custom_competition\":true,\"custom_competition_id\":\"cup\"}}}").CustomCompetitionId==null,"unlocked custom id cannot confer competition membership");
         var store = Store("identity"); var credential = store.Credential(Config().Server);

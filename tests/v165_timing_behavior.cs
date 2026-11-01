@@ -706,22 +706,20 @@ internal static class V165TimingBehavior
             for(int selected=0;selected<3;++selected)
             {
                 var core=Core(selected);Attach(core,Mode(Fade(selected),Speed(selected),true));
-                Dx9.GetProperty("TournamentDisplayName",Instance).SetValue(core,"秋季杯比赛专用");
                 string label=Label(Fade(selected),Speed(selected));
-                Check(core.GetGameVersion()=="秋季杯比赛专用-"+label,"Tournament includes actual mode");
+                Check(core.GetGameVersion().EndsWith("-"+label),"Game title includes actual mode");
                 var snapshot=Snapshot(core);
                 Check((string)Field(snapshot,"TimingModeLabel")==label,"Overlay has no leading hyphen and retains &");
                 Check(!((string)Field(snapshot,"State")).Contains(label),"Mode not crowded into state row");
                 var record=new HObj(core.GetRStr());
                 Check(record.GetValue<string>("DX9Version").EndsWith("-"+label),"Export matches displayed mode");
-                Check(record.GetValue<string>("GameVersion")==core.GetGameVersion()&&record.GetValue<string>("TournamentDisplayName")=="秋季杯比赛专用","Export preserves tournament identity");
+                Check(record.GetValue<string>("GameVersion")==core.GetGameVersion()&&!record.ToDic().ContainsKey("TournamentDisplayName"),"Export preserves actual identity without retired local lock fields");
                 Check(record.GetValue<string>("LeaderboardCategory")==new[]{"PC NewPatch Classic","PC NewPatch Classic-0.8s","PC NewPatch Classic-0.8s+Speed"}[selected],"English leaderboard");
                 Watch(core).SetTS(TimeSpan.FromMinutes(30));Watch(core).Stop();Set(core,"PalProcess",null);Set(core,"PID",-1);
-                Dx9.GetProperty("TournamentDisplayName",Instance).SetValue(core,"");
                 var ended=new HObj(core.ForCloudBigData());
                 Check(ended.GetValue<bool>("TimingRulesVerified")&&ended.GetValue<string>("ContentId")=="pal98fix-classic-v5","Ended export retains identity");
-                Check(core.GetGameVersion()=="秋季杯比赛专用-"+label,"Completed tournament lost its display identity");
-                Check(ended.GetValue<string>("GameVersion")==core.GetGameVersion()&&ended.GetValue<string>("TournamentDisplayName")=="秋季杯比赛专用","Completed export preserves tournament identity");
+                Check(core.GetGameVersion().EndsWith("-"+label),"Completed game retains actual mode");
+                Check(ended.GetValue<string>("GameVersion")==core.GetGameVersion()&&!ended.ToDic().ContainsKey("TournamentDisplayName"),"Completed export preserves actual identity without retired local lock fields");
             }
             var nonformal=Core(0);Attach(nonformal,Mode(1200,9,false,"pal98.package.random",name:"完全隨機物品&快走速"));
             Check(nonformal.GetGameVersion()=="98柔情原版 1.65－完全隨機物品&快走速&1.2秒&快走速&"+

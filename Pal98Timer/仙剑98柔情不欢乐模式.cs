@@ -38,7 +38,6 @@ namespace Pal98Timer
         private Process PalProcess;
         private readonly RuntimeIntegrityMonitor runtimeIntegrity = new RuntimeIntegrityMonitor();
         private readonly PaletteFadeModeReader paletteFadeMode = new PaletteFadeModeReader();
-        private string TournamentDisplayName = string.Empty;
         private bool _HasGameStart = false;
         private bool _IsFirstStarted = false;
         private PalLiveProcessIdentity attachedProcessIdentity;
@@ -388,10 +387,6 @@ namespace Pal98Timer
         {
             if (PID != -1)
             {
-                if (!string.IsNullOrEmpty(TournamentDisplayName))
-                {
-                    return FormatPaletteFadeVersion(TournamentDisplayName);
-                }
                 return FormatPaletteFadeVersion(Dx9TimingCategory.ClassicCaption(DX9Version) + " 不欢乐");
             }
             else
@@ -1351,9 +1346,6 @@ namespace Pal98Timer
                     attachedExecutablePath = attachedProcessIdentity.ExecutablePath;
                     _HasGameStart = false;
                         runtimeIntegrity?.SelectTarget(PalProcess);
-                        TournamentDisplayName = TournamentLockInfoReader
-                            .LoadForProcessExecutable(PalProcess.MainModule.FileName)
-                            .CompetitionDisplayName;
                         GameWindowHandle = res[0].MainWindowHandle;
                         PID = PalProcess.Id;
                         CalcPalMD5();
@@ -1672,7 +1664,6 @@ namespace Pal98Timer
             GameWindowHandle = IntPtr.Zero;
             PalProcess = null;
             runtimeIntegrity?.SelectTarget(null);
-            TournamentDisplayName = string.Empty;
             PID = -1;
             GMD5 = "none";
             DX9Version = "未知";
