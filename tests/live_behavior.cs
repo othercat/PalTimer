@@ -210,18 +210,19 @@ internal static partial class LiveBehavior
     }
     static async Task Run(string root)
     {
-        var challengeWire=new Transport();var challengeClient=Client(root,"original-challenge-live",challengeWire,new Auth());
+        var challengeWire=new Transport {Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceLiveFeature}};var challengeClient=Client(root,"original-challenge-live",challengeWire,new Auth());
         await Until(()=>challengeClient.Enabled,"original challenge client enabled");challengeClient.Invalidate("challenge");
         var challengeObservation=Observe("challenge",0);
         var challengeIdentity=new OriginalChallengeIdentity {Id=Guid.NewGuid().ToString(),Revision=1,Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64)};
         challengeObservation.Ranking=challengeIdentity.Decorate(challengeObservation.Ranking);
         challengeClient.Publish(challengeObservation);
         await Until(()=>challengeWire.Last?.observation.configuration_id==challengeObservation.Ranking.configuration_id,"original challenge legacy live observation sent");
-        Check(!challengeWire.LastHasRanking,"old server is not sent the new live ranking field");
+        Check(!challengeWire.LastHasRanking,"SDL-only capability cannot enable original challenge live facts");
         challengeWire.Features=new[]{CompetitionProtocol.RestartTimeFeature,"original-challenge-ranking.v1"};challengeClient.Retry();
         await Until(()=>challengeWire.Last?.observation.maintenance_ranking!=null,"capable server receives actual challenge ranking");
         Check(challengeWire.Last.observation.maintenance_ranking.Value("challenge.id")==challengeIdentity.Id,"live observation preserves pinned challenge UUID");
         await challengeClient.CloseAsync();
+        await MaintenanceIdentityTests(root);
         await ConnectivityRecoveryTests(root);
         await LoopbackHttpTests(root);
         await IdentityLiveTests(root);
@@ -426,6 +427,39 @@ internal static partial class LiveBehavior
         closingSnapshot.state="finished";
         comparison = (CompetitionLiveCompare)typeof(CompetitionClient).GetMethod("LiveComparison",flags).Invoke(client,new object[]{closingSnapshot});
         Check(comparison.run_id==closingSnapshot.run_id,"finished live snapshot retains uploaded-run overall comparison");
+    }
+    static async Task MaintenanceIdentityTests(string root)
+    {
+        string[] profiles={"pal-dos-v1","pal98-classic-v6-v1","geshi-easy-v1","dream22-puppet100-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream211-v1","hunqian-branch-v1","hunqian167-easy-v1","hunqian167-hard-v1","mogai10-v1","dream211-pudu-v1","dream211-yueying-v1","tianqi20-v1","dream211-yueying-rat-v1","geshi-hard-v1","geshi-nightwolf-v1","geshi-fanmade-v1","geshi-fanmade-entertainment-v1"};
+        var flags=BindingFlags.Instance|BindingFlags.NonPublic;
+        var transport=new Transport {Features=new[]{CompetitionProtocol.MaintenanceFeature,CompetitionProtocol.MaintenanceLiveFeature,CompetitionProtocol.RestartTimeFeature}};
+        var client=Client(root,"maintenance-identities",transport,new Auth()); await Until(()=>client.Enabled,"maintenance live identity enabled");
+        CompetitionObservation sample=null;
+        foreach(var profile in profiles) foreach(bool wuqiang in new[]{false,true}) {
+            sample=Observe("content-identity",0);
+            var rules=new Dictionary<string,string>{{"family",SdlpalBridge.ProfileFamily(profile)},{"profile",profile}};
+            var resources=new[]{"DATA.MKF","M.MSG","SSS.MKF","WORD.DAT"};
+            for(int i=0;i<resources.Length;i++)rules["resource."+resources[i]]=new string((char)('a'+i),64);
+            rules["content"]=CompetitionProtocol.Hash(string.Join("\n",resources.Select(r=>r+"="+rules["resource."+r])));
+            if(wuqiang)rules["wuqiang"]="1";
+            sample.Gameplay=new GameplayIdentity {family=rules["family"],content_id=profile,content_sha256=rules["content"],rules_sha256=RankingConfiguration.Digest(rules),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0};
+            sample.Ranking=new RankingConfiguration {covered=true,rules=rules,configuration_id=sample.Gameplay.rules_sha256}; sample.ReleaseRevision="r72";
+            Check(sample.Ranking.Valid(sample.Gameplay),"valid live facts "+profile+" Wuqiang="+wuqiang);
+            typeof(CompetitionClient).GetField("current",flags).SetValue(client,sample);
+            typeof(CompetitionClient).GetField("activeToken",flags).SetValue(client,sample.Token);
+            var snapshot=(CompetitionLiveObservation)typeof(CompetitionClient).GetMethod("CaptureLiveObservation",flags).Invoke(client,null);
+            Check(snapshot.maintenance_ranking?.configuration_id==sample.Ranking.configuration_id && !ReferenceEquals(snapshot.maintenance_ranking.rules,rules),"live snapshot copies exact facts "+profile+" Wuqiang="+wuqiang);
+        }
+        // Exercise the actual outgoing request gate with a valid SDL observation.
+        client.Publish(sample); client.PublishClock(sample.Token,1000,true,Stopwatch.GetTimestamp()); client.Retry();
+        await Until(()=>transport.LastHasRanking,"supported server receives maintenance facts");
+        transport.Features=new[]{CompetitionProtocol.RestartTimeFeature,"original-challenge-ranking.v1"};
+        typeof(CompetitionClient).GetField("serverSupportsMaintenanceLive",flags).SetValue(client,false);
+        typeof(CompetitionClient).GetField("serverSupportsOriginalChallenges",flags).SetValue(client,true);
+        int before=transport.Updates; client.Retry();
+        await Until(()=>transport.Updates>before,"old-server heartbeat sent");
+        Check(!transport.LastHasRanking && transport.UnsupportedFields==0,"original-only capability cannot enable SDL maintenance facts");
+        await client.CloseAsync();
     }
     static int Main(string[] args) {
         try { Directory.CreateDirectory(args[0]); Run(args[0]).GetAwaiter().GetResult(); Console.WriteLine("PASS live total="+checks); return 0; }

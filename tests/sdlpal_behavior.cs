@@ -39,7 +39,107 @@ internal static class SdlpalBehavior
         BitConverter.GetBytes(2U).CopyTo(header,20); BitConverter.GetBytes(length).CopyTo(header,24); BitConverter.GetBytes(pid).CopyTo(header,28);
         BitConverter.GetBytes(created).CopyTo(header,32); BitConverter.GetBytes(value.epoch).CopyTo(header,40); BitConverter.GetBytes(now).CopyTo(header,56); return header;
     }
-    static SdlpalSnapshot Clone(SdlpalSnapshot value) => SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(SdlpalBridge.Json().Serialize(value));
+    static SdlpalSnapshot Clone(SdlpalSnapshot value) => SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(SerializeFixture(value));
+    // The native legacy wire omits rule fields. New native snapshots publish
+    // the complete binding at both root and identity, never JSON nulls.
+    static string SerializeFixture(object value)
+    {
+        var serializer=SdlpalBridge.Json();
+        var state=value as SdlpalSnapshot;
+        if(state==null) return serializer.Serialize(value);
+        var fields=serializer.Deserialize<Dictionary<string,object>>(serializer.Serialize(state));
+        string[] names={"gameplayRuleId","gameplayRuleRevision","gameplayRuleSha256"};
+        if(state.gameplayRuleId==null&&state.gameplayRuleRevision==null&&state.gameplayRuleSha256==null)
+            foreach(string name in names) fields.Remove(name);
+        else fields["identity"]=names.ToDictionary(n=>n,n=>fields[n]);
+        return serializer.Serialize(fields);
+    }
+    static void BindRules(SdlpalSnapshot value)
+    {
+        value.gameplayRuleId=value.profile.Substring(0,value.profile.Length-3)+"-rules-v1";
+        value.gameplayRuleRevision=1; value.gameplayRuleSha256=new string('e',64);
+    }
+    static void GameplayRuleTests()
+    {
+        var old=Snapshot();var current=Clone(old);BindRules(current);
+        Check(old.RankingFacts().Count==7&&current.RankingFacts().Count==10&&old.RankingFacts()["content"]==current.RankingFacts()["content"],
+            "explicit rules partition gameplay without changing the four-resource digest or old category");
+        Check(!SdlpalSnapshot.SameResourceEngineIdentity(old.IdentityKey,current.IdentityKey),"legacy and rule-bound runs cannot relay into one another");
+        Func<Dictionary<string,object>> wire=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(current));
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] bytes=Encoding.UTF8.GetBytes(SerializeFixture(fields));
+            return SdlpalBridge.Decode(Header(current,bytes.Length),bytes,777,123,10000);
+        };
+        Check(decode(wire()).gameplayRuleSha256==current.gameplayRuleSha256,"complete matching native formula identity accepted");
+        Check(SdlpalBridge.ReadSnapshotJson(SerializeFixture(current)).gameplayRuleRevision==1,"offline initialization preserves validated rules");
+        foreach(string key in new[]{"gameplayRuleId","gameplayRuleRevision","gameplayRuleSha256"})
+        foreach(bool nested in new[]{false,true})
+        {
+            var fields=wire();var target=nested?(Dictionary<string,object>)fields["identity"]:fields;
+            target.Remove(key);Reject(()=>decode(fields),"formula field must exist in both layers: "+key+" / "+nested);
+            Reject(()=>SdlpalBridge.ReadSnapshotJson(SerializeFixture(fields)),"offline initialization rejects partial formula binding");
+        }
+        var badValues=new Dictionary<string,object[]> {
+            ["gameplayRuleId"]=new object[]{null,1,"", "dreamspace39x-hard-rules-v1","geshi-easy-rules-v01","geshi-easy-rules-v1|other"},
+            ["gameplayRuleRevision"]=new object[]{null,"1",1.0m,true,0,-1,2147483648L},
+            ["gameplayRuleSha256"]=new object[]{null,1,"",new string('F',64),new string('e',63),new string('g',64)}
+        };
+        foreach(var group in badValues) foreach(object value in group.Value)
+        {
+            var fields=wire();fields[group.Key]=value;((Dictionary<string,object>)fields["identity"])[group.Key]=value;
+            Reject(()=>decode(fields),"noncanonical formula field rejected: "+group.Key+" / "+(value??"null"));
+        }
+        var conflict=wire();((Dictionary<string,object>)conflict["identity"])["gameplayRuleSha256"]=new string('f',64);
+        Reject(()=>decode(conflict),"conflicting inner formula binding rejected");
+        foreach(string key in new[]{"gameplayRuleId","gameplayRuleRevision","gameplayRuleSha256"})
+        foreach(bool duplicate in new[]{false,true}) {
+            var fields=wire();string alias=char.ToUpperInvariant(key[0])+key.Substring(1);fields[alias]=fields[key];
+            if(!duplicate) {fields.Remove(key);fields.Remove("identity");}
+            Reject(()=>decode(fields),"case alias cannot bypass formula validation: "+key+" / "+duplicate);
+            Reject(()=>SdlpalBridge.ReadSnapshotJson(SerializeFixture(fields)),"offline initializer rejects formula aliases");
+        }
+        foreach(string duplicate in new[]{"\"gameplayRuleRevision\":2,","\"gameplayRuleRevision\":1,","\"\\u0067ameplayRuleRevision\":1,"}) {
+            string json="{"+duplicate+SerializeFixture(current).Substring(1);
+            byte[] bytes=Encoding.UTF8.GetBytes(json);
+            Reject(()=>SdlpalBridge.Decode(Header(current,bytes.Length),bytes,777,123,10000),"duplicate wire rule key rejected before coercion");
+            Reject(()=>SdlpalBridge.ReadSnapshotJson(json),"offline initializer rejects duplicate wire keys");
+        }
+        Func<Dictionary<string,string>,bool> valid=facts=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(
+            new GameplayIdentity {family=facts["family"],content_id=facts["profile"],content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0});
+        Check(valid(current.RankingFacts()),"complete rule-bound ranking accepted");
+        foreach(string key in new[]{"gameplay.rule","gameplay.revision","gameplay.sha256"})
+        {var facts=current.RankingFacts();facts.Remove(key);Check(!valid(facts),"partial rule ranking rejected: "+key);}
+        foreach(string revision in new[]{"0","01","-1","2147483648"})
+        {var facts=current.RankingFacts();facts["gameplay.revision"]=revision;Check(!valid(facts),"noncanonical ranking revision rejected: "+revision);}
+        foreach(var change in new Action<SdlpalSnapshot>[] {s=>s.gameplayRuleId="geshi-easy-rules-v2",s=>s.gameplayRuleRevision++,s=>s.gameplayRuleSha256=new string('f',64)})
+        {
+            var changed=Clone(current);change(changed);
+            Check(valid(changed.RankingFacts())&&RankingConfiguration.Digest(changed.RankingFacts())!=RankingConfiguration.Digest(current.RankingFacts())&&
+                !SdlpalSnapshot.SameResourceEngineIdentity(current.IdentityKey,changed.IdentityKey),"rule ID, revision and bytes each isolate ranking and relay");
+        }
+        var faster=Clone(current);faster.speed=3;faster.dreamspaceThrowFormula=true;
+        Check(RankingConfiguration.Digest(current.RankingFacts())==RankingConfiguration.Digest(faster.RankingFacts())&&
+            SdlpalSnapshot.SameResourceEngineIdentity(current.IdentityKey,faster.IdentityKey),"speed and informational throw option retain existing rule-bound grouping");
+        using(var run=new CompletionFixture(true))
+        {
+            BindRules(run.Engine.State);run.StartNewGame();string path=run.Core.ActiveBestPath;
+            try {
+                run.Core.SaveBest();byte[] bytes=File.ReadAllBytes(path);
+                var metadata=new HFrame.ENT.HObj(run.Core.GetRStr()).GetValue<HFrame.ENT.HObj>("SdlpalProfileData");
+                Check(metadata.GetValue<string>("gameplayRuleSha256")==run.Engine.State.gameplayRuleSha256,"timeline carries native formula identity");
+                run.Engine.State.gameplayRuleRevision=2;run.Tick();
+                Check(run.Core.ActiveBestPath!=path,"formula revision selects a separate best file");
+                Reject(()=>run.Core.SaveBest(),"mixed-rule run cannot save a best time");
+                run.Engine.State.gameplayRuleRevision=1;run.Tick();
+                Reject(()=>run.Core.SaveBest(),"formula round trip retains mixed-run protection");
+                Check(File.ReadAllBytes(path).SequenceEqual(bytes),"formula round trip preserves old best bytes");
+                string timeline=run.Core.GetRStr();var imported=Call(run.Core,"ValidateImport",timeline,run.Core.CurrentSnapshot.IdentityKey);
+                var snapshot=run.Core.CurrentSnapshot;run.Core.Reset();Call(run.Core,"Restore",imported,snapshot);
+                Reject(()=>run.Core.SaveBest(),"import preserves mixed-rule latch");
+                run.Core.Reset();run.Tick();run.Core.SaveBest();Check(File.Exists(path),"explicit reset unlocks the current formula configuration");
+            } finally {File.Delete(path);}
+        }
+    }
     static void RankingTests()
     {
         var initial=Snapshot();
@@ -82,15 +182,54 @@ internal static class SdlpalBehavior
         Check(valid(),"complete old configuration remains readable without rewriting its digest");
         facts["resource.DATA.MKF"]=new string('e',64);Check(!valid(),"mismatched resource aggregate rejected");
     }
+    static void DreamspaceThrowTests()
+    {
+        var normal=Snapshot();normal.profile="dreamspace39x-hard-v1";normal.respawnRule="pal98-current-scene-v1";
+        var enabled=Clone(normal);enabled.dreamspaceThrowFormula=true;
+        Check(!normal.RankingFacts().ContainsKey("dreamspace_throw"),"disabled Dreamspace formula preserves r70 ranking keys");
+        Check(!enabled.RankingFacts().ContainsKey("dreamspace_throw")&&
+            RankingConfiguration.Digest(normal.RankingFacts())==RankingConfiguration.Digest(enabled.RankingFacts())&&
+            enabled.ResourceEngineIdentity==normal.ResourceEngineIdentity,
+            "Dreamspace formula changes neither score groups nor relay compatibility");
+        Func<Dictionary<string,string>,bool> valid=facts=>new RankingConfiguration {
+            covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)
+        }.Valid(new GameplayIdentity {family=facts["family"],content_id=facts["profile"],content_sha256=facts["content"],
+            rules_sha256=RankingConfiguration.Digest(facts),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0});
+        Check(valid(normal.RankingFacts())&&valid(enabled.RankingFacts()),"both Dreamspace formulas have valid complete ranking facts");
+        var bad=enabled.RankingFacts();bad["dreamspace_throw"]="lostedit-v1";
+        Check(!valid(bad),"informational throw choice cannot leak into accepted ranking facts");
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] bytes=Encoding.UTF8.GetBytes(SerializeFixture(fields));
+            return SdlpalBridge.Decode(Header(normal,bytes.Length),bytes,777,123,10000);
+        };
+        var fields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(enabled));
+        var identity=new Dictionary<string,object>{{"dreamspaceThrowFormula",true}};fields["identity"]=identity;
+        Check(decode(fields).dreamspaceThrowFormula,"matching native Dreamspace formula accepted");
+        identity["dreamspaceThrowFormula"]=false;Reject(()=>decode(fields),"conflicting nested throw formula rejected");
+        identity["dreamspaceThrowFormula"]=true;
+        foreach(object value in new object[]{null,1,"true"}) {
+            fields["dreamspaceThrowFormula"]=value;identity["dreamspaceThrowFormula"]=value;
+            Reject(()=>decode(fields),"throw formula requires actual JSON boolean");
+        }
+        fields.Remove("dreamspaceThrowFormula");identity["dreamspaceThrowFormula"]=true;
+        Reject(()=>decode(fields),"nested-only throw formula rejected");
+        fields.Remove("identity");Check(!decode(fields).dreamspaceThrowFormula,"old snapshots without the field retain classic throw identity");
+        fields["dreamspaceThrowFormula"]=true;fields["profile"]="geshi-easy-v1";
+        Reject(()=>decode(fields),"effective throw mode rejected on non-Dreamspace snapshots");
+        fields["dreamspaceThrowFormula"]=false;Check(!decode(fields).dreamspaceThrowFormula,"false throw flag allowed on all contents");
+    }
     static void DecodeTests(string[] paths)
     {
+        byte[] malformed=Encoding.UTF8.GetBytes("{\"schema\":");
+        try { SdlpalBridge.Decode(Header(Snapshot(),malformed.Length),malformed,777,123,10000);throw new Exception("malformed JSON accepted"); }
+        catch(InvalidDataException) {Check(true,"malformed JSON becomes a controlled reader error");}
         Func<Dictionary<string,object>,SdlpalSnapshot> decodeMode=fields=>{
-            byte[] bytes=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            byte[] bytes=Encoding.UTF8.GetBytes(SerializeFixture(fields));
             return SdlpalBridge.Decode(Header(Snapshot(),bytes.Length),bytes,777,123,10000);
         };
         foreach(string key in new[]{"monsterRush","invisibleMonsters"})
         {
-            var mode=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(Snapshot()));
+            var mode=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(Snapshot()));
             mode["respawnRule"]="pal98-current-scene-v1";mode[key]=true;
             var identity=new Dictionary<string,object>{{key,true},{"respawnRule","pal98-current-scene-v1"}};mode["identity"]=identity;
             Check(decodeMode(mode).respawnRule=="pal98-current-scene-v1","matching nested monster identity accepted: "+key);
@@ -100,30 +239,47 @@ internal static class SdlpalBehavior
             mode[key]=true;identity["respawnRule"]="unknown";
             Reject(()=>decodeMode(mode),"nested respawn rule disagreement rejected: "+key);
         }
-        var state=Snapshot(); byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state)); var header=Header(state,json.Length);
+        var state=Snapshot(); byte[] json=Encoding.UTF8.GetBytes(SerializeFixture(state)); var header=Header(state,json.Length);
         Check(SdlpalBridge.Decode(header,json,777,123,10000).profile=="geshi-easy-v1","valid versioned snapshot");
         Reject(()=>SdlpalBridge.Decode(header,json,778,123,10000),"foreign PID rejected");
         Reject(()=>SdlpalBridge.Decode(header,json,777,124,10000),"reused PID creation time rejected");
         Reject(()=>SdlpalBridge.Decode(header,json,777,123,12001),"stale snapshot rejected");
         header[20]=3; Reject(()=>SdlpalBridge.Decode(header,json,777,123,10000),"odd seqlock rejected"); header[20]=2;
         header[8]=2; Reject(()=>SdlpalBridge.Decode(header,json,777,123,10000),"unknown protocol rejected"); header[8]=1;
-        state.verified=false; json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state)); Reject(()=>SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000),"unverified resources rejected");
-        state=Snapshot(); string missing=SdlpalBridge.Json().Serialize(state).Replace("\"diagnostic\":true,",""); json=Encoding.UTF8.GetBytes(missing);
+        state.verified=false; json=Encoding.UTF8.GetBytes(SerializeFixture(state)); Reject(()=>SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000),"unverified resources rejected");
+        state=Snapshot(); string missing=SerializeFixture(state).Replace("\"diagnostic\":true,",""); json=Encoding.UTF8.GetBytes(missing);
         Reject(()=>SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000),"missing diagnostic flag rejected");
         state=Snapshot();state.started=true;state.inventory=new[]{new SdlpalInventory{slot=0,id=61,amount=4}};
-        json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(state).Replace("\"amount\":4,",""));
+        json=Encoding.UTF8.GetBytes(SerializeFixture(state).Replace("\"amount\":4,",""));
         var optional=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);var unavailable=new SdlpalItemTracker();unavailable.Observe(optional);
         Check(optional.verified&&!unavailable.View.Available,"missing nested item quantity disables item data without fabricating zero or blocking timing identity");
         foreach(string path in paths)
         {
             json=File.ReadAllBytes(path); state=SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(new UTF8Encoding(false,true).GetString(json));
             var actual=SdlpalBridge.Decode(Header(state,json.Length),json,777,123,10000);
-            Check(actual.profile=="geshi-easy-v1"&&actual.diagnostic,"real native diagnostic snapshot decodes: "+Path.GetFileName(path));
+            bool formulaFixture=Path.GetFileName(path)=="verification-gameplay-snapshot.json"; bool contentFixture=formulaFixture||Path.GetFileName(path)=="verification-content.json";
+            string expectedProfile=formulaFixture?new DirectoryInfo(Path.GetDirectoryName(path)).Name+"-v1":contentFixture?new DirectoryInfo(Path.GetDirectoryName(path)).Parent.Name+"-v1":"geshi-easy-v1";
+            Check(actual.profile==expectedProfile&&actual.diagnostic,"real native diagnostic snapshot decodes: "+expectedProfile);
             var metadata=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(json));
             if(metadata.ContainsKey("rankingConfigurationId"))
                 Check((string)metadata["rankingConfigurationId"]==RankingConfiguration.Digest(actual.RankingFacts()),
                     "native title configuration ID matches timer ranking rules: "+Path.GetFileName(path));
             var items=new SdlpalItemTracker();items.Observe(actual);
+            if(contentFixture) {
+                if(formulaFixture) {
+                    Check(!actual.started&&!items.View.Available,"post-initialization diagnostic does not invent a running playthrough");
+                    Check(actual.gameplayRuleRevision==1&&SdlpalBridge.ValidGameplayRule(actual.profile,actual.gameplayRuleId,"1",actual.gameplayRuleSha256),"actual content publishes its complete canonical formula binding");
+                } else {
+                    Check(items.View.Available&&items.View.Rows.Select(row=>row.Id).OrderBy(id=>id).SequenceEqual(actual.itemIds.OrderBy(id=>id)),"actual runtime catalog remains complete for "+expectedProfile);
+                    Check(items.View.Rows.All(row=>row.ResourcePrice==actual.catalog.Single(c=>c.id==row.Id).data[1]),"item prices retain the selected content values");
+                }
+                var facts=actual.RankingFacts();
+                Check(new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(new GameplayIdentity {family=SdlpalBridge.ProfileFamily(actual.profile),content_id=actual.profile,content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=actual.fadeCycleMs,map_speed_ticks=0,walk_frame_ms=actual.walkFrameMs,speed=actual.speed,battle_speed=actual.battleSpeed}),"actual content ranking validates");
+                var onlineType=Assembly.LoadFrom(Path.Combine(root,"PalTimerOnline.dll")).GetType("Pal98Timer.GameplayIdentity",true);
+                var onlineIdentity=SdlpalBridge.Json().GetType().GetMethods().Single(m=>m.Name=="Deserialize"&&m.IsGenericMethodDefinition&&m.GetParameters().Length==1).MakeGenericMethod(onlineType).Invoke(SdlpalBridge.Json(),new object[]{SerializeFixture(new GameplayIdentity {family=SdlpalBridge.ProfileFamily(actual.profile),content_id=actual.profile,content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=actual.fadeCycleMs,map_speed_ticks=0,walk_frame_ms=actual.walkFrameMs,speed=actual.speed,battle_speed=actual.battleSpeed})});
+                Check((bool)onlineType.GetProperty("Valid",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(onlineIdentity,null),"shipped online module accepts actual content identity");
+                continue;
+            }
             Check(items.View.Available&&items.View.Rows.Any(row=>row.Id==585)&&!items.View.Rows.Any(row=>row.Id==571||row.Id==575),"native item catalog includes modified items and excludes initial magics: "+Path.GetFileName(path));
             Check(items.View.Rows.Single(row=>row.Id==61).ResourcePrice==150&&new[]{"銅錢鏢","铜钱镖"}.Contains(items.View.Rows.Single(row=>row.Id==344).Name),"native item names/prices come from current resources");
             Check(actual.scene==227 ? items.View.Cash==31265&&items.View.Kinds==80&&items.View.Quantity==355 :
@@ -154,10 +310,10 @@ internal static class SdlpalBehavior
                 "same-mode relay still accepts speed changes: "+state.wuqiang);
         }
         Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
-            byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            byte[] json=Encoding.UTF8.GetBytes(SerializeFixture(fields));
             return SdlpalBridge.Decode(Header(normal,json.Length),json,777,123,10000);
         };
-        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(normal));
+        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(normal));
         var fields=original();fields.Remove("wuqiang");Check(!decode(fields).wuqiang,"legacy missing no-wall field decodes as ordinary");
         foreach(bool mode in new[]{false,true})
         {
@@ -197,7 +353,7 @@ internal static class SdlpalBehavior
             {
                 run.Core.SaveBest();byte[] saved=File.ReadAllBytes(path);string legacyTimer=run.Core.GetRStr();
                 var reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(legacyTimer);reference.Remove("SdlpalWuQiangChanged");
-                Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(reference),run.Core.CurrentSnapshot.IdentityKey);
+                Call(run.Core,"ValidateImport",SerializeFixture(reference),run.Core.CurrentSnapshot.IdentityKey);
                 Check(true,"older ordinary-mode change metadata remains optional for references");
                 run.Engine.State.wuqiang=!initial;run.Engine.State.epoch++;run.Tick();
                 Check(run.Watch.IsRunning&&!run.Core.IsUIPause&&run.Core.ActiveBestPath!=path&&run.Core.GetScoreValidationError().Length>0,
@@ -222,10 +378,10 @@ internal static class SdlpalBehavior
     {
         var baseline=Snapshot();
         Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
-            byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            byte[] json=Encoding.UTF8.GetBytes(SerializeFixture(fields));
             return SdlpalBridge.Decode(Header(baseline,json.Length),json,777,123,10000);
         };
-        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SdlpalBridge.Json().Serialize(baseline));
+        Func<Dictionary<string,object>> original=()=>SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(baseline));
         var fields=original();fields.Remove("releaseRevision");
         Check(decode(fields).releaseRevision==null,"legacy snapshots do not invent a release revision");
         foreach(string revision in new[]{"r48","r49","r100"})
@@ -466,7 +622,7 @@ internal static class SdlpalBehavior
         }
         internal void Publish()
         {
-            byte[] json=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(State));byte[] header=Header(State,json.Length,Process.Id,(ulong)Process.StartTime.ToUniversalTime().ToFileTimeUtc(),SdlpalBridge.GetTickCount64());
+            byte[] json=Encoding.UTF8.GetBytes(SerializeFixture(State));byte[] header=Header(State,json.Length,Process.Id,(ulong)Process.StartTime.ToUniversalTime().ToFileTimeUtc(),SdlpalBridge.GetTickCount64());
             uint seq=View.ReadUInt32(20)+2;View.Write(20,seq|1);BitConverter.GetBytes(seq|1).CopyTo(header,20);View.WriteArray(0,header,0,header.Length);View.WriteArray(64,json,0,json.Length);Thread.MemoryBarrier();View.Write(20,seq&~1U);
         }
         internal Task Reply(uint expectedCommand, uint status=1, byte[] expectedLoad=null, Action<SdlpalSnapshot> beforeAck=null)
@@ -556,7 +712,7 @@ internal static class SdlpalBehavior
                 timeline["SdlpalStatuses"]=new[]{status.ToString(),CheckPointStatus.InProgress.ToString()};
                 core.Jump(0);
                 core.CheckPoints[0].SetCurrentTSForLoad(TimeSpan.FromSeconds(3));
-                imported=Call(core,"ValidateImport",SdlpalBridge.Json().Serialize(timeline),core.CurrentSnapshot.IdentityKey);
+                imported=Call(core,"ValidateImport",SerializeFixture(timeline),core.CurrentSnapshot.IdentityKey);
                 Call(core,"Restore",imported,core.CurrentSnapshot);
                 Check(core.CheckPoints[0].Status==status&&form.rr.GetItem(0).Status==status&&
                     form.rr.GetItem(0).Cur==core.CheckPoints[0].Current&&form.rr.GetItem(1).Status==CheckPointStatus.InProgress&&core.IsUIPause,
@@ -657,7 +813,7 @@ internal static class SdlpalBehavior
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             try
             {
-                File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));run.Core.RefreshBestReference();
+                File.WriteAllText(path,SerializeFixture(reference));run.Core.RefreshBestReference();
                 foreach(var edit in new Action<SdlpalSnapshot>[] {s=>s.speed=5,s=>s.speed=1,s=>s.speed=0,s=>s.battleSpeed=7,
                     s=>s.battleSpeed=1,s=>s.battleSpeed=0,s=>s.walkFrameMs=80,s=>s.walkFrameMs=100,s=>s.fadeCycleMs=600,s=>s.fadeCycleMs=1200})
                 {
@@ -666,7 +822,7 @@ internal static class SdlpalBehavior
                         "normal speed adjustment keeps timing, score evidence and live validity intact");
                     Check(current.FadeMilliseconds==run.Engine.State.fadeCycleMs&&current.MapSpeedTicks==initial.MapSpeedTicks&&current.TimelineId==initial.TimelineId&&
                         current.Gameplay.walk_frame_ms==run.Engine.State.walkFrameMs&&current.Gameplay.speed==run.Engine.State.speed&&current.Gameplay.battle_speed==run.Engine.State.battleSpeed&&
-                        SdlpalBridge.Json().Serialize(current.Ranking)==SdlpalBridge.Json().Serialize(initial.Ranking)&&current.Ranking.Valid(current.Gameplay),
+                        SerializeFixture(current.Ranking)==SerializeFixture(initial.Ranking)&&current.Ranking.Valid(current.Gameplay),
                         "real speed evidence changes while configuration and timeline remain stable");
                     Check(run.Core.ActiveBestPath==path&&run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(30)&&run.Core.CheckPoints[0].NickName=="Speed baseline 0",
                         "in-run speed changes preserve the loaded PB and its nickname");
@@ -685,7 +841,7 @@ internal static class SdlpalBehavior
                 var foreign=Clone(run.Core.CurrentSnapshot);foreign.resourceHashes["DATA.MKF"]=new string('e',64);
                 Reject(()=>Call(run.Core,"ValidateImport",exported,foreign.IdentityKey),"timeline import still rejects changed resources");
                 reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(exported);reference["SdlpalRoute"]=new string('e',64);
-                Reject(()=>Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(reference),run.Core.CurrentSnapshot.IdentityKey),"timeline import still rejects a changed route across speeds");
+                Reject(()=>Call(run.Core,"ValidateImport",SerializeFixture(reference),run.Core.CurrentSnapshot.IdentityKey),"timeline import still rejects a changed route across speeds");
             }
             finally {File.Delete(path);}
         }
@@ -983,7 +1139,7 @@ internal static class SdlpalBehavior
             var reference=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(run.Core.GetRStr());
             reference["CheckPoints"]=run.Core.CheckPoints.Select((point,index)=>new {name=point.Name,des="Reference A "+index,
                 time=index==0?"00:00:20.000":"00:02:00.000"}).ToArray();
-            string complete=SdlpalBridge.Json().Serialize(reference);
+            string complete=SerializeFixture(reference);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             Action assertCleared=()=>{
                 Check(run.Core.CheckPoints.All(point=>point.Best==TimeSpan.Zero)&&
@@ -1007,16 +1163,16 @@ internal static class SdlpalBehavior
                 Check(run.Core.CheckPoints[1].Best==TimeSpan.FromSeconds(120)&&run.Core.CheckPoints[1].NickName=="Reference A 1",
                     "switching back restores category A's reference");
                 reference["CheckPoints"]=new[]{new{name=run.Core.CheckPoints[0].Name,des="Partial",time="00:00:30.000"}};
-                File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));run.Core.RefreshBestReference();
+                File.WriteAllText(path,SerializeFixture(reference));run.Core.RefreshBestReference();
                 Check(run.Core.CheckPoints[0].Best==TimeSpan.FromSeconds(30)&&run.Core.CheckPoints[0].NickName=="Partial"&&
                     run.Core.CheckPoints[1].Best==TimeSpan.Zero&&run.Core.CheckPoints[1].GetNickName()==defaults[1],
                     "a partial reference resets omitted checkpoints to route defaults");
                 reference["CheckPoints"]=new object[]{new{name=run.Core.CheckPoints[0].Name,des="Invalid partial",time="00:00:40.000"},null};
-                string malformed=SdlpalBridge.Json().Serialize(reference);File.WriteAllText(path,malformed);
+                string malformed=SerializeFixture(reference);File.WriteAllText(path,malformed);
                 Reject(()=>run.Core.RefreshBestReference(),"an invalid reference after a valid first point is reported");assertCleared();
                 Check(File.ReadAllText(path)==malformed,"invalid reference input remains available for repair");
                 File.WriteAllText(path,complete);run.Core.RefreshBestReference();
-                reference["SdlpalCategory"]="wrong-category";File.WriteAllText(path,SdlpalBridge.Json().Serialize(reference));
+                reference["SdlpalCategory"]="wrong-category";File.WriteAllText(path,SerializeFixture(reference));
                 Reject(()=>run.Core.RefreshBestReference(),"foreign category reference is rejected");assertCleared();
                 Check(run.Core.CurrentStep==1&&run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==elapsed&&
                     run.Core.CheckPoints.Select(point=>point.Current).SequenceEqual(times)&&run.Core.CheckPoints.Select(point=>point.Status).SequenceEqual(statuses)&&
@@ -1081,7 +1237,7 @@ internal static class SdlpalBehavior
                 timeline["CheckPoints"]=run.Core.CheckPoints.Select((point,index)=>new {name=point.Name,
                     time=index==0&&source.Step>0?"00:00:20.123":index==1&&source.Step==2?"00:01:05.432":"00:00:00.000"}).ToArray();
                 timeline["SdlpalStatuses"]=new[]{source.First.ToString(),last.ToString()};
-                var imported=Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(timeline),run.Core.CurrentSnapshot.IdentityKey);
+                var imported=Call(run.Core,"ValidateImport",SerializeFixture(timeline),run.Core.CurrentSnapshot.IdentityKey);
                 Call(run.Core,"Restore",imported,run.Core.CurrentSnapshot);
                 Check(run.Core.IsUIPause&&!run.Watch.IsRunning&&run.Core.GetMainWatch()==TimeSpan.FromMilliseconds(83456)&&
                     run.Core.CurrentStep==source.Step&&run.Statuses(source.First,last)&&run.Assisted,name+": restore preserves progress, pauses and marks assistance");
@@ -1179,6 +1335,56 @@ internal static class SdlpalBehavior
     }
     static void MaintenanceProfiles()
     {
+        ClassicRouteTests();
+        foreach (string profile in new[]{"geshi-hard-v1", "geshi-nightwolf-v1", "geshi-fanmade-v1", "geshi-fanmade-entertainment-v1"})
+        {
+            var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
+            Check(rules.Length == 2 && SdlpalBridge.SupportedProfile(profile), "independent Geshi route: " + profile);
+            var fight = new SdlpalBattleEvent{team=315,enemies=new[]{547},result=3};
+            Check(rules[0].Matches(fight), "Geshi audited eight-headed serpent victory");
+            fight.result = 1; Check(!rules[0].Matches(fight), "Geshi defeat cannot split");
+            fight.result = 3; fight.team = 314; Check(!rules[0].Matches(fight), "another team cannot split Geshi");
+            var state = Snapshot(); state.profile = profile; state.started = false;
+            var observer = new SdlpalRunObserver(); observer.Observe(Clone(state),rules);
+            state.started = true; observer.Observe(Clone(state),rules);
+            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=315,enemies=new[]{547},result=3}};
+            observer.Observe(Clone(state),rules);
+            Check(!observer.Reached.Contains(rules[1].Id), "Geshi boss victory waits for the ending");
+            state.completed = true; observer.Observe(Clone(state),rules);
+            Check(observer.Reached.Contains(rules[1].Id), "actual Geshi ending completes route");
+            var facts = state.RankingFacts();
+            Check(facts["profile"] == profile && facts["family"] == "sdlpal-geshi", "Geshi difficulty keeps independent ranking identity");
+        }
+        foreach (string profile in new[]{"mogai10-v1", "tianqi20-v1", "dream211-v1", "dream211-pudu-v1",
+            "dream211-yueying-v1", "dream211-yueying-rat-v1", "hunqian-branch-v1", "hunqian167-easy-v1", "hunqian167-hard-v1"})
+        {
+            var expanded = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(expanded);
+            int count = profile == "tianqi20-v1" ? 17 : profile == "dream211-v1" || profile == "dream211-pudu-v1" ? 21 : 18;
+            Check(expanded.Length == count && SdlpalBridge.SupportedProfile(profile), "independent expanded route: " + profile);
+            var ending = expanded.Last();
+            Check(ending.Kind == "completion" && !ending.Team.HasValue && !ending.Scene.HasValue && !ending.Enemy.HasValue,
+                "expanded endings wait for the actual ending instead of reusing a Dream boss");
+            var state = Snapshot(); state.profile = profile; state.started = true; state.music = 23; state.scene = 106;
+            var tower = expanded.Single(r => r.Id == "dream-tower");
+            Check(!tower.MatchesState(state), "same music in an earlier scene cannot split the tower");
+            state.scene = 144; Check(tower.MatchesState(state), "tower music splits in its audited scene");
+            var observer = new SdlpalRunObserver(); state.started = false; observer.Observe(Clone(state), expanded);
+            state.started = true; observer.Observe(Clone(state), expanded);
+            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=389,scene=297,enemies=new[]{576},result=3}};
+            observer.Observe(Clone(state), expanded);
+            Check(!observer.Reached.Contains(ending.Id), "foreign Dream final battle cannot complete expanded content");
+            state.completed = true; observer.Observe(Clone(state), expanded);
+            Check(observer.Reached.Contains(ending.Id), "actual ending observation completes expanded content");
+            foreach (var rule in expanded.Where(r => r.Kind == "battle" || r.Kind == "battle-end"))
+            {
+                var fight = new SdlpalBattleEvent{team=rule.Team.Value,scene=rule.Scenes[0],enemies=new[]{rule.Enemy.Value},result=3};
+                Check(rule.Matches(fight), "expanded audited battle: " + rule.Id);
+                fight.scene = 1; Check(!rule.Matches(fight), "shared enemy in another scene cannot split expanded route");
+            }
+            var facts = state.RankingFacts();
+            Check(facts["profile"] == profile && facts["family"] == SdlpalBridge.ProfileFamily(profile),
+                "expanded profile keeps its own ranking family");
+        }
         var paths = new HashSet<string>();
         foreach (string profile in new[]{"dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"})
         {
@@ -1237,6 +1443,83 @@ internal static class SdlpalBehavior
             }
         }
     }
+    static void ClassicRouteTests()
+    {
+        foreach (string profile in new[] { "pal-dos-v1", "pal98-classic-v6-v1" })
+        {
+            bool dos = profile == "pal-dos-v1";
+            var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
+            Check(rules.Length == 21 && SdlpalBridge.SupportedProfile(profile), "classic route retains all 21 native checkpoints: " + profile);
+            Check(SdlpalBridge.ProfileFamily(profile) == (dos ? "sdlpal-dos" : "sdlpal-classic98"), "new content has its own ranking family");
+            Check(rules.Single(r => r.Name == "进十年前").Scene == (dos ? 227 : 247) &&
+                rules.Single(r => r.Name == "祈雨").Scene == (dos ? 258 : 228), "late DOS scene reorder is not an offset from Win95");
+            foreach (var rule in rules.Where(r => r.Kind == "battle" || r.Kind == "battle-end" || r.Kind == "completion"))
+            {
+                var battle = new SdlpalBattleEvent { scene = rule.Scene.Value, team = rule.Team.Value, enemies = new[] { rule.Enemy.Value }, result = 3 };
+                Check(rule.Matches(battle), "audited classic battle matches " + rule.Name);
+                battle.scene++; Check(!rule.Matches(battle), "same enemy in another scene cannot split " + rule.Name);
+                battle.scene--; battle.result = 1;
+                Check(rule.Matches(battle) == (rule.Kind == "battle-end"), "Caiyi alone accepts non-victory battle end");
+            }
+            var ending = rules.Last();
+            Check(ending.Scene == (dos ? 281 : 282) && ending.Team == 313 && ending.Enemy == 546,
+                "classic final battle uses Baiyue instead of the Dream final boss");
+            var tower = rules.Single(r => r.Name == "进锁妖塔");
+            var state = Snapshot(); state.profile = profile; state.started = true;
+            foreach (var location in tower.Alternatives)
+            {
+                state.scene = location.Scene; state.viewportX = location.X ?? 0; state.viewportY = location.Y ?? 0;
+                Check(tower.MatchesState(state), "each native tower alternative completes the same single node");
+                if (location.X.HasValue) { state.viewportX += location.Radius.Value * 16 + 1; Check(!tower.MatchesState(state), "tower position bounds are exact"); }
+            }
+            var changed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(SerializeFixture(rules));
+            changed.Single(r => r.Name == "进锁妖塔").Alternatives = tower.Alternatives.Reverse().ToArray();
+            Check(SdlpalSplitRule.Identity(rules) == SdlpalSplitRule.Identity(changed), "OR entry order is not a new route");
+            changed.Single(r => r.Name == "水灵珠").ReturnScene++;
+            Check(SdlpalSplitRule.Identity(rules) != SdlpalSplitRule.Identity(changed), "water-pearl return scene changes route identity");
+            changed.Single(r => r.Name == "进锁妖塔").Alternatives = new[] { new SdlpalLocationRule { Scene = 3, X = 1 } };
+            Reject(() => SdlpalSplitRule.Validate(changed), "partial alternative coordinates are rejected");
+
+            var pearl = rules.Single(r => r.Name == "水灵珠");
+            Func<SdlpalSnapshot> exchange = () => {
+                var s = Snapshot(); s.profile = profile; s.started = true; s.scene = pearl.Scene.Value;
+                s.partyOffsetX = 160; s.partyOffsetY = 112; s.partyDirection = 3;
+                s.viewportX = 1072 - 160; s.viewportY = 1608 - 112;
+                s.inventory = new[] { new SdlpalInventory { id = 265, amount = 0 } }; return s;
+            };
+            var observer = new SdlpalRunObserver(); state = exchange(); observer.Observe(Clone(state), rules);
+            state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(observer.Reached.Contains(pearl.Id), "manual exchange requires a count increase in the correct facing range");
+            observer = new SdlpalRunObserver(); state = exchange(); state.partyDirection = 1;
+            observer.Observe(Clone(state), rules); state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "wrong facing cannot claim an exchange merely from owning the pearl");
+            observer = new SdlpalRunObserver(); state = exchange(); observer.Observe(Clone(state), rules);
+            state.epoch++; state.loadedFrom = 1; state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "load epoch rebases pearl count without fabricating an exchange");
+            observer = new SdlpalRunObserver(); state = exchange(); state.partyDirection = null;
+            observer.Observe(Clone(state), rules); state.inventory[0].amount = 1; observer.Observe(Clone(state), rules);
+            Check(!observer.Reached.Contains(pearl.Id), "legacy snapshot lacking facing does not guess a water-pearl checkpoint");
+            state.partyDirection = 0; state.scene = pearl.ReturnScene.Value;
+            state.viewportX = 1168 - 160; state.viewportY = 760 - 112;
+            observer.Observe(Clone(state), rules);
+            Check(observer.Reached.Contains(pearl.Id), "return to Dali with pearl follows the original fallback gate");
+            using (var editor = new SdlpalRulesForm(rules, state))
+            {
+                var bar = editor.Controls.OfType<System.Windows.Forms.FlowLayoutPanel>().Single();
+                var button = bar.Controls.OfType<System.Windows.Forms.Button>().Single(b => b.Text == "验证并保存");
+                typeof(System.Windows.Forms.Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                Check(editor.Rules != null && SdlpalSplitRule.Identity(editor.Rules) == SdlpalSplitRule.Identity(rules),
+                    "actual route editor roundtrip retains composite gates");
+            }
+        }
+        Reject(() => SdlpalDreamRoutes.ForProfile("future-unknown-v1"), "unknown content never inherits the Dream route");
+        foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
+        {
+            var s = Snapshot(); var fields = SdlpalBridge.Json().Deserialize<Dictionary<string, object>>(SerializeFixture(s));
+            fields[key] = "1"; byte[] payload = Encoding.UTF8.GetBytes(SerializeFixture(fields));
+            Reject(() => SdlpalBridge.Decode(Header(s, payload.Length), payload, 777, 123, 10000), "party coordinates never coerce text: " + key);
+        }
+    }
     static void BestConfigurationTests()
     {
         string[] profiles={"geshi-easy-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dream22-puppet100-v1"};
@@ -1269,10 +1552,10 @@ internal static class SdlpalBehavior
                 Check(File.Exists(path),"explicit reset allows saving the current configuration PB: "+profile);
                 var legacy=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(run.Core.GetRStr());
                 legacy.Remove("SdlpalBestConfigurationChanged");
-                Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(legacy),run.Core.CurrentSnapshot.IdentityKey);
+                Call(run.Core,"ValidateImport",SerializeFixture(legacy),run.Core.CurrentSnapshot.IdentityKey);
                 Check(true,"old timeline without configuration-change metadata remains readable: "+profile);
                 legacy["SdlpalBestConfigurationChanged"]="false";
-                Reject(()=>Call(run.Core,"ValidateImport",SdlpalBridge.Json().Serialize(legacy),run.Core.CurrentSnapshot.IdentityKey),
+                Reject(()=>Call(run.Core,"ValidateImport",SerializeFixture(legacy),run.Core.CurrentSnapshot.IdentityKey),
                     "non-boolean configuration-change metadata is rejected: "+profile);
             }
             finally {File.Delete(path);}
@@ -1425,6 +1708,8 @@ internal static class SdlpalBehavior
             bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
             if(args.Contains("--split-display-only")) {SplitDisplayTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--best-configuration-only")) {BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;}
+            if(args.Contains("--throw-formula-only")) {DreamspaceThrowTests();Console.WriteLine("PASS total="+count);return 0;}
+            if(args.Contains("--native-snapshots-only")) {DecodeTests(args.Where(arg=>arg!="--native-snapshots-only").ToArray());Console.WriteLine("PASS total="+count);return 0;}
             if(noGui&&args.Contains("--ui")) throw new ArgumentException("--no-gui cannot be combined with --ui");
             if(args.Length==1&&args[0]=="--ui")
             {
@@ -1432,7 +1717,7 @@ internal static class SdlpalBehavior
                 var state=Snapshot();state.battle.active=true;state.battle.team=163;
                 using(var editor=new SdlpalRulesForm(SdlpalSplitRule.Defaults(),state))
                     if(editor.ShowDialog()==System.Windows.Forms.DialogResult.OK)
-                        File.WriteAllText(Path.Combine(root,"ui-rules-result.json"),SdlpalBridge.Json().Serialize(editor.Rules));
+                        File.WriteAllText(Path.Combine(root,"ui-rules-result.json"),SerializeFixture(editor.Rules));
                 var entry=new Dx9OverlayTimelineEntry("八头蛇胜利","01:00:00.00","00:58:10.50",-110,false,true);
                 var layout=Dx9OverlayLayoutSettings.CreateDefault();layout.HasWindowPosition=true;layout.WindowLeft=280;layout.WindowTop=180;
                 using(var overlay=new Dx9OverlayForm(()=>new Dx9OverlaySnapshot(IntPtr.Zero,"Microsoft YaHei UI","01:02:03.45","12.3s","00:02:01.00","隔世追凶（简单）  金钱 10000",1,entry,
@@ -1443,7 +1728,7 @@ internal static class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
+            GameLoadResumeTests();IsolationTests();RankingTests();GameplayRuleTests();DreamspaceThrowTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

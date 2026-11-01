@@ -17,7 +17,12 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**维护构建：3.38.4（文件版本 3.38.4.3）/ Online 1.0.0.15；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.6（文件版本 3.38.6.0）/ Online 1.0.2.0；需要 .NET Framework 4.7.2 框架**
+
+2026-11-01：原版和 SDLPal-lostedit 合并为同一默认源码线、同一份程序与认证组合；
+吸收 SDL r100 的 20 种内容和路线，保留原版 1.7.2.3、怀旧与在线挑战支持。
+今后两种游戏包直接复用同次构建，核心、最佳线、榜单和云会话继续分开。
+构建、安装和云激活边界见 [统一计时器说明](docs/UNIFIED_TIMER.md)。Refs othercat/PALDLL_DX9#266。
 
 2026-10-27 / r59：修复改版自动识别或切换内容后，主窗口分段列表右侧实时计时消失的问题。重建列表时恢复当前阶段、已有分段时间和完成状态，也处理界面回调晚于阶段推进的情况。四套内容适用；主计时、暂停、存读档累计和榜单配置身份不变。EXE、Online、Auth 与公开登记须使用新的配套组合，需独立构建批准。Refs #40。
 

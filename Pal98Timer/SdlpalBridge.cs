@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -58,6 +59,10 @@ namespace Pal98Timer
         public bool wuqiang { get; set; }
         public bool monsterRush { get; set; }
         public bool invisibleMonsters { get; set; }
+        public bool dreamspaceThrowFormula { get; set; }
+        public string gameplayRuleId { get; set; }
+        public int? gameplayRuleRevision { get; set; }
+        public string gameplayRuleSha256 { get; set; }
         public string respawnRule { get; set; }
         public string releaseRevision { get; set; }
         public string resourceHash { get; set; }
@@ -82,6 +87,7 @@ namespace Pal98Timer
         public int scene { get; set; }
         public int map { get; set; }
         public int viewportX { get; set; } public int viewportY { get; set; } public int music { get; set; }
+        public int? partyOffsetX { get; set; } public int? partyOffsetY { get; set; } public int? partyDirection { get; set; }
         public long cash { get; set; }
         public SdlpalBattle battle { get; set; }
         public SdlpalBattleEvent[] battleEvents { get; set; }
@@ -118,13 +124,21 @@ namespace Pal98Timer
             if (!string.IsNullOrEmpty(respawnRule)) facts["respawn_rule"] = respawnRule;
             if (monsterRush) facts["monster_rush"] = "1";
             if (invisibleMonsters) facts["invisible_monsters"] = "1";
+            if (gameplayRuleId != null) {
+                facts["gameplay.rule"] = gameplayRuleId;
+                facts["gameplay.revision"] = gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                facts["gameplay.sha256"] = gameplayRuleSha256;
+            }
+            // The optional throw formula is informational, not a score category.
             return facts;
         }
         internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
             (wuqiang ? "|wuqiang=1" : "") +
             (!string.IsNullOrEmpty(respawnRule) ? "|respawn_rule=" + respawnRule : "") +
-            (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "");
+            (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "") +
+            (gameplayRuleId == null ? "" : "|gameplay.rule=" + gameplayRuleId + "|gameplay.revision=" +
+                gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|gameplay.sha256=" + gameplayRuleSha256);
         internal string IdentityKey => ResourceEngineIdentity + "|" + walkFrameMs + "|" + fadeCycleMs + "|" + speed + "|" + battleSpeed;
         internal SdlpalSnapshot WithSpeedConfiguration(SdlpalSnapshot source)
         {
@@ -158,9 +172,9 @@ namespace Pal98Timer
     // identify its actual live owner; callers cannot use a PID from its JSON.
     internal sealed class SdlpalBridge : IDisposable
     {
-        internal static bool SupportedProfile(string value) => value == "geshi-easy-v1" || value == "dream22-puppet100-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1";
-        internal static string ProfileFamily(string value) => value == "dream22-puppet100-v1" ? "sdlpal-dream22" : value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
-        internal static string ProfileName(string value) => value == "dream22-puppet100-v1" ? "梦幻2.2-傀儡100%" : value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
+        internal static bool SupportedProfile(string value) => value == "pal-dos-v1" || value == "pal98-classic-v6-v1" || value == "geshi-easy-v1" || value == "dream22-puppet100-v1" || value == "dream222-normal-v1" || value == "dream222-hard-v1" || value == "dreamspace39x-hard-v1" || value == "dream211-v1" || value == "hunqian-branch-v1" || value == "hunqian167-easy-v1" || value == "hunqian167-hard-v1" || value == "mogai10-v1" || value == "dream211-pudu-v1" || value == "dream211-yueying-v1" || value == "tianqi20-v1" || value == "dream211-yueying-rat-v1" || value == "geshi-hard-v1" || value == "geshi-nightwolf-v1" || value == "geshi-fanmade-v1" || value == "geshi-fanmade-entertainment-v1";
+        internal static string ProfileFamily(string value) => value == "pal-dos-v1" ? "sdlpal-dos" : value == "pal98-classic-v6-v1" ? "sdlpal-classic98" : value == "geshi-hard-v1" ? "sdlpal-geshi" : value == "geshi-nightwolf-v1" ? "sdlpal-geshi" : value == "geshi-fanmade-v1" ? "sdlpal-geshi" : value == "geshi-fanmade-entertainment-v1" ? "sdlpal-geshi" : value == "dream211-v1" ? "sdlpal-dream211" : value == "hunqian-branch-v1" ? "sdlpal-hunqian-branch" : value == "hunqian167-easy-v1" ? "sdlpal-hunqian167" : value == "hunqian167-hard-v1" ? "sdlpal-hunqian167" : value == "mogai10-v1" ? "sdlpal-mogai10" : value == "dream211-pudu-v1" ? "sdlpal-dream211" : value == "dream211-yueying-v1" ? "sdlpal-dream211" : value == "tianqi20-v1" ? "sdlpal-tianqi20" : value == "dream211-yueying-rat-v1" ? "sdlpal-dream211" : value == "dream22-puppet100-v1" ? "sdlpal-dream22" : value == "geshi-easy-v1" ? "sdlpal-geshi-easy" : value == "dream222-normal-v1" || value == "dream222-hard-v1" ? "sdlpal-dream222" : value == "dreamspace39x-hard-v1" ? "sdlpal-dreamspace39x" : "";
+        internal static string ProfileName(string value) => value == "pal-dos-v1" ? "仙剑DOS原版" : value == "pal98-classic-v6-v1" ? "98柔情经典速通v6" : value == "geshi-hard-v1" ? "隔世追凶·困难" : value == "geshi-nightwolf-v1" ? "隔世追凶·夜狼非人" : value == "geshi-fanmade-v1" ? "隔世追凶·非人饭制" : value == "geshi-fanmade-entertainment-v1" ? "隔世追凶·非人饭制娱乐" : value == "dream211-v1" ? "梦幻2.11" : value == "hunqian-branch-v1" ? "魂牵梦萦 初版分支" : value == "hunqian167-easy-v1" ? "魂牵梦萦1.67 简单" : value == "hunqian167-hard-v1" ? "魂牵梦萦1.67 困难" : value == "mogai10-v1" ? "魔改1.0" : value == "dream211-pudu-v1" ? "梦幻2.11 普渡" : value == "dream211-yueying-v1" ? "梦幻2.11 月影" : value == "tianqi20-v1" ? "天启神佑2.0" : value == "dream211-yueying-rat-v1" ? "梦幻2.11 月影鼠年祈福篇" : value == "dream22-puppet100-v1" ? "梦幻2.2-傀儡100%" : value == "dream222-normal-v1" ? "梦幻2.2.2-普通" : value == "dream222-hard-v1" ? "梦幻2.2.2-高难" : value == "dreamspace39x-hard-v1" ? "梦时空3.9x-高难" : "隔世追凶-简单";
         internal const int Capacity = 4194304, HeaderSize = 64;
         internal const string Prefix = "Local\\SDLPAL.LostEdit.v1.";
         private readonly object gate = new object();
@@ -172,7 +186,65 @@ namespace Pal98Timer
         internal string Error { get; private set; } = "等待隔世追凶-简单";
         [DllImport("kernel32.dll")] internal static extern ulong GetTickCount64();
         internal static bool Digest(string text) => text != null && text.Length == 64 && text.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
+        internal static bool ValidGameplayRule(string profile, string id, string revision, string hash)
+        {
+            int number;
+            return SupportedProfile(profile) && id != null && id.Length <= 96 &&
+                Regex.IsMatch(id, "\\A" + Regex.Escape(profile.Substring(0, profile.Length - 3)) + "-rules-v[1-9][0-9]{0,5}\\z") &&
+                int.TryParse(revision, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out number) && number > 0 &&
+                revision == number.ToString(System.Globalization.CultureInfo.InvariantCulture) && Digest(hash);
+        }
+        internal static void ValidateGameplayRuleFields(Dictionary<string, object> fields, SdlpalSnapshot value)
+        {
+            string[] names = { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256" };
+            object nested;
+            var identity = fields.TryGetValue("identity", out nested) ? nested as Dictionary<string, object> : null;
+            bool present = names.Any(fields.ContainsKey), inside = identity != null && names.Any(identity.ContainsKey);
+            if (!present && !inside && value.gameplayRuleId == null && value.gameplayRuleRevision == null && value.gameplayRuleSha256 == null) return;
+            if (!names.All(fields.ContainsKey) || identity == null || !names.All(identity.ContainsKey) ||
+                !(fields[names[0]] is string) || !(fields[names[1]] is int) || !(fields[names[2]] is string) ||
+                names.Any(n => !Equals(fields[n], identity[n])) ||
+                !Equals(fields[names[0]], value.gameplayRuleId) || !Equals(fields[names[1]], value.gameplayRuleRevision) || !Equals(fields[names[2]], value.gameplayRuleSha256) ||
+                !ValidGameplayRule(value.profile, value.gameplayRuleId,
+                    value.gameplayRuleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture), value.gameplayRuleSha256))
+                throw new InvalidDataException("公式身份字段不完整、内容不符或内外层不一致");
+        }
+        internal static void ValidateGameplayRuleJson(string json)
+        {
+            // JavaScriptSerializer maps CLR members without case sensitivity
+            // and replaces repeated JSON keys. Check the wire before that
+            // conversion so aliases or duplicate keys cannot hide a binding.
+            var root = new HashSet<string>(StringComparer.Ordinal);
+            var inner = new HashSet<string>(StringComparer.Ordinal);
+            string parent = null;
+            try {
+            using (var reader = System.Runtime.Serialization.Json.JsonReaderWriterFactory.CreateJsonReader(
+                Encoding.UTF8.GetBytes(json), System.Xml.XmlDictionaryReaderQuotas.Max))
+            while (reader.Read())
+            {
+                if (reader.NodeType != System.Xml.XmlNodeType.Element) continue;
+                string name = reader.GetAttribute("item") ?? reader.LocalName;
+                if (reader.Depth == 1) parent = name;
+                if (reader.Depth != 1 && !(reader.Depth == 2 && parent == "identity")) continue;
+                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity" })
+                    if (name.Equals(key, StringComparison.OrdinalIgnoreCase) && name != key)
+                        throw new InvalidDataException("公式身份字段大小写不规范");
+                if (!(reader.Depth == 1 ? root : inner).Add(name))
+                    throw new InvalidDataException("游戏快照含重复身份字段");
+            }
+            } catch (Exception ex) when (ex is System.Xml.XmlException || ex is System.Runtime.Serialization.SerializationException) {
+                throw new InvalidDataException("游戏快照 JSON 无效", ex);
+            }
+        }
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer { MaxJsonLength = Capacity, RecursionLimit = 32 };
+        internal static SdlpalSnapshot ReadSnapshotJson(string json)
+        {
+            ValidateGameplayRuleJson(json);
+            var serializer = Json();
+            var value = serializer.Deserialize<SdlpalSnapshot>(json);
+            ValidateGameplayRuleFields(serializer.Deserialize<Dictionary<string, object>>(json), value);
+            return value;
+        }
         internal static string HashFile(string path)
         {
             using (var file = File.OpenRead(path)) using (var sha = SHA256.Create())
@@ -191,6 +263,7 @@ namespace Pal98Timer
             ulong published = BitConverter.ToUInt64(header, 56);
             if (published > now || now - published > 2000) throw new InvalidDataException("游戏快照已过期");
             string json = new UTF8Encoding(false, true).GetString(payload);
+            ValidateGameplayRuleJson(json);
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(json);
             string[] required = { "schema", "profile", "verified", "diagnostic", "resourceHash", "resourceHashes", "build", "exeHash",
@@ -219,17 +292,24 @@ namespace Pal98Timer
                 releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
                 validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
-            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "respawnRule" })
+            ValidateGameplayRuleFields(fields, value);
+            foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
+                if (fields.TryGetValue(key, out object coordinate) && coordinate != null &&
+                    (!(coordinate is int) || (int)coordinate < 0 || (int)coordinate > (key == "partyDirection" ? 3 : 65535)))
+                    throw new InvalidDataException("队伍触发位置字段无效");
+            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "respawnRule", "dreamspaceThrowFormula" })
             {
                 object field;
                 bool present = fields.TryGetValue(key, out field);
                 if (present && (key == "respawnRule" ? field != null && !(field is string) : !(field is bool)))
-                    throw new InvalidDataException("怪物模式字段无效");
+                    throw new InvalidDataException("玩法规则字段无效");
                 object nestedField;
                 if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> modeIdentity &&
                     modeIdentity.TryGetValue(key, out nestedField) && (!present || !Equals(nestedField, field)))
-                    throw new InvalidDataException("怪物模式身份与状态不一致");
+                    throw new InvalidDataException("玩法规则身份与状态不一致");
             }
+            if (value.dreamspaceThrowFormula && value.profile != "dreamspace39x-hard-v1")
+                throw new InvalidDataException("梦时空投掷公式不适用于当前内容");
             if (!string.IsNullOrEmpty(value.respawnRule) && value.respawnRule != "pal98-current-scene-v1" ||
                 (value.monsterRush || value.invisibleMonsters) && value.respawnRule != "pal98-current-scene-v1")
                 throw new InvalidDataException("未知怪物刷新规则");

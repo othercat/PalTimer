@@ -19,6 +19,7 @@ namespace Pal98Timer
         internal const string Scope = "timer-online";
         internal const string MaintenanceFeature = "sdl-maintenance.v1";
         internal const string ContentEffectsFeature = "sdl-content-effects.v1";
+        internal const string MaintenanceLiveFeature = "sdl-live-identity.v1";
         internal static bool ReleaseRevision(string value) => value != null && Regex.IsMatch(value, @"\Ar[1-9][0-9]{0,5}\z");
         internal const string RestartTimeFeature = "restart-time.v1";
         internal static string SerializeRun(CompetitionRun run, bool includeRestartTime = true) {

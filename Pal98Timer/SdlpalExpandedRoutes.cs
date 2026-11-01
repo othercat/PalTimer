@@ -1,0 +1,217 @@
+﻿using System;
+namespace Pal98Timer
+{
+    // Refs #43; exact resources and route nodes: docs/expanded-sdlpal-routes.json.
+    internal static class SdlpalExpandedRoutes
+    {
+        internal static bool Supports(string profile) => profile == "dream211-v1" || profile == "hunqian-branch-v1" || profile == "hunqian167-easy-v1" || profile == "hunqian167-hard-v1" || profile == "mogai10-v1" || profile == "dream211-pudu-v1" || profile == "dream211-yueying-v1" || profile == "tianqi20-v1" || profile == "dream211-yueying-rat-v1" || profile == "geshi-hard-v1" || profile == "geshi-nightwolf-v1" || profile == "geshi-fanmade-v1" || profile == "geshi-fanmade-entertainment-v1";
+        internal static SdlpalSplitRule[] ForProfile(string profile)
+        {
+            switch (profile)
+            {
+                case "dream211-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-seven-poisons", Name = "过黑凤凰", Kind = "battle", Team = 189, Enemy = 533, Scenes = new[] { 224 } },
+                    new SdlpalSplitRule { Id = "dream-blood-dragon", Name = "过林天南幻影", Kind = "battle", Team = 386, Enemy = 572, Scenes = new[] { 295 } },
+                    new SdlpalSplitRule { Id = "dream-five-dragons", Name = "过五神龙", Kind = "battle", Team = 387, Enemy = 541, Scenes = new[] { 213 } },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "hunqian-branch-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "hunqian167-easy-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "hunqian167-hard-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "mogai10-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "dream211-pudu-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-seven-poisons", Name = "过黑凤凰", Kind = "battle", Team = 189, Enemy = 533, Scenes = new[] { 224 } },
+                    new SdlpalSplitRule { Id = "dream-blood-dragon", Name = "过林天南幻影", Kind = "battle", Team = 386, Enemy = 572, Scenes = new[] { 295 } },
+                    new SdlpalSplitRule { Id = "dream-five-dragons", Name = "过五神龙", Kind = "battle", Team = 387, Enemy = 541, Scenes = new[] { 213 } },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "dream211-yueying-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "tianqi20-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过镇狱明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过幻觉", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月哥哥", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 278 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "dream211-yueying-rat-v1": return new[] {
+                    new SdlpalSplitRule { Id = "dream-ship", Name = "上船", Kind = "position", Scene = 5, X = 1076, Y = 1082, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-snake-cave", Name = "出蛇洞", Kind = "position", Scene = 48, X = 304, Y = 1560, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-zhixiu", Name = "过智修大师", Kind = "battle", Team = 35, Enemy = 524, Scenes = new[] { 58 } },
+                    new SdlpalSplitRule { Id = "dream-ghost-general", Name = "过僵尸王", Kind = "battle", Team = 26, Enemy = 472, Scenes = new[] { 65 } },
+                    new SdlpalSplitRule { Id = "dream-red-ghost", Name = "过赤鬼王", Kind = "battle", Team = 27, Enemy = 473, Scenes = new[] { 59 } },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-in", Name = "进扬州", Kind = "position", Scene = 82, X = 288, Y = 1072, Radius = 5 },
+                    new SdlpalSplitRule { Id = "dream-yangzhou-out", Name = "出扬州", Kind = "position", Scene = 105, X = 64, Y = 960, Radius = 3 },
+                    new SdlpalSplitRule { Id = "dream-ghost-mother", Name = "过金蟾鬼母", Kind = "battle", Team = 36, Enemy = 500, Scenes = new[] { 103 } },
+                    new SdlpalSplitRule { Id = "dream-caiyi", Name = "彩依初战结束", Kind = "battle-end", Team = 39, Enemy = 468, Scenes = new[] { 108 } },
+                    new SdlpalSplitRule { Id = "dream-sword-elder", Name = "过剑老头", Kind = "battle", Team = 163, Enemy = 494, Scenes = new[] { 147 } },
+                    new SdlpalSplitRule { Id = "dream-mingwang", Name = "过明王", Kind = "battle", Team = 188, Enemy = 519, Scenes = new[] { 145 } },
+                    new SdlpalSplitRule { Id = "dream-tower", Name = "拆塔", Kind = "music", Music = 23, Scene = 144 },
+                    new SdlpalSplitRule { Id = "dream-phoenix", Name = "过凤凰", Kind = "battle", Team = 203, Enemy = 464, Scenes = new[] { 185 } },
+                    new SdlpalSplitRule { Id = "dream-wood", Name = "过木灵道士", Kind = "battle", Team = 221, Enemy = 474, Scenes = new[] { 181 } },
+                    new SdlpalSplitRule { Id = "dream-fire", Name = "过麒麟", Kind = "battle", Team = 224, Enemy = 463, Scenes = new[] { 200 } },
+                    new SdlpalSplitRule { Id = "dream-past", Name = "获得水灵珠", Kind = "item", Item = 265 },
+                    new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
+                    new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
+                };
+                case "geshi-hard-v1": return new[] {
+                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
+                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
+                };
+                case "geshi-nightwolf-v1": return new[] {
+                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
+                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
+                };
+                case "geshi-fanmade-v1": return new[] {
+                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
+                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
+                };
+                case "geshi-fanmade-entertainment-v1": return new[] {
+                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
+                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
+                };
+                default: throw new ArgumentException("Unknown expanded maintenance profile");
+            }
+        }
+    }
+}

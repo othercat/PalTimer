@@ -131,6 +131,7 @@
     </Reference>
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="$(PalSharedSourceRoot)\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
@@ -138,6 +139,8 @@
     <Compile Include="SdlpalGeshi.cs" />
     <Compile Include="MaintenanceExecutable.cs" />
     <Compile Include="SdlpalDreamRoutes.cs" />
+    <Compile Include="SdlpalClassicRoutes.cs" />
+    <Compile Include="SdlpalExpandedRoutes.cs" />
     <Compile Include="SdlpalItems.cs" />
     <Compile Include="SdlpalItemsForm.cs" />
     <Compile Include="SdlpalRelay.cs" />

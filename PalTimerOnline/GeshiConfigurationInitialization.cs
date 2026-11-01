@@ -77,7 +77,7 @@ namespace Pal98Timer
         {
             try
             {
-                var snapshot = SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(CompetitionStorage.ReadBounded(snapshotFile, SdlpalBridge.Capacity));
+                var snapshot = SdlpalBridge.ReadSnapshotJson(CompetitionStorage.ReadBounded(snapshotFile, SdlpalBridge.Capacity));
                 var storage = new CompetitionStorage();
                 // This administrative action never creates/replaces credentials.
                 if (!File.Exists(Path.Combine(storage.Root, CompetitionProtocol.Hash(Origin) + ".device")))
