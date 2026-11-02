@@ -45,6 +45,9 @@ internal static partial class ChallengeBehavior
             var value = new Dictionary<string, object> {{"protocol", ChallengeContract.ServerProtocol}, {"as_of", "2026-10-29T00:00:00Z"}};
             if (path.EndsWith("/devices")) {
                 value["protocol"] = CompetitionProtocol.Online; value["device_id"] = deviceId; value["player"] = Player;
+            } else if (path.EndsWith("/join-code")) {
+                Check(method == "POST" && (string)ChallengeContract.Object(body)["code"] == "000123", "invitation preserves leading zeroes without player identity in its body");
+                value["challenge_id"] = challengeId;
             } else if (path.Contains("/catalog?")) {
                 value["items"] = new[] {Item()}; value["next_offset"] = null; value["total"] = 1;
                 value["contents"] = new Dictionary<string, string> {{"pal98-classic-v6", "98柔情经典速通v6"}};
@@ -118,6 +121,13 @@ internal static partial class ChallengeBehavior
         result = await request("{\"action\":\"refresh_identity\"}");
         Check(result.ok && result.state.player.id == playerId, "approval refresh sees bound player");
         Check(Pal98.LocalDisplay.LocalPlayerIdentity.Load(root).Value.display_name == "玩家申请", "server identity updates existing timer display contract");
+        int beforeCode = fake.Calls.Count;
+        foreach (string code in new[] {"12345", "１２３４５６", "1234567", "12345\n"}) {
+            result = await request(ChallengeContract.Json().Serialize(new {action = "join_code", code}));
+            Check(!result.ok && fake.Calls.Count == beforeCode, "malformed invitation does not make HTTP requests");
+        }
+        result = await request("{\"action\":\"join_code\",\"code\":\"000123\"}");
+        Check(result.ok && result.activation == null && !fake.Enrolled && result.state.items.Length == 1, "joining refreshes visibility without enrolling or activating");
         var choice = new Dictionary<string, object> {{"action", "enroll"}, {"challenge_id", challengeId}, {"revision", 1}, {"player_id", playerId}, {"display_name", "玩家申请"}};
         result = await request(ChallengeContract.Json().Serialize(choice));
         Check(result.ok && result.state.enrollments.Length == 1 && result.detail == "选择挑战成功", "enrollment produces online patch catalog");
