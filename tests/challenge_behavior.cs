@@ -48,6 +48,9 @@ internal static partial class ChallengeBehavior
             } else if (path.EndsWith("/join-code")) {
                 Check(method == "POST" && (string)ChallengeContract.Object(body)["code"] == "000123", "invitation preserves leading zeroes without player identity in its body");
                 value["challenge_id"] = challengeId;
+            } else if (path.Contains("/cover?revision=")) {
+                value["challenge_id"] = challengeId; value["revision"] = 1; value["cover_revision"] = 2;
+                value["cover"] = new Dictionary<string, object> { ["schema_version"] = 1, ["line3"] = "更新的比赛文字" };
             } else if (path.Contains("/catalog?")) {
                 value["items"] = new[] {Item()}; value["next_offset"] = null; value["total"] = 1;
                 value["contents"] = new Dictionary<string, string> {{"pal98-classic-v6", "98柔情经典速通v6"}};
@@ -128,6 +131,20 @@ internal static partial class ChallengeBehavior
         }
         result = await request("{\"action\":\"join_code\",\"code\":\"000123\"}");
         Check(result.ok && result.activation == null && !fake.Enrolled && result.state.items.Length == 1, "joining refreshes visibility without enrolling or activating");
+        string coverCacheBefore = File.ReadAllText(cacheFile);
+        var coverReply = await new ChallengeService(root, storage, fake, () => clock).Execute(
+            ChallengeContract.Json().Serialize(new {action = "refresh_cover", server_origin = result.state.server_origin, challenge_id = challengeId, revision = 1}), CancellationToken.None);
+        Check(ChallengeRelayContract.Boolean(coverReply, "ok") && coverReply.ContainsKey("presentation") &&
+            File.ReadAllText(cacheFile) == coverCacheBefore && !fake.Enrolled, "cover metadata refresh does not change gameplay, approval or catalog cache");
+        Directory.CreateDirectory(Path.Combine(root, "palmod"));
+        string selectionFile = Path.Combine(root, "palmod", "challenge-selection.v1.json");
+        File.WriteAllText(selectionFile, ChallengeContract.Json().Serialize(new {schema = 1, active = true,
+            server_origin = "https://fixture.invalid", activation = new {challenge = Item()}}));
+        var capturedCover = ChallengeCoverRefresh.ReadSelection(root);
+        Check((string)capturedCover["challenge_id"] == challengeId && (int)capturedCover["revision"] == 1, "cover request captures the active challenge identity");
+        File.AppendAllText(selectionFile, " ");
+        Check(!Equals(capturedCover["selection_sha256"], ChallengeCoverRefresh.ReadSelection(root)["selection_sha256"]), "cover request pins exact selection bytes before network work");
+        Check(ChallengeCoverRefresh.Interpreter(root) == null, "missing interpreter is a silent cached-cover fallback");
         var choice = new Dictionary<string, object> {{"action", "enroll"}, {"challenge_id", challengeId}, {"revision", 1}, {"player_id", playerId}, {"display_name", "玩家申请"}};
         result = await request(ChallengeContract.Json().Serialize(choice));
         Check(result.ok && result.state.enrollments.Length == 1 && result.detail == "选择挑战成功", "enrollment produces online patch catalog");

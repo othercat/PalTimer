@@ -22,6 +22,7 @@
     <Compile Include="$(PalSharedSourceRoot)\ChallengeRelayContract.cs"><Link>ChallengeRelayContract.cs</Link></Compile>
     <Compile Include="$(PalSharedSourceRoot)\ChallengeJsonSyntax.cs"><Link>ChallengeJsonSyntax.cs</Link></Compile>
     <Compile Include="ChallengeBridge.cs"/>
+    <Compile Include="ChallengeCoverRefresh.cs"/>
     <Compile Include="CompetitionProtocol.cs"/>
     <Compile Include="CompetitionAuth.cs"/>
     <Compile Include="GeshiConfigurationInitialization.cs"/>
