@@ -16,7 +16,8 @@
     <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Net.Http"/>
     <Reference Include="System.Security"/><Reference Include="System.Web"/><Reference Include="System.Drawing"/><Reference Include="System.Windows.Forms"/><Reference Include="System.Management"/>
     <Reference Include="System.Web.Script.Serialization"><HintPath>..\Pal98Timer\lib\System.Web.Script.Serialization.dll</HintPath></Reference>
-    <ProjectReference Include="..\Pal98Timer\Pal98Timer.csproj"><Project>{B8491493-B2EB-43BB-ACE1-4D0D5FCBFA35}</Project><Name>Pal98Timer</Name><Private>False</Private></ProjectReference>
+    <ProjectReference Include="..\Pal98Timer\Pal98Timer.csproj" Condition="'$(PalTimerHostPath)' == ''"><Project>{B8491493-B2EB-43BB-ACE1-4D0D5FCBFA35}</Project><Name>Pal98Timer</Name><Private>False</Private></ProjectReference>
+    <Reference Include="Pal98Timer" Condition="'$(PalTimerHostPath)' != ''"><HintPath>$(PalTimerHostPath)</HintPath><Private>False</Private></Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="$(PalSharedSourceRoot)\ChallengeRelayContract.cs"><Link>ChallengeRelayContract.cs</Link></Compile>

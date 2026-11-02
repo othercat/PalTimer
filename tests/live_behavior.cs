@@ -48,6 +48,11 @@ internal static partial class LiveBehavior
         internal bool LastHasRestart;
         internal bool LastHasRanking;
         internal int UnsupportedFields;
+        internal bool RejectOriginalFacts;
+        internal int OriginalRejections, ChallengeReads, ChallengeReadStatus = 200;
+        internal object ChallengeRequiresApproval = false;
+        internal string ChallengeRevision = "1", ChallengeHash = new string('7',64);
+        internal TaskCompletionSource<bool> ChallengeReadGate;
         internal int ServerClockOffset, ExpiryAdjustment;
         internal int Active, MaxActive, Updates, Gets, Sessions, Challenges, UpdateStatus = 200;
         internal volatile Request Last;
@@ -68,6 +73,13 @@ internal static partial class LiveBehavior
             try {
                 if (ThrowRequests) throw new InvalidOperationException("fixture transport unavailable");
                 var json = CompetitionProtocol.Json(); string origin = new Uri(url).GetLeftPart(UriPartial.Authority);
+                if (method == "GET" && new Uri(url).AbsolutePath.StartsWith("/api/v1/timer/challenges/", StringComparison.Ordinal)) {
+                    ChallengeReads++; var policyGate = ChallengeReadGate; if (policyGate != null) await policyGate.Task;
+                    if (ChallengeReadStatus != 200) return new CompetitionHttpResult { Status = ChallengeReadStatus };
+                    return Reply(new { protocol = "PAL.Challenges.v1", challenge = new {
+                        id = new Uri(url).Segments.Last(), revision = int.Parse(ChallengeRevision), requires_approval = ChallengeRequiresApproval,
+                        rules = new { sha256 = ChallengeHash } } });
+                }
                 if (url.EndsWith("/devices")) { Devices++; var device = Board(); device.supported_features = Features; if (OmitRegistrationPlayer) device.player = null; return Reply(device); }
                 if (url.Contains("/auth/status?")) return Reply(new { protocol = CompetitionAuthProtocol.Name, scope = CompetitionProtocol.Scope,
                     server_origin = origin, key_id = new string('a',32), timer_exe_sha256 = new string('b',64), approved = Approved,
@@ -97,6 +109,9 @@ internal static partial class LiveBehavior
                     var request = json.Deserialize<Request>(body); Last = request; Interlocked.Increment(ref Updates);
                     var gate = Gate; if (gate != null) await gate.Task;
                     if (UpdateStatus != 200) return new CompetitionHttpResult { Status = UpdateStatus };
+                    if (RejectOriginalFacts && request.observation.maintenance_ranking?.Value("challenge.id") != null) {
+                        OriginalRejections++; return new CompetitionHttpResult { Status = 422 };
+                    }
                     var compare = request.compare;
                     return Reply(new CompetitionLiveAck { protocol = CompetitionClient.LiveProtocol, scope = CompetitionProtocol.Scope,
                         server_origin = origin, session_id = Session, public_id = "1042", sequence = request.sequence + (WrongAck ? 1 : 0), received_at = DateTimeOffset.UtcNow.ToString("o"),
@@ -462,7 +477,7 @@ internal static partial class LiveBehavior
         await client.CloseAsync();
     }
     static int Main(string[] args) {
-        try { Directory.CreateDirectory(args[0]); Run(args[0]).GetAwaiter().GetResult(); Console.WriteLine("PASS live total="+checks); return 0; }
+        try { Directory.CreateDirectory(args[0]); NoReviewChallengeTests(args[0]).GetAwaiter().GetResult(); Run(args[0]).GetAwaiter().GetResult(); Console.WriteLine("PASS live total="+checks); return 0; }
         catch(Exception error) { Console.Error.WriteLine(error); return 1; }
     }
 }

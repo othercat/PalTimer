@@ -19,7 +19,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**维护构建：3.38.6.4 / Online 1.0.2.2；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.6.4 / Online 1.0.2.3；需要 .NET Framework 4.7.2 框架**
+
+2026-11-02 / 原版免审挑战实时连接兼容（Refs othercat/PALDLL_DX9#279）：旧服务器对免审挑战仍要求人工批准时，客户端收到 422 后重新核实当前挑战可见、明确免审、修订和规则摘要一致，再以不声明榜单资格的计时状态心跳保持连接；每分钟重新尝试完整身份，服务器修复后自动恢复。需要审核、私密未加入、认证失败或无有效 ACK 时不启用兼容。完整本地/签封成绩保持原样，挑战分榜资格仍由服务器审核。只更新 Online 组件及配套认证/公开登记文件；可用 `PalTimerHostPath` 指定已冻结的 3.38.6.4 EXE 单独构建，EXE 和云 ID MD5 不变，新组件组合需要独立批准。
 
 2026-11-02 / 原版 r6：统一程序保留 r102 的原版/改版自动核心，并支持六位挑战码、启动时后台刷新挑战封面及离线按时间更新封面第三/四行。原版 DLL 1.7.2.6 按最终文件哈希认定正式版。封面刷新不等待网络、不改变玩法配置、审批、计时或暂停；需要本轮对应配置工具解释封面元数据。客户端默认分支整合与发行记录见 othercat/PALDLL_DX9#264、#266、#280、#281、#282；构建批准、云激活和玩家实机验收独立进行。
 

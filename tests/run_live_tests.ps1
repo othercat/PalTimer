@@ -10,6 +10,7 @@ if (!$csc) { throw 'VS 2026 Roslyn not found' }
 $sources = @('RankingConfiguration.cs','GameplayIdentity.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionLive.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs') | ForEach-Object { $component = Join-Path $repo ('PalTimerOnline\' + $_); if (Test-Path -LiteralPath $component) { $component } else { Join-Path $repo ('Pal98Timer\' + $_) } }
 $sources += Join-Path $PSScriptRoot 'live_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'live_connectivity.cs'
+$sources += Join-Path $PSScriptRoot 'live_no_review.cs'
 $sources += @('TimingModeReader.cs', 'Dx9TimingCategory.cs', 'HObj.cs') | ForEach-Object { Join-Path $repo ('Pal98Timer\' + $_) }
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
 $sources += Join-Path $PalSharedSourceRoot 'PalUserData.cs'
