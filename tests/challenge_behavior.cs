@@ -156,6 +156,9 @@ internal static partial class ChallengeBehavior
             File.Copy(Path.Combine(Path.GetDirectoryName(host), name), Path.Combine(root, name));
         File.Copy(host + ".config", helper + ".config");
         Check(ChallengeCoverRefresh.Interpreter(root) == helper, "capability marker selects the silent helper fixture");
+        string originalHelper = Path.Combine(root, "仙剑98新补丁配置工具.exe");
+        File.Move(helper, originalHelper); File.Move(helper + ".config", originalHelper + ".config");
+        Check(ChallengeCoverRefresh.Interpreter(root) == originalHelper, "original package root filename selects the same capable helper");
         File.WriteAllText(selectionFile, ChallengeContract.Json().Serialize(new {schema = 1, active = true,
             server_origin = result.state.server_origin, activation = new {challenge = Item()}}));
         string frozenSelection = File.ReadAllText(selectionFile);

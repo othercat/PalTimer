@@ -29,7 +29,7 @@ namespace Pal98Timer
         }
         internal static string Interpreter(string root)
         {
-            foreach (string relative in new[] { "Tools/仙剑98配置工具/仙剑98新补丁配置工具.exe", "Tools/仙剑98配置工具/仙剑配置工具.exe", "仙剑配置工具.exe" }) {
+            foreach (string relative in new[] { "Tools/仙剑98配置工具/仙剑98新补丁配置工具.exe", "Tools/仙剑98配置工具/仙剑配置工具.exe", "仙剑98新补丁配置工具.exe", "仙剑配置工具.exe" }) {
                 string path = Path.Combine(root, relative);
                 if (File.Exists(path) && (FileVersionInfo.GetVersionInfo(path).Comments ?? "").Contains(Protocol)) return path;
             }
