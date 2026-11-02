@@ -28,7 +28,7 @@ static class UnifiedProductBehavior
     {
         try {
             var product = Assembly.LoadFrom(args[0]);
-            Check(product.GetName().Version.ToString() == "3.38.6.3", "unified EXE version");
+            Check(product.GetName().Version.ToString() == "3.38.6.4", "unified EXE version");
             var cores = (List<string>)product.GetType("Pal98Timer.TimerCore").GetMethod("GetAllCores", F).Invoke(null, null);
             foreach (string name in new[] {"Pal98Dx9Automatic", "Pal98Dx9Fast800", "Pal98Dx9Fast800Speed", "SdlpalGeshi"})
                 Check(cores.Contains(name), "shared product enumerates " + name);
@@ -71,7 +71,7 @@ static class UnifiedProductBehavior
             }
             Check(product.GetType("Pal98Timer.OriginalChallengeIdentity") != null, "original challenge identity remains in the same EXE");
             var online = Assembly.LoadFrom(args[1]);
-            Check(online.GetName().Version.ToString() == "1.0.2.1", "unified Online version");
+            Check(online.GetName().Version.ToString() == "1.0.2.2", "unified Online version");
             Check(online.GetType("Pal98.Challenges.ChallengeRelayContract") != null, "frozen Online uses generic challenge relay");
             Console.WriteLine("PASS unified product total=" + checks + "; game/network/UI=none"); return 0;
         } catch (Exception error) { Console.Error.WriteLine(error); return 1; }
