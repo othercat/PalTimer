@@ -1,7 +1,7 @@
 param([Parameter(Mandatory)][string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $out = [IO.Path]::GetFullPath($OutputDirectory)
-if ($out -notmatch '[\\/]PALWork[\\/]artifacts[\\/]so-lostedit-issue-[1-9][0-9]*[\\/]') { throw 'Use the owning Issue artifacts directory.' }
+if ($out -notmatch '[\\/]PALWork[\\/]artifacts[\\/](?:so-lostedit|PALDLL_DX9)-issue-[1-9][0-9]*[\\/]') { throw 'Use the owning Issue artifacts directory.' }
 if (Test-Path -LiteralPath $out) { throw 'Choose a fresh output directory.' }
 [void][IO.Directory]::CreateDirectory($out)
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
