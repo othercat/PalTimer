@@ -33,7 +33,7 @@ static class OriginalChallengeDisplayBehavior
                 ["content_package_id"] = Wire.String(expected, "package"), ["fade_ms"] = "1200", ["map_speed_ticks"] = "10"
             };
             foreach (var pair in Wire.Map(expected["ranking_resources"])) facts[pair.Key] = (string)pair.Value;
-            foreach (var pair in Wire.Map(Runtime.Catalog["bindings"])) facts[(string)pair.Value] = disabled[pair.Key].ToString(CultureInfo.InvariantCulture);
+            foreach (var pair in Wire.Map(Runtime.Catalog["bindings"])) facts[(string)pair.Value] = (disabled.TryGetValue(pair.Key,out int value) ? value : 0).ToString(CultureInfo.InvariantCulture);
             string before = Wire.Serialize(facts);
             Check(Runtime.Matches(content, legacy, facts, false), "legacy challenge still matches existing native facts");
             Check(Runtime.Matches(content, disabled, facts, false) && Runtime.Matches(content, enabled, facts, false), "display off/on uses identical gameplay and PB facts");

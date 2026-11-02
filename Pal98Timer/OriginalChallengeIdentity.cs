@@ -44,11 +44,19 @@ namespace Pal98Timer
                 throw new InvalidDataException("当前运行内容与挑战不一致或尚未核验。");
             bool nostalgia=Get(config,"Hardcore.Enabled")=="1";
             var values = Runtime.Values(effective);
-            if(!Runtime.Matches(content,values,native.ranking.rules,nostalgia)) throw new InvalidDataException("当前实际玩法与下载挑战不一致。");
+            bool priorityOverlay = Wire.Array(Wire.Map(Wire.Field(rules,"package"))["rules"]).Select(Wire.Map).Any(r =>
+                r.TryGetValue("requires",out object needs) && Wire.Map(needs).ContainsKey("paldll.original-rule-priority"));
+            if (!values.ContainsKey(Runtime.StoryItemSellSlot)) {
+                string local = Get(config,"extra.EnableRandomStoryItemSell");
+                if (local != "" && local != "0" && local != "1") throw new InvalidDataException("剧情道具可卖开关无效。");
+                values[Runtime.StoryItemSellSlot] = local == "1" ? 1 : 0;
+            }
+            if(!Runtime.Matches(content,values,native.ranking.rules,nostalgia,priorityOverlay)) throw new InvalidDataException("当前实际玩法与下载挑战不一致。");
             // Include the legacy display-only default too, so every new report
             // carries a complete value set even for an older downloaded source.
             var complete = Pal98.Challenges.EffectiveChallengeConfiguration.Parse(effective);
             foreach (var pair in values) if (!complete.ContainsKey(pair.Key)) complete[pair.Key] = pair.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var pair in values) if (!complete.ContainsKey("Priority"+pair.Key)) complete["Priority"+pair.Key] = "0";
             string title=Wire.String(item,"title");
             // The dropdown decoration is presentation-only; never send it as a challenge name.
             if(title.StartsWith("在线：",StringComparison.Ordinal) || title.StartsWith("在线:",StringComparison.Ordinal)) title=title.Substring(3).Trim();
