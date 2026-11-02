@@ -2,7 +2,10 @@
 
 Refs othercat/PALDLL_DX9#266；总览 othercat/PALDLL_DX9#253。
 
-统一版本为 **Pal98Timer 3.38.6.1 / Online 1.0.2.0**。原版 PALDLL_DX9 和
+当前维护候选为 **Pal98Timer 3.38.6.3 / Online 1.0.2.1**，基于 3.38.6.2。
+Refs othercat/PalTimer#53、othercat/sdlpal-lostedit#224、othercat/sdlpal-lostedit#226。
+本轮源码以精确快照交付，尚未提交或合入；正式签发的配套组合未做生产批准或云激活。
+原版 PALDLL_DX9 和
 SDLPal-lostedit 使用同一个 `othercat/PalTimer` 默认分支 `master`，从同次构建中取得
 完全相同的程序、依赖和认证组合。原版 DLL/配置工具维持 1.7.2.x，显示 1.72。
 
@@ -10,8 +13,9 @@ SDLPal-lostedit 使用同一个 `othercat/PalTimer` 默认分支 `master`，从�
 
 - 原版继续使用 PAL98DX9 自动及实际时序核心；怀旧显示和原硬核上传字段、在线挑战、
   默认联机和正式 DLL 精确识别保持，覆盖本轮完整包的 1.7.2.4 及既有版本。原版在线挑战按本地内容名称关联，不绑定 ZIP/参考资源摘要；实际资源事实和本地 PB 保留。已退役的原版魂牵剧情、梦幻专用核心与旧配置锁不恢复。
-- SDL 使用 `SdlpalGeshi` 核心，吸收 r100 随包源码中的 20 种内容识别、独立路线、
+- SDL 使用 `SdlpalGeshi` 核心，在 r100 的 20 种内容上新增梦时空 3.5，提供 21 种内容识别、独立路线、
   可编辑节点、公式身份、最佳线、云档和实时内容显示；不同内容/规则的记录继续隔离。
+- SDL 的“灵儿永跟随”开启时加入 `return_linger=1`，用于榜单、最佳线和接力身份；关闭时省略此事实，保留旧普通记录。
 - 服务器分别声明 `original-challenge-ranking.v1` 和 `sdl-live-identity.v1`。
   客户端按所属核心发送相应事实；一种能力不能替代另一种。
 - 挑战桥继续透传既有协议，由游戏/配置工具解释规则。原版与 SDL 的根目录识别和配置写入各走原路径。
@@ -42,7 +46,7 @@ SDLPal-lostedit 使用同一个 `othercat/PalTimer` 默认分支 `master`，从�
 
 - PalServer 批准同一个 EXE/Online/Auth/公开登记组合，两种游戏共用该组合。
 - 忽爷云按核心名和 EXE MD5 校验。原版直接相关核心为 `PAL98DX9`、`PAL98DX9_AUTO`、
-  `PAL98DX9_800`、`PAL98DX9_800_SPEED`；SDL 的 20 种内容共用 `SDLPAL_GESHI_EASY`。
+  `PAL98DX9_800`、`PAL98DX9_800_SPEED`；SDL 的 21 种内容共用 `SDLPAL_GESHI_EASY`。
   这些核心名继续保留，不能把 SDL 伪装成原版以绕过激活。
 - 历史可选核心仍有 `PAL98`、`PAL98UNHAPPY`、`PAL98STM`、`PAL2STM`、`PAL3`、
   `PAL5QSTM`、`GUJIAN2`、`DREAM22`、`CUSTOM`、`S`，有使用需求时按同一新 MD5 登记。

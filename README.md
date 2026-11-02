@@ -19,7 +19,12 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**维护构建：3.38.6（文件版本 3.38.6.0）/ Online 1.0.2.0；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.6.3 / Online 1.0.2.1；需要 .NET Framework 4.7.2 框架**
+
+2026-11-02 / SDL r102：基于 3.38.6.2 增加梦时空 3.5 独立内容与路线，现在支持 21 种 SDL 内容。
+“灵儿永跟随”开启时记录独立玩法事实，关闭时保留原普通分组；原版自动核心与 SDL 自动核心沿用同一程序。
+本轮为未提交源码快照的维护候选，离线检查完成，实际计时与剧情由玩家验收；新的正式签发组合仍待生产批准及云激活。
+Refs othercat/sdlpal-lostedit#224、othercat/sdlpal-lostedit#226、#53。
 
 2026-11-01：原版和 SDLPal-lostedit 合并为同一默认源码线、同一份程序与认证组合；
 吸收 SDL r100 的 20 种内容和路线，保留原版 1.7.2.3、怀旧与在线挑战支持。

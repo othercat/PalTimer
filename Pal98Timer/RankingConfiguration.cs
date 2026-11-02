@@ -50,6 +50,10 @@ namespace Pal98Timer
                 if (Value("wuqiang") != "1") return false;
                 keys.Add("wuqiang");
             }
+            if (rules.ContainsKey("return_linger")) {
+                if (Value("return_linger") != "1") return false;
+                keys.Add("return_linger");
+            }
             bool legacy = rules.ContainsKey("engine_sha256") || rules.ContainsKey("engine_build") || rules.ContainsKey("route_rules_sha256");
             if (rules.ContainsKey("respawn_rule"))
             {
