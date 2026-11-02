@@ -15,6 +15,7 @@ $sources += @('TimingModeReader.cs', 'Dx9TimingCategory.cs', 'HObj.cs') | ForEac
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
 $sources += Join-Path $PalSharedSourceRoot 'PalUserData.cs'
 $sources += Join-Path $repo 'Pal98Timer\OriginalChallengeIdentity.cs'
+$sources += Join-Path $repo 'Pal98Timer\EffectiveChallengeConfiguration.cs'
 $sources += @('ChallengeRelayContract.cs','ChallengeJsonSyntax.cs','OriginalChallengeRuntimeContract.cs') | ForEach-Object { Join-Path $PalSharedSourceRoot $_ }
 $sources += Join-Path $repo 'Pal98Timer\SdlpalBridge.cs'
 $exe = Join-Path $out 'LiveBehavior.exe'

@@ -27,7 +27,7 @@ namespace Pal98Timer
         {
             if (schema != "PAL98.RankingConfiguration.v1" || !covered || game == null || !game.Valid ||
                 rules == null || rules.Count == 0 || rules.Count > 512 || rules.Any(p => p.Value == null || p.Key == null || p.Key.Length > 160 || !Regex.IsMatch(p.Key, "^[A-Za-z0-9_.-]+$") || p.Value.Length > 2048) ||
-                configuration_id != Digest(rules)) return false;
+                configuration_id != Digest(rules) || !Pal98.Challenges.EffectiveChallengeConfiguration.ValidFacts(rules)) return false;
             return Value("content") == game.content_sha256 && Value("family") == game.family &&
                 (SpeedIndependent || Value("fade_ms") == game.fade_ms.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
                 Value("map_speed_ticks") == game.map_speed_ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)) &&
@@ -37,6 +37,7 @@ namespace Pal98Timer
         {
             var resources = new[] { "DATA.MKF", "M.MSG", "SSS.MKF", "WORD.DAT" };
             var keys = new HashSet<string>(new[] { "family", "content", "profile" }, StringComparer.Ordinal);
+            keys.UnionWith(rules.Keys.Where(k => k.StartsWith("config.", StringComparison.Ordinal)));
             if (!SpeedIndependent) keys.UnionWith(new[] { "fade_ms", "map_speed_ticks", "walk_frame_ms", "speed", "battle_speed" });
             foreach (var resource in resources) keys.Add("resource." + resource);
             var gameplay = new[] { "gameplay.rule", "gameplay.revision", "gameplay.sha256" };
