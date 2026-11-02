@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 namespace Pal98Timer
 {
     internal static class SdlpalDreamRoutes
@@ -13,9 +13,18 @@ namespace Pal98Timer
         {
             if (SdlpalClassicRoutes.Supports(profile)) return SdlpalClassicRoutes.ForProfile(profile);
             if (SdlpalExpandedRoutes.Supports(profile)) return SdlpalExpandedRoutes.ForProfile(profile);
-            if (profile != "dream22-puppet100-v1" && profile != "dream222-normal-v1" && profile != "dream222-hard-v1" && profile != "dreamspace39x-hard-v1")
+            if (profile != "dream22-puppet100-v1" && profile != "dream222-normal-v1" && profile != "dream222-hard-v1" && profile != "dreamspace39x-hard-v1" && profile != "dreamspace35-v1")
                 throw new ArgumentException("Unknown Dream profile");
             var caiyi = Battle("dream-caiyi", "过彩依", 39, 468, 108); caiyi.Kind = "battle-end";
+            var bloodDragon = Battle("dream-blood-dragon", "过血角青龙", 386, 572, 295);
+            if (profile == "dreamspace35-v1") {
+                // Refs engine#224: this exact 3.5 battle starts as572 (Lin's
+                // illusion), then009F transforms it into573 (Blood Dragon).
+                // Require the real team386 victory in scene295, accepting an
+                // observation of either phase without inventing a second win.
+                bloodDragon.Name = "过林天南幻影／血角青龙";
+                bloodDragon.Enemy = null;
+            }
             return new[] {
                 Position("dream-ship", "上船", 5, 1076, 1082, 5),
                 Position("dream-snake-cave", "出蛇洞", 48, 304, 1560, 3),
@@ -33,7 +42,7 @@ namespace Pal98Timer
                 Battle("dream-fire", "过火麒麟", 224, 463, 200),
                 new SdlpalSplitRule { Id="dream-past", Name="过十年前", Kind="item", Item=0x109 },
                 Battle("dream-seven-poisons", "过七毒", 189, 533, 224),
-                Battle("dream-blood-dragon", "过血角青龙", 386, 572, 295),
+                bloodDragon,
                 Battle("dream-five-dragons", "过五神龙", 387, 541, 213),
                 Battle("dream-baiyue-bridge", "过桥头拜月", 313, 546, 281),
                 new SdlpalSplitRule { Id="dream-ending", Name="通关", Kind="completion", Team=389, Scene=297, Enemy=576 }
