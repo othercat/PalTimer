@@ -16,6 +16,7 @@ namespace Pal98Timer
         internal string Id, Title, Content, RulesHash;
         internal int Revision;
         internal bool Nostalgia;
+        internal string EffectiveIni;
         internal static string ReadFile(string root, string path, int limit)
         {
             string resolved=UserDataStore.ReadGamePath(root,path);
@@ -34,18 +35,25 @@ namespace Pal98Timer
             Wire.Activation(activation,Wire.String(activation,"device_id"),content);
             var item=Wire.Map(Wire.Field(activation,"challenge")); var rules=Wire.Map(Wire.Field(item,"rules"));
             string ini=Wire.String(activation,"ini");
-            if(ini!=ReadFile(root,"challenge-rules.ini",1048576)) throw new InvalidDataException("下载挑战规则已改变。");
+            string effective = selection.TryGetValue("effective_ini", out object resolved) ? resolved as string : ini;
+            Pal98.Challenges.EffectiveChallengeConfiguration.RequireSource(ini, effective);
+            if(effective!=ReadFile(root,"challenge-rules.ini",1048576)) throw new InvalidDataException("下载挑战规则已改变。");
             var config=ReadIni(ReadFile(root,"config.ini",1048576));
             var expected=Runtime.Content(content);
             if(Get(config,"Patch.DefaultPatch")!=Wire.String(expected,"package") || native==null || !native.covered || native.ranking?.covered!=true)
                 throw new InvalidDataException("当前运行内容与挑战不一致或尚未核验。");
             bool nostalgia=Get(config,"Hardcore.Enabled")=="1";
-            if(!Runtime.Matches(content,Runtime.Values(ini),native.ranking.rules,nostalgia)) throw new InvalidDataException("当前实际玩法与下载挑战不一致。");
+            var values = Runtime.Values(effective);
+            if(!Runtime.Matches(content,values,native.ranking.rules,nostalgia)) throw new InvalidDataException("当前实际玩法与下载挑战不一致。");
+            // Include the legacy display-only default too, so every new report
+            // carries a complete value set even for an older downloaded source.
+            var complete = Pal98.Challenges.EffectiveChallengeConfiguration.Parse(effective);
+            foreach (var pair in values) if (!complete.ContainsKey(pair.Key)) complete[pair.Key] = pair.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             string title=Wire.String(item,"title");
             // The dropdown decoration is presentation-only; never send it as a challenge name.
             if(title.StartsWith("在线：",StringComparison.Ordinal) || title.StartsWith("在线:",StringComparison.Ordinal)) title=title.Substring(3).Trim();
             return new OriginalChallengeIdentity {Id=Wire.String(item,"id"),Revision=Wire.Integer(item,"revision"),Title=title,Content=content,
-                RulesHash=Wire.String(rules,"sha256"),Nostalgia=nostalgia};
+                RulesHash=Wire.String(rules,"sha256"),Nostalgia=nostalgia, EffectiveIni=Pal98.Challenges.EffectiveChallengeConfiguration.Serialize(complete)};
         }
         private static Dictionary<string,string> ReadIni(string text)
         {
@@ -64,6 +72,7 @@ namespace Pal98Timer
             var copy=ranking.Copy();
             copy.rules["challenge.id"]=Id; copy.rules["challenge.revision"]=Revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
             copy.rules["challenge.content_id"]=Content; copy.rules["challenge.rules_sha256"]=RulesHash;
+            Pal98.Challenges.EffectiveChallengeConfiguration.AddFacts(copy.rules, EffectiveIni);
             copy.configuration_id=RankingConfiguration.Digest(copy.rules); return copy;
         }
         internal static void Apply(GameplaySnapshot snapshot,CompetitionObservation observation)

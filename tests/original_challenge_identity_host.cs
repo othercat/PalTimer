@@ -43,7 +43,9 @@ static class OriginalChallengeIdentityHost
             Check(originalId==(string)Get(ranking,"configuration_id") && facts.Count==originalFacts.Count && originalFacts.All(p=>facts[p.Key]==p.Value),"online decoration preserves native ranking");
             Check(gameplayHash==(string)Get(native,"rules_sha256"),"online decoration preserves local gameplay/PB identity");
             var onlineFacts=(Dictionary<string,string>)Get(online,"rules");
-            Check(onlineFacts["challenge.id"]==(string)Get(context,"Id") && onlineFacts.Count==facts.Count+4,"online identity carries all four pinned challenge facts");
+            Check(onlineFacts["challenge.id"]==(string)Get(context,"Id") && onlineFacts.Keys.Count(k=>k.StartsWith("challenge."))==4,"online identity carries all four pinned challenge facts");
+            Check(onlineFacts["config.schema"]=="PAL.ChallengeEffective.v1" && onlineFacts.Keys.Count(k=>k.StartsWith("config.slot.Original"))==28,
+                "online identity always contains all 28 effective original settings");
             string firstId=(string)Get(online,"configuration_id");Set(context,"Id",Guid.NewGuid().ToString());
             Check(firstId!=(string)Get(Invoke(type,context,"Decorate",ranking),"configuration_id"),"equal gameplay in distinct challenges does not collide online");
             string pool=facts["random_skills.pool"];facts["random_skills.pool"]=new string('e',64);

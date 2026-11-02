@@ -228,11 +228,11 @@ internal static partial class LiveBehavior
         var challengeWire=new Transport {Features=new[]{CompetitionProtocol.RestartTimeFeature,CompetitionProtocol.MaintenanceLiveFeature}};var challengeClient=Client(root,"original-challenge-live",challengeWire,new Auth());
         await Until(()=>challengeClient.Enabled,"original challenge client enabled");challengeClient.Invalidate("challenge");
         var challengeObservation=Observe("challenge",0);
-        var challengeIdentity=new OriginalChallengeIdentity {Id=Guid.NewGuid().ToString(),Revision=1,Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64)};
+        var challengeIdentity=new OriginalChallengeIdentity {Id=Guid.NewGuid().ToString(),Revision=1,Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64), EffectiveIni="[Challenge]\nSchemaVersion=1\nOriginalFastFade=1\n"};
         challengeObservation.Ranking=challengeIdentity.Decorate(challengeObservation.Ranking);
         challengeClient.Publish(challengeObservation);
         await Until(()=>challengeWire.Last?.observation.configuration_id==challengeObservation.Ranking.configuration_id,"original challenge legacy live observation sent");
-        Check(!challengeWire.LastHasRanking,"SDL-only capability cannot enable original challenge live facts");
+        Check(challengeWire.LastHasRanking && challengeWire.Last.observation.maintenance_ranking.Value("config.slot.OriginalFastFade")=="1", "Complete actual configuration is retained even before capability negotiation catches up");
         challengeWire.Features=new[]{CompetitionProtocol.RestartTimeFeature,"original-challenge-ranking.v1"};challengeClient.Retry();
         await Until(()=>challengeWire.Last?.observation.maintenance_ranking!=null,"capable server receives actual challenge ranking");
         Check(challengeWire.Last.observation.maintenance_ranking.Value("challenge.id")==challengeIdentity.Id,"live observation preserves pinned challenge UUID");

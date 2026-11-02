@@ -22,6 +22,11 @@ internal static class SdlpalBehavior
     { try { action(); } catch (Exception) { Check(true, name); return; } throw new Exception(name); }
     static object Call(object value, string name, params object[] args) => value.GetType().GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance).Invoke(value, args);
     static void Set(object value, string name, object data) => value.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(value, data);
+    static void WaitForConfiguration(SdlpalGeshi core)
+    {
+        var config = (SdlpalChallengeConfiguration)typeof(SdlpalGeshi).GetField("challengeConfiguration", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(core);
+        if (!SpinWait.SpinUntil(() => config.Facts.Count > 0, 2000)) throw new Exception("Fixture configuration read: " + config.Error);
+    }
     static SdlpalSnapshot Snapshot() => new SdlpalSnapshot {
         schema = 1, profile = "geshi-easy-v1", verified = true, diagnostic = true, resourceHash = new string('a',64),
         resourceHashes = new Dictionary<string,string> { ["SSS.MKF"] = new string('a',64), ["DATA.MKF"] = new string('b',64), ["WORD.DAT"] = new string('c',64), ["M.MSG"] = new string('d',64) },
@@ -721,9 +726,10 @@ internal static class SdlpalBehavior
                     core.GetPointSpan()=="[0~1] 0:20.12","import recalculates the displayed interval from restored time: "+status);
             }
             Check(!core.CompetitionPublicationAllowed&&core.GetScoreValidationError().Contains("诊断"),"diagnostic runtime cannot publish competition observations");
+            WaitForConfiguration(core);
             var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);
             Check(observation.Gameplay.Valid&&observation.Ranking.Valid(observation.Gameplay)&&observation.Gameplay.map_speed_ticks==0&&observation.Gameplay.walk_frame_ms==90,"independent SDL family uses milliseconds without PALDLL ticks");
-            Check(observation.Ranking.rules.Count==7&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes content-only category with truthful speed evidence");
+            Check(observation.Ranking.rules.Keys.Count(k=>k.StartsWith("config.slot."))==67&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes full configuration with truthful speed evidence");
             Set(core,"relayRun",core.ScoreRunSequence);Set(core,"relayBridge",bridge);Call(core,"CheckRelayOwner");
             core.SetTS(TimeSpan.FromSeconds(1));Reject(()=>Call(core,"CheckRelayOwner"),"manual time/reset cancels an earlier relay transaction lease");
             Check(!core.CanBeginCompetitionHere(0),"manual time change cannot claim a fresh competition start");
@@ -774,7 +780,7 @@ internal static class SdlpalBehavior
             // rejection. No cloud runner or competition session is constructed.
             Engine.State.diagnostic=false;
         }
-        internal void Tick() {Engine.Publish();Call(Core,"OnTick");}
+        internal void Tick() {Engine.Publish();Call(Core,"OnTick");WaitForConfiguration(Core);}
         internal bool Statuses(CheckPointStatus first,CheckPointStatus last) =>
             Core.CheckPoints[0].Status==first&&Core.CheckPoints[1].Status==last;
         internal bool Assisted => !Core.CanBeginCompetitionHere(0)&&Core.GetScoreValidationError().Length>0;

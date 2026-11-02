@@ -2,9 +2,9 @@
 
 Refs othercat/PALDLL_DX9#266；总览 othercat/PALDLL_DX9#253。
 
-当前维护候选为 **Pal98Timer 3.38.6.3 / Online 1.0.2.1**，基于 3.38.6.2。
+当前维护候选为 **Pal98Timer 3.38.6.5 / Online 1.0.2.4**，基于已统一的默认分支。
 Refs othercat/PalTimer#53、othercat/sdlpal-lostedit#224、othercat/sdlpal-lostedit#226。
-本轮源码以精确快照交付，尚未提交或合入；正式签发的配套组合未做生产批准或云激活。
+本次完整配置改动关联 othercat/PALDLL_DX9#275、othercat/sdlpal-lostedit#189。新组合需独立生产批准及云激活，不能继承 3.38.6.4 的审批。
 原版 PALDLL_DX9 和
 SDLPal-lostedit 使用同一个 `othercat/PalTimer` 默认分支 `master`，从同次构建中取得
 完全相同的程序、依赖和认证组合。原版 DLL/配置工具维持 1.7.2.x，显示 1.72。
@@ -17,8 +17,12 @@ SDLPal-lostedit 使用同一个 `othercat/PalTimer` 默认分支 `master`，从�
   可编辑节点、公式身份、最佳线、云档和实时内容显示；不同内容/规则的记录继续隔离。
 - SDL 的“灵儿永跟随”开启时加入 `return_linger=1`，用于榜单、最佳线和接力身份；关闭时省略此事实，保留旧普通记录。
 - 服务器分别声明 `original-challenge-ranking.v1` 和 `sdl-live-identity.v1`。
-  客户端按所属核心发送相应事实；一种能力不能替代另一种。
+  客户端按所属核心发送相应事实；新版 `config.*` 完整证据始终随实时请求发送，不因能力尚未声明或 422 回退而清空配置。配套服务必须先部署 PR #62。
 - 挑战桥继续透传既有协议，由游戏/配置工具解释规则。原版与 SDL 的根目录识别和配置写入各走原路径。
+
+完整实际配置单独保存在 `config.slot.*`，原下载规则仍作为来源。原版保留原生运行核验及本地 PB；SDL 的 33 个开关、人物和优先级目前只能读取配置文件，明确标为 `configuration-file`，首次读取后按进程固定，变更提示重启且保留旧完整证据。文件读取在后台执行，不阻塞计时线程。仅封面/显示文字变化不改变配置身份。
+
+离线检查入口：`tests/run_effective_configuration_tests.ps1`（使用配置工具 `--verify-effective-rules` 产生的 fixture）、`tests/run_original_challenge_identity_tests.ps1`、`tests/run_live_tests.ps1`。这些检查不启动或游玩真实游戏。
 
 ## 唯一构建和发包流程
 

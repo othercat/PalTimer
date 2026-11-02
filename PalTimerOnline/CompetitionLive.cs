@@ -373,6 +373,9 @@ namespace Pal98Timer
             // a stale local cache must not turn a reviewed/private challenge into one.
             if (!OriginalChallengeObservation(snapshot)) return false;
             var ranking = snapshot.maintenance_ranking;
+            // Complete effective evidence is mandatory. Never turn a modern
+            // configuration into a connection with no configuration content.
+            if (ranking.Value("config.schema") != null) return false;
             var response = await transport.Send("GET", cfg.Endpoint + "/challenges/" + ranking.Value("challenge.id"),
                 credential.Hwid, credential.Secret, null, 3000, stop.Token).ConfigureAwait(false);
             if (!response.Success) return false;
@@ -412,9 +415,10 @@ namespace Pal98Timer
             var wireObservation = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(CompetitionProtocol.Json().Serialize(snapshot));
             if (!includeRestartTime) wireObservation.Remove("restart_ms");
             if (!serverSupportsMaintenance || snapshot.release_revision == null) wireObservation.Remove("release_revision");
-            if (snapshot.maintenance_ranking == null || (GameplayIdentity.IsSdlFamily(snapshot.maintenance_ranking.Value("family"))
-                ? !serverSupportsMaintenanceLive : !serverSupportsOriginalChallenges)) wireObservation.Remove("maintenance_ranking");
+            if (snapshot.maintenance_ranking?.Value("config.schema") == null && (snapshot.maintenance_ranking == null || (GameplayIdentity.IsSdlFamily(snapshot.maintenance_ranking.Value("family"))
+                ? !serverSupportsMaintenanceLive : !serverSupportsOriginalChallenges))) wireObservation.Remove("maintenance_ranking");
             bool challengeCompatibility = OriginalChallengeObservation(snapshot) &&
+                snapshot.maintenance_ranking.Value("config.schema") == null &&
                 snapshot.configuration_id == liveChallengeCompatibilityId && Stopwatch.GetTimestamp() < nextLiveChallengeProbeTick;
             if (challengeCompatibility) { RemoveLiveChallengeClaim(wireObservation); compare = null; }
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,

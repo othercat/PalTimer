@@ -199,6 +199,7 @@ namespace Pal98Timer
         private Dx9OverlayForm overlay;
         private SdlpalItemsForm itemsForm;
         private readonly SdlpalItemTracker items = new SdlpalItemTracker();
+        private readonly SdlpalChallengeConfiguration challengeConfiguration = new SdlpalChallengeConfiguration();
         private SdlpalItemSettings itemSettings = new SdlpalItemSettings();
         private ToolStripMenuItem cloudSave, cloudLoad, overlayMenu;
         public SdlpalGeshi(GForm form) : base(form)
@@ -256,7 +257,7 @@ namespace Pal98Timer
             }
         }
         internal override Process CompetitionGameProcess => bridge?.Process;
-        internal override bool CompetitionPublicationAllowed => observer.Snapshot != null && !observer.Snapshot.diagnostic;
+        internal override bool CompetitionPublicationAllowed => observer.Snapshot != null && !observer.Snapshot.diagnostic && challengeConfiguration.Facts.Count > 0;
         internal SdlpalSnapshot CurrentSnapshot => observer.Snapshot;
         private string RouteIdentity => SdlpalSplitRule.Identity(rules);
         private string BestCategory => observer.Snapshot == null ? "unbound" : RankingConfiguration.Digest(observer.Snapshot.RankingFacts()).Substring(0, 16);
@@ -342,6 +343,7 @@ namespace Pal98Timer
             if (!freshSnapshot) return "游戏快照暂不可用";
             if (s.fadeCycleMs <= 0 || s.walkFrameMs <= 0) return "运行时尚未发布有效速度配置";
             if (!string.IsNullOrEmpty(observer.Issue)) return observer.Issue;
+            if (!string.IsNullOrEmpty(challengeConfiguration.Error)) return challengeConfiguration.Error;
             if (competitionImportedRun || CheckPoints?.Any(p => p.Status == CheckPointStatus.ManualSkipped || p.Status == CheckPointStatus.AutoSkipped) == true)
                 return "导入或手动跳过节点，保留实际观察供服务器判定";
             return "";
@@ -355,6 +357,7 @@ namespace Pal98Timer
         {
             var s = observer.ConfigurationSnapshot; if (s == null) return;
             var facts = s.RankingFacts();
+            foreach (var pair in challengeConfiguration.SnapshotFacts()) facts[pair.Key] = pair.Value;
             string digest = RankingConfiguration.Digest(facts);
             observation.Gameplay = new GameplayIdentity { content_id = s.profile, content_sha256 = facts["content"], rules_sha256 = digest,
                 family = SdlpalBridge.ProfileFamily(s.profile), fade_ms = s.fadeCycleMs, map_speed_ticks = 0, walk_frame_ms = s.walkFrameMs,
@@ -384,6 +387,7 @@ namespace Pal98Timer
                     if (bridge != null && (bridge.Process == null || bridge.Process.HasExited)) { bridge.Dispose(); bridge = null; }
                     return;
                 }
+                challengeConfiguration.Observe(snapshot.gamePath, snapshot.Pid, snapshot.Created, snapshot.profile);
                 if (snapshot.profile != activeProfile)
                 {
                     // Save the old run before changing any route or clock state.

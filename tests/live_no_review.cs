@@ -22,6 +22,25 @@ internal static partial class LiveBehavior
         Features = new[] { CompetitionProtocol.RestartTimeFeature, "original-challenge-ranking.v1" } };
     static async Task NoReviewChallengeTests(string root)
     {
+        foreach (bool rejected in new[] {false, true}) {
+            var completeWire = NoReviewTransport(); completeWire.RejectOriginalFacts = rejected;
+            // Absence of advertised features must not strip complete evidence.
+            completeWire.Features = new string[0];
+            var completeClient = Client(root, "complete-configuration-" + rejected, completeWire, new Auth());
+            try {
+                await Until(() => completeClient.Enabled, "complete configuration fixture enabled");
+                var full = NoReviewObservation("complete-configuration");
+                Pal98.Challenges.EffectiveChallengeConfiguration.AddFacts(full.Ranking.rules, "[Challenge]\nSchemaVersion=1\nOriginalFastFade=1\nPriorityOriginalFastFade=0\n");
+                full.Ranking.configuration_id = RankingConfiguration.Digest(full.Ranking.rules);
+                completeClient.Publish(full); completeClient.Retry();
+                await Until(() => completeWire.LastHasRanking && completeWire.Last.observation.configuration_id == full.Ranking.configuration_id,
+                    "complete configuration and ID reach the real live request");
+                if (rejected) await Until(() => completeClient.StatusCaption == " [连接失败]", "server rejection is visible without empty fallback");
+                else await Until(() => completeClient.StatusCaption.Contains("连接:1042]"), "complete configuration heartbeat is acknowledged");
+                Check(completeWire.Last.observation.maintenance_ranking.Value("config.slot.OriginalFastFade") == "1" && completeWire.ChallengeReads == 0,
+                    "effective evidence never falls back to a content-free heartbeat");
+            } finally {await completeClient.CloseAsync();}
+        }
         var wire = NoReviewTransport(); var client = Client(root, "no-review-compat", wire, new Auth());
         try {
             await Until(() => client.StatusCaption == " [已连接:1042]", "no-review menu initially connects");
