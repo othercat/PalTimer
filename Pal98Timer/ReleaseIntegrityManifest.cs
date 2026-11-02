@@ -205,6 +205,8 @@ namespace Pal98Timer
         { return ApprovedPalDllVersion(size, hash); }
         internal static string ApprovedPalDllVersion(long size, string hash)
         {
+            // Owner-requested r6 official DLL identity; verification and gameplay acceptance stay separate.
+            if (size == 2204672 && string.Equals(hash, "3de90ab2565ea49dc0c15a03c1cacd0904b8c4b26f36a6da101b110a7f0993c0", StringComparison.OrdinalIgnoreCase)) return "1.7.2.6";
             // Original v1.72 maintenance release; bind exact bytes independently of display version.
             if (size == 2206208 && string.Equals(hash, "54b4fbf397c22a4eb7910f6719fbae1c8331bd586aa819b20183ca991e8c30f8", StringComparison.OrdinalIgnoreCase)) return "1.7.2.3";
             // Original v1.72 maintenance release; bind exact bytes independently of display version.
