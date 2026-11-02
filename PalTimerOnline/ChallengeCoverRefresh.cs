@@ -35,34 +35,42 @@ namespace Pal98Timer
             }
             return null; // Never launch an older executable that would show its GUI.
         }
-        internal static async Task Refresh(string root, CancellationToken cancellation)
+        internal static async Task Refresh(string root, CancellationToken cancellation, CompetitionStorage suppliedStorage = null, ICompetitionTransport suppliedTransport = null)
         {
-            string input = null;
             try {
                 var envelope = ReadSelection(root); if (envelope == null) return;
                 string executable = Interpreter(root); if (executable == null) return;
                 var request = new Dictionary<string, object> { ["action"] = "refresh_cover", ["server_origin"] = envelope["server_origin"],
                     ["challenge_id"] = envelope["challenge_id"], ["revision"] = envelope["revision"] };
-                var storage = new CompetitionStorage();
+                var storage = suppliedStorage ?? new CompetitionStorage();
                 using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
-                using (var transport = new CompetitionHttpTransport()) {
+                using (var transport = suppliedTransport ?? new CompetitionHttpTransport()) {
                     deadline.CancelAfter(25000);
+                    var cached = new Dictionary<string, object>(envelope) { ["cached_only"] = true };
+                    await RunInterpreter(root, executable, cached, storage, deadline.Token).ConfigureAwait(false);
+                    deadline.Token.ThrowIfCancellationRequested();
                     var reply = await new ChallengeService(root, storage, transport).Execute(Wire.Serialize(request), deadline.Token).ConfigureAwait(false);
                     if (!Wire.Boolean(reply, "ok")) return;
                     envelope["presentation"] = Wire.Field(reply, "presentation");
-                    input = Path.Combine(storage.Root, "cover-requests", Guid.NewGuid().ToString("N") + ".json");
-                    CompetitionStorage.WriteAtomic(input, Wire.Serialize(envelope));
-                    using (var process = Process.Start(new ProcessStartInfo { FileName = executable, WorkingDirectory = Path.GetDirectoryName(executable),
-                        UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-                        Arguments = "--refresh-challenge-cover " + Quote(root) + " " + Quote(input) })) {
-                        if (process == null) return;
-                        // Stop waiting on cancellation; never interrupt a local
-                        // file transaction after the interpreter has started it.
-                        while (!process.HasExited) await Task.Delay(80, deadline.Token).ConfigureAwait(false);
-                    }
+                    await RunInterpreter(root, executable, envelope, storage, deadline.Token).ConfigureAwait(false);
                 }
             } catch { /* Display/network/asset failures cannot block local play. */ }
-            finally { if (input != null) { try { File.Delete(input); } catch { } } }
+        }
+        private static async Task RunInterpreter(string root, string executable, Dictionary<string, object> envelope, CompetitionStorage storage, CancellationToken cancellation)
+        {
+            string input = Path.Combine(storage.Root, "cover-requests", Guid.NewGuid().ToString("N") + ".json");
+            try {
+                CompetitionStorage.WriteAtomic(input, Wire.Serialize(envelope));
+                using (var process = Process.Start(new ProcessStartInfo { FileName = executable, WorkingDirectory = Path.GetDirectoryName(executable),
+                    UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+                    Arguments = "--refresh-challenge-cover " + Quote(root) + " " + Quote(input) })) {
+                    if (process == null) return;
+                    // Cancellation stops waiting, never kills a local transaction.
+                    while (!process.HasExited) await Task.Delay(80, cancellation).ConfigureAwait(false);
+                }
+            } catch (OperationCanceledException) { throw; }
+            catch { /* A bad cached cover must not prevent a newer online cover. */ }
+            finally { try { File.Delete(input); } catch { } }
         }
         private static string Quote(string value)
         {

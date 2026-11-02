@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Pal98Timer;
 using Pal98.Challenges;
 
+[assembly: System.Reflection.AssemblyDescription("PAL.ChallengeCoverRefresh.v1")]
+
 internal static partial class ChallengeBehavior
 {
     static int checks;
@@ -36,9 +38,11 @@ internal static partial class ChallengeBehavior
         internal string Status = "unbound", RequestedName;
         internal bool Enrolled, BadIni, InvalidBoolean, FailingIdentity;
         internal int RejectStatus;
+        internal Action BeforeSend;
         public void Dispose() { }
         public Task<CompetitionHttpResult> Send(string method, string url, string hwid, string secret, string body, int timeoutMilliseconds, CancellationToken stop)
         {
+            BeforeSend?.Invoke();
             Check(hwid == "challenge-fixture-device" && CompetitionProtocol.Digest(secret), "device credentials stay in transport");
             string path = new Uri(url).PathAndQuery; Calls.Add(method + " " + path);
             if (RejectStatus != 0) return Task.FromResult(new CompetitionHttpResult {Status = RejectStatus});
@@ -145,6 +149,26 @@ internal static partial class ChallengeBehavior
         File.AppendAllText(selectionFile, " ");
         Check(!Equals(capturedCover["selection_sha256"], ChallengeCoverRefresh.ReadSelection(root)["selection_sha256"]), "cover request pins exact selection bytes before network work");
         Check(ChallengeCoverRefresh.Interpreter(root) == null, "missing interpreter is a silent cached-cover fallback");
+        string helper = Path.Combine(root, "仙剑配置工具.exe"), sequence = Path.Combine(root, "helper-sequence.fixture");
+        string host = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        File.Copy(host, helper);
+        foreach (string name in new[] {"Pal98Timer.exe", "TimerPluginBase.dll", "System.Web.Script.Serialization.dll"})
+            File.Copy(Path.Combine(Path.GetDirectoryName(host), name), Path.Combine(root, name));
+        File.Copy(host + ".config", helper + ".config");
+        Check(ChallengeCoverRefresh.Interpreter(root) == helper, "capability marker selects the silent helper fixture");
+        File.WriteAllText(selectionFile, ChallengeContract.Json().Serialize(new {schema = 1, active = true,
+            server_origin = result.state.server_origin, activation = new {challenge = Item()}}));
+        string frozenSelection = File.ReadAllText(selectionFile);
+        fake.BeforeSend = () => Check(File.Exists(sequence), "cached-only helper completes before the first network call");
+        fake.RejectStatus = 503;
+        await ChallengeCoverRefresh.Refresh(root, CancellationToken.None, storage, fake);
+        Check(File.ReadAllLines(sequence).SequenceEqual(new[] {"cached"}), "network failure still runs the cached-only helper once");
+        fake.RejectStatus = 0;
+        await ChallengeCoverRefresh.Refresh(root, CancellationToken.None, storage, fake);
+        fake.BeforeSend = null;
+        Check(File.ReadAllLines(sequence).SequenceEqual(new[] {"cached", "cached", "online"}), "online metadata follows local cached timing without a GUI");
+        Check(File.ReadAllText(selectionFile) == frozenSelection && !Directory.EnumerateFiles(Path.Combine(storage.Root, "cover-requests")).Any(),
+            "startup presentation preserves selection and cleans owned request files");
         var choice = new Dictionary<string, object> {{"action", "enroll"}, {"challenge_id", challengeId}, {"revision", 1}, {"player_id", playerId}, {"display_name", "玩家申请"}};
         result = await request(ChallengeContract.Json().Serialize(choice));
         Check(result.ok && result.state.enrollments.Length == 1 && result.detail == "选择挑战成功", "enrollment produces online patch catalog");
@@ -317,6 +341,11 @@ internal static partial class ChallengeBehavior
     }
     static int Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "--refresh-challenge-cover") {
+            var value = ChallengeRelayContract.Object(File.ReadAllText(args[2]));
+            string kind = value.ContainsKey("cached_only") && ChallengeRelayContract.Boolean(value, "cached_only") ? "cached" : "online";
+            File.AppendAllText(Path.Combine(args[1], "helper-sequence.fixture"), kind + "\n"); return 0;
+        }
         try { if (args.Length > 1) Integration(args[0], args[1]).GetAwaiter().GetResult(); else { Cases(args[0]).GetAwaiter().GetResult(); OriginalCases(args[0]).GetAwaiter().GetResult(); } Console.WriteLine("PASS total=" + checks); return 0; }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }
