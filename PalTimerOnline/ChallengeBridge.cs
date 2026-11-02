@@ -42,7 +42,10 @@ namespace Pal98Timer
         {
             try {
                 var request = Wire.Object(requestText); string action = Wire.String(request, "action");
-                if (!new[] {"refresh", "refresh_identity", "submit_identity", "enroll", "activate"}.Contains(action)) throw new InvalidDataException("挑战操作无效。");
+                if (!new[] {"refresh", "refresh_identity", "submit_identity", "join_code", "enroll", "activate"}.Contains(action)) throw new InvalidDataException("挑战操作无效。");
+                string invitationCode = action == "join_code" ? Wire.String(request, "code") : null;
+                if (invitationCode != null && (invitationCode.Length != 6 || invitationCode.Any(c => c < '0' || c > '9')))
+                    throw new InvalidDataException("请输入六位数字挑战码。");
                 if (!File.Exists(Path.Combine(root, "config.ini")) || !Directory.Exists(Path.Combine(root, "patches"))) throw new InvalidDataException("请选择完整游戏目录。");
                 string settingsPath = Path.Combine(root, CompetitionGameSettings.PathInGame);
                 settings = OriginalEdition ? CompetitionGameSettings.LoadDirectory(root,localAppData) :
@@ -68,6 +71,12 @@ namespace Pal98Timer
                         if (action == "refresh_identity") await Identity(cancellation).ConfigureAwait(false);
                         await Catalog(cancellation).ConfigureAwait(false);
                         if (action == "refresh" && (Wire.RefreshSeconds(state, now()) == 0 || !state.ContainsKey("updated_at_utc") || state["updated_at_utc"] == null)) await Identity(cancellation).ConfigureAwait(false);
+                        await Enrollments(cancellation).ConfigureAwait(false);
+                    } else if (action == "join_code") {
+                        if (!Wire.Boolean(registeredPlayer, "bound")) throw new ChallengeFailure("identity_required", "请先完成玩家身份绑定，再输入挑战码。");
+                        var joined = await Send("POST", "/challenges/join-code", new {code = invitationCode}, cancellation).ConfigureAwait(false);
+                        Wire.Id(Wire.String(joined, "challenge_id"));
+                        await Catalog(cancellation).ConfigureAwait(false);
                         await Enrollments(cancellation).ConfigureAwait(false);
                     } else if (action == "submit_identity") {
                         string name = Wire.String(request, "display_name").Trim(); Wire.Text(name, 60);
@@ -97,7 +106,7 @@ namespace Pal98Timer
                         byte[] behavior = IdentityBehaviorSnapshot.Build(registered, identity, Wire.Field(currentPlayer, "id") as string, required);
                         LocalPlayerIdentity.Save(identityRoot, identity, null, false, behavior: behavior);
                     }
-                    return Reply(true, "ok", action == "enroll" ? "选择挑战成功" : "挑战信息已更新。", activation: activation);
+                    return Reply(true, "ok", action == "enroll" ? "选择挑战成功" : action == "join_code" ? "已加入挑战并刷新列表；需要审核的挑战仍须审批。" : "挑战信息已更新。", activation: activation);
                 }
             } catch (ChallengeFailure error) {return Reply(false, error.Code, error.Message, error.Retry);}
             catch (OperationCanceledException) {return Reply(false, "cancelled", "挑战请求已超时，请刷新后重试。");}
