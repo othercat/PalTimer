@@ -42,7 +42,7 @@ namespace Pal98Timer
         {
             try {
                 var request = Wire.Object(requestText); string action = Wire.String(request, "action");
-                if (!new[] {"refresh", "refresh_identity", "submit_identity", "join_code", "enroll", "activate"}.Contains(action)) throw new InvalidDataException("挑战操作无效。");
+                if (!new[] {"refresh", "refresh_identity", "submit_identity", "join_code", "refresh_cover", "enroll", "activate"}.Contains(action)) throw new InvalidDataException("挑战操作无效。");
                 string invitationCode = action == "join_code" ? Wire.String(request, "code") : null;
                 if (invitationCode != null && (invitationCode.Length != 6 || invitationCode.Any(c => c < '0' || c > '9')))
                     throw new InvalidDataException("请输入六位数字挑战码。");
@@ -51,6 +51,8 @@ namespace Pal98Timer
                 settings = OriginalEdition ? CompetitionGameSettings.LoadDirectory(root,localAppData) :
                     File.Exists(settingsPath) ? CompetitionGameSettings.Parse(CompetitionStorage.ReadBounded(settingsPath, 1048576)) : new CompetitionSettings();
                 string error = settings.Validate(); if (error.Length != 0) throw new InvalidDataException(error);
+                if (action == "refresh_cover" && Wire.String(request, "server_origin") != settings.Server)
+                    throw new InvalidDataException("活动挑战服务器与当前设置不同，保留原封面。");
                 string shared = Path.Combine(storage.Root, "challenges", CompetitionProtocol.Hash(settings.Server)); Directory.CreateDirectory(shared);
                 using (var gate = await Gate(Path.Combine(shared, "request.lock"), cancellation).ConfigureAwait(false)) {
                     stampPath = Path.Combine(shared, "identity-refresh.json"); string cachePath = OriginalEdition ? Pal98.Storage.UserDataStore.ReadGamePath(root, Wire.CacheFile,localAppData) : Path.Combine(root, Wire.CacheFile);
@@ -67,6 +69,16 @@ namespace Pal98Timer
                     if (Wire.Boolean(registeredPlayer, "bound")) state["identity_status"] = "bound";
                     else if (Wire.String(state, "identity_status") == "bound") state["identity_status"] = "unbound";
                     Dictionary<string, object> activation = null;
+                    if (action == "refresh_cover") {
+                        string id = Wire.String(request, "challenge_id"); Wire.Id(id);
+                        int revision = Wire.Integer(request, "revision"); if (revision < 1) throw new InvalidDataException("挑战修订无效。");
+                        var presentation = await Send("GET", "/challenges/" + id + "/cover?revision=" + revision, null, cancellation).ConfigureAwait(false);
+                        if (Wire.String(presentation, "challenge_id") != id || Wire.Integer(presentation, "revision") != revision || Wire.Integer(presentation, "cover_revision") < 1)
+                            throw new InvalidDataException("服务器返回了其他挑战的封面。");
+                        object cover = Wire.Field(presentation, "cover"); if (cover != null) Wire.Document(cover);
+                        Wire.Time(Wire.String(presentation, "as_of"));
+                        var answer = Reply(true, "ok", "封面信息已获取。"); answer["presentation"] = presentation; return answer;
+                    }
                     if (action == "refresh" || action == "refresh_identity") {
                         if (action == "refresh_identity") await Identity(cancellation).ConfigureAwait(false);
                         await Catalog(cancellation).ConfigureAwait(false);
@@ -224,6 +236,7 @@ namespace Pal98Timer
             if (!File.Exists(Path.Combine(root,"config.ini"))) root = Path.GetFullPath(Path.Combine(timerDirectory,"..",".."));
             if (!File.Exists(Path.Combine(root, "config.ini")) || !Directory.Exists(Path.Combine(root, "patches"))) return Task.CompletedTask;
             return Task.Run(async () => {
+                await ChallengeCoverRefresh.Refresh(root, token).ConfigureAwait(false);
                 try {
                     using (var transport = new CompetitionHttpTransport()) using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(token)) {
                         deadline.CancelAfter(40000); var result = await new ChallengeService(root, new CompetitionStorage(), transport).Execute("{\"action\":\"refresh\"}", deadline.Token).ConfigureAwait(false); if (!Wire.Boolean(result, "ok")) new CompetitionStorage().LogNetwork("challenge-startup-unavailable", 0);
