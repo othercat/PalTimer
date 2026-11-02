@@ -120,8 +120,8 @@ internal static class V169IntegrityBehavior
     }
     static void Contract()
     {
-        Check(Product.GetName().Version.ToString()=="3.38.6.4","assembly version");
-        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.6.4","file version");
+        Check(Product.GetName().Version.ToString()=="3.38.6.6","assembly version");
+        Check(FileVersionInfo.GetVersionInfo(Product.Location).FileVersion=="3.38.6.6","file version");
         Check(GForm.CurrentVersion=="3.38.6","player-facing timer version");
         Check(Decode(Snapshot())!=null,"valid r10 native layout");
         Check((uint)Field(Decode(Snapshot()),"ProducerVersion")==0x0106080Au,"r10 producer identity preserved");
@@ -946,6 +946,11 @@ internal static class V169IntegrityBehavior
         Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2204672L,new string('e',64))==null && Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2204673L,(string)Property(r6Dll,"sha256"))==null,"r6 approval rejects other bytes and sizes");
         foreach(var profile in ((IEnumerable)Property(r6,"profiles")).Cast<object>())
             Check(!((IEnumerable)Property(profile,"files")).Cast<object>().Any(f=>((string)Property(f,"path")).StartsWith("patches/",StringComparison.OrdinalIgnoreCase)),"r6 runtime identity excludes archive packaging bytes");
+        var r7=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.2.9");
+        var r7Dll=((IEnumerable)Property(r7,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
+        Check((long)Property(r7Dll,"size")==2216960 && (string)Property(r7Dll,"sha256")=="d4dc0ac3d6995574b973a80bc72d90b83edd01ee61159e1c4621f64e0d063b2b","r7 catalog pins the final coordinate and rule overlay DLL");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2216960L,(string)Property(r7Dll,"sha256")) as string=="1.7.2.9","r7 exact bytes are official");
+        Check(Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2216960L,new string('e',64))==null && Static("ReleaseIntegrityManifest","ApprovedPalDllVersion",2216961L,(string)Property(r7Dll,"sha256"))==null,"r7 approval rejects altered bytes and sizes");
         var v173=embedded.Cast<object>().Single(m=>(string)Property(m,"build")=="1.7.3.0");
         var v173Dll=((IEnumerable)Property(v173,"files")).Cast<object>().Single(f=>(string)Property(f,"path")=="PAL.dll");
         Check((long)Property(v173Dll,"size")==2206208 && (string)Property(v173Dll,"sha256")=="b67309544504a1a7223eff1324d8ac42b2ed8bc4e9b3663d645b05eb20d3a95f","v1.7.3 catalog pins the final original challenge release DLL");

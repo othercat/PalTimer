@@ -44,8 +44,19 @@ static class OriginalChallengeIdentityHost
             Check(gameplayHash==(string)Get(native,"rules_sha256"),"online decoration preserves local gameplay/PB identity");
             var onlineFacts=(Dictionary<string,string>)Get(online,"rules");
             Check(onlineFacts["challenge.id"]==(string)Get(context,"Id") && onlineFacts.Keys.Count(k=>k.StartsWith("challenge."))==4,"online identity carries all four pinned challenge facts");
-            Check(onlineFacts["config.schema"]=="PAL.ChallengeEffective.v1" && onlineFacts.Keys.Count(k=>k.StartsWith("config.slot.Original"))==28,
-                "online identity always contains all 28 effective original settings");
+            Check(onlineFacts["config.schema"]=="PAL.ChallengeEffective.v1" && onlineFacts.Keys.Count(k=>k.StartsWith("config.slot.Original"))==29,
+                "online identity always contains all 29 effective original settings");
+            Check(onlineFacts["config.slot.PriorityOriginalStoryItemSell"]=="0","legacy source receives explicit actual sale-rule priority");
+            string saleConfig=config.Contains("EnableRandomStoryItemSell=") ? System.Text.RegularExpressions.Regex.Replace(config,@"EnableRandomStoryItemSell=[01]","EnableRandomStoryItemSell=1") : config.Replace("[extra]","[extra]\nEnableRandomStoryItemSell=1");
+            File.WriteAllText(configPath,saleConfig); facts["mechanics.story_item_sell"]="1";
+            object withSale=Invoke(type,null,"Read",root,native);
+            var saleRanking=Invoke(type,withSale,"Decorate",ranking);
+            var saleFacts=(Dictionary<string,string>)Get(saleRanking,"rules");
+            Check(saleFacts["config.slot.OriginalStoryItemSell"]=="1" && (string)Get(saleRanking,"configuration_id")!=(string)Get(online,"configuration_id"),
+                "missing online sale value retains local actual state and changes full configuration identity");
+            facts["mechanics.story_item_sell"]="0";
+            Rejected(()=>Invoke(type,null,"Read",root,native),"requested sale flag without matching native installation is rejected");
+            File.WriteAllText(configPath,config);
             string firstId=(string)Get(online,"configuration_id");Set(context,"Id",Guid.NewGuid().ToString());
             Check(firstId!=(string)Get(Invoke(type,context,"Decorate",ranking),"configuration_id"),"equal gameplay in distinct challenges does not collide online");
             string pool=facts["random_skills.pool"];facts["random_skills.pool"]=new string('e',64);
