@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Wire = Pal98.Challenges.ChallengeRelayContract;
 
 namespace Pal98Timer
 {
@@ -28,7 +29,7 @@ namespace Pal98Timer
     {
         internal string Id = "", Detail = "正在连接联机服务器";
         internal long AckTick;
-        internal bool Failed, CompatibilityMode;
+        internal bool Failed, CompatibilityMode, ChallengeCompatibility;
         internal string Caption(bool enabled, long now)
         {
             if (!enabled) return "";
@@ -118,6 +119,8 @@ namespace Pal98Timer
         private long clockWarningSequence;
         private long liveSequence, liveGeneration, liveRevision, liveObservedRevision;
         private int liveFailures;
+        private string liveChallengeCompatibilityId;
+        private long nextLiveChallengeProbeTick;
 
         internal CompetitionClockWarning ClockWarning { get { return enabled && settings.Enabled ? clockWarning : null; } }
         internal string LiveCaption { get { var warning = ClockWarning; return warning != null ? warning.Caption : liveConnection.Caption(enabled && settings.Enabled, Stopwatch.GetTimestamp()); } }
@@ -160,7 +163,8 @@ namespace Pal98Timer
                     return caption + " · 实时协议 " + LiveProtocol +
                         (state.CompatibilityMode ? "（基础兼容）" : " + " + CompetitionProtocol.RestartTimeFeature) +
                         "；成绩协议 " + (serverSupportsV2 ? CompetitionProtocol.OnlineV2 : CompetitionProtocol.Online + "（新成绩保留本地待服务器升级）") +
-                        (state.CompatibilityMode ? "；服务器未声明重启耗时扩展，重启耗时仍保留本地，兼容上传不含此字段" : "；支持重启耗时上传，是否计入排名由服务器决定");
+                        (state.CompatibilityMode ? "；服务器未声明重启耗时扩展，重启耗时仍保留本地，兼容上传不含此字段" : "；支持重启耗时上传，是否计入排名由服务器决定") +
+                        (state.ChallengeCompatibility ? "\n免审挑战实时连接兼容中：当前仅同步计时状态，不声明挑战榜单资格；完整挑战成绩证据保持原样，资格仍由服务器审核。" : "");
                 return caption + (state.Id.Length == 0 ? "" : " · 联机 ID：" + state.Id) + " · " +
                     (state.AckTick > 0 && !state.Failed ? "心跳已过期，正在后台重连" : state.Detail);
             }
@@ -178,11 +182,13 @@ namespace Pal98Timer
             liveSession = null; serverLiveProtocol = null; liveFailures = 0;
             nextLiveDueTick = nextLiveAttemptTick = 0;
             clockWarning = null;
+            liveChallengeCompatibilityId = null; nextLiveChallengeProbeTick = 0;
             liveConnection = new CompetitionLiveConnection();
         }
         private void RetryLiveConnection()
         {
             nextLiveDueTick = nextLiveAttemptTick = 0; liveFailures = 0;
+            nextLiveChallengeProbeTick = 0;
             if (liveSession == null) liveConnection = new CompetitionLiveConnection { Id = liveConnection.Id };
         }
         private void LiveFailure(string detail, int status, bool force = false)
@@ -354,6 +360,40 @@ namespace Pal98Timer
             PublishResponse(epoch, serial, token, reply.player?.bound == true ? "联机实时参考" : "尚未绑定玩家", false, reply, compare.checkpoint_id ?? "");
             nextQuery = DateTime.UtcNow.AddSeconds(30);
         }
+        private static bool OriginalChallengeObservation(CompetitionLiveObservation snapshot)
+        {
+            var ranking = snapshot.maintenance_ranking;
+            return ranking?.covered == true && ranking.Value("family") == "standard" &&
+                ranking.configuration_id == snapshot.configuration_id && LiveUuid(ranking.Value("challenge.id"));
+        }
+        private async Task<bool> CanUseNoReviewLiveCompatibility(CompetitionSettings cfg, CompetitionLiveObservation snapshot)
+        {
+            // Old servers advertise original challenges but still require a manual
+            // approval in live updates. Confirm the CURRENT policy/visibility first;
+            // a stale local cache must not turn a reviewed/private challenge into one.
+            if (!OriginalChallengeObservation(snapshot)) return false;
+            var ranking = snapshot.maintenance_ranking;
+            var response = await transport.Send("GET", cfg.Endpoint + "/challenges/" + ranking.Value("challenge.id"),
+                credential.Hwid, credential.Secret, null, 3000, stop.Token).ConfigureAwait(false);
+            if (!response.Success) return false;
+            try {
+                var envelope = Wire.Object(response.Body);
+                var item = Wire.Map(Wire.Field(envelope, "challenge"));
+                var rules = Wire.Map(Wire.Field(item, "rules"));
+                return Wire.String(envelope, "protocol") == Wire.ServerProtocol && !Wire.Boolean(item, "requires_approval") &&
+                    Wire.String(item, "id") == ranking.Value("challenge.id") &&
+                    Wire.Integer(item, "revision").ToString(System.Globalization.CultureInfo.InvariantCulture) == ranking.Value("challenge.revision") &&
+                    Wire.String(rules, "sha256") == ranking.Value("challenge.rules_sha256");
+            } catch { return false; }
+        }
+        private static void RemoveLiveChallengeClaim(System.Collections.Generic.Dictionary<string, object> observation)
+        {
+            // Only this detached wire copy changes. Do not relabel the run as an
+            // ordinary challenge, forge approval, or rewrite signed/local evidence.
+            observation.Remove("maintenance_ranking");
+            observation["configuration_id"] = null;
+            observation["custom_competition_id"] = null;
+        }
         private async Task PumpLive(CompetitionAuthIdentity identity, bool approved)
         {
             if (Stopwatch.GetTimestamp() < nextLiveAttemptTick) return;
@@ -374,11 +414,25 @@ namespace Pal98Timer
             if (!serverSupportsMaintenance || snapshot.release_revision == null) wireObservation.Remove("release_revision");
             if (snapshot.maintenance_ranking == null || (GameplayIdentity.IsSdlFamily(snapshot.maintenance_ranking.Value("family"))
                 ? !serverSupportsMaintenanceLive : !serverSupportsOriginalChallenges)) wireObservation.Remove("maintenance_ranking");
+            bool challengeCompatibility = OriginalChallengeObservation(snapshot) &&
+                snapshot.configuration_id == liveChallengeCompatibilityId && Stopwatch.GetTimestamp() < nextLiveChallengeProbeTick;
+            if (challengeCompatibility) { RemoveLiveChallengeClaim(wireObservation); compare = null; }
             string body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
                 session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
             var identityRequest = CaptureIdentityRequest(cfg);
             var response = await transport.Send("POST", cfg.Endpoint + "/live/updates", credential.Hwid, credential.Secret, body, 3000, stop.Token).ConfigureAwait(false);
             if (!LiveCurrent(epoch, cfg.Server)) return;
+            if (!challengeCompatibility && response.Status == 422 && wireObservation.ContainsKey("maintenance_ranking") &&
+                await CanUseNoReviewLiveCompatibility(cfg, snapshot).ConfigureAwait(false)) {
+                if (!LiveCurrent(epoch, cfg.Server) || revision != Interlocked.Read(ref liveRevision) || token != Volatile.Read(ref activeToken)) return;
+                challengeCompatibility = true;
+                RemoveLiveChallengeClaim(wireObservation); compare = null;
+                sequence = ++liveSequence;
+                body = CompetitionProtocol.Json().Serialize(new { protocol = LiveProtocol, hwid = credential.Hwid,
+                    session_id = session.session_id, session_token = session.session_token, sequence, observation = wireObservation, compare });
+                response = await transport.Send("POST", cfg.Endpoint + "/live/updates", credential.Hwid, credential.Secret, body, 3000, stop.Token).ConfigureAwait(false);
+                if (!LiveCurrent(epoch, cfg.Server)) return;
+            }
             CompetitionLiveAck ack = null;
             try { if (response.Success) ack = CompetitionProtocol.Json().Deserialize<CompetitionLiveAck>(response.Body); } catch { }
             if (ack == null || ack.protocol != LiveProtocol || ack.scope != CompetitionProtocol.Scope || ack.server_origin != cfg.Server ||
@@ -386,7 +440,15 @@ namespace Pal98Timer
             { LiveRetry(response, "实时心跳未获确认，正在后台重连"); return; }
             liveFailures = 0; nextLiveAttemptTick = 0;
             nextLiveDueTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
-            liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接", CompatibilityMode = !includeRestartTime };
+            if (challengeCompatibility) {
+                if (liveChallengeCompatibilityId != snapshot.configuration_id || Stopwatch.GetTimestamp() >= nextLiveChallengeProbeTick) {
+                    liveChallengeCompatibilityId = snapshot.configuration_id;
+                    nextLiveChallengeProbeTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 60;
+                    storage.LogNetwork("live-original-no-review-compat", response.Status);
+                }
+            } else { liveChallengeCompatibilityId = null; nextLiveChallengeProbeTick = 0; }
+            liveConnection = new CompetitionLiveConnection { Id = session.public_id, AckTick = Stopwatch.GetTimestamp(), Detail = "已连接", CompatibilityMode = !includeRestartTime,
+                ChallengeCompatibility = challengeCompatibility };
             if (revision != Interlocked.Read(ref liveRevision)) { nextLiveDueTick = 0; return; }
             if (serial == Interlocked.Read(ref querySerial) && token == Volatile.Read(ref activeToken))
                 AcceptLiveStandings(ack.standings, compare, epoch, serial, token, identityRequest, response.Body);
