@@ -19,7 +19,9 @@ This repository is distributed under the [GNU General Public License version 2 o
 
 > Community usage: Used in recent PAL98 speedrunning competitions and livestream/VOD workflows on Bilibili, Douyin, Huya and Douyu.
 
-**维护构建：3.38.6.3 / Online 1.0.2.1；需要 .NET Framework 4.7.2 框架**
+**维护构建：3.38.6.4 / Online 1.0.2.2；需要 .NET Framework 4.7.2 框架**
+
+2026-11-02 / 原版 r6：统一程序保留 r102 的原版/改版自动核心，并支持六位挑战码、启动时后台刷新挑战封面及离线按时间更新封面第三/四行。原版 DLL 1.7.2.6 按最终文件哈希认定正式版。封面刷新不等待网络、不改变玩法配置、审批、计时或暂停；需要本轮对应配置工具解释封面元数据。客户端默认分支整合与发行记录见 othercat/PALDLL_DX9#264、#266、#280、#281、#282；构建批准、云激活和玩家实机验收独立进行。
 
 2026-11-02 / SDL r102：基于 3.38.6.2 增加梦时空 3.5 独立内容与路线，现在支持 21 种 SDL 内容。
 “灵儿永跟随”开启时记录独立玩法事实，关闭时保留原普通分组；原版自动核心与 SDL 自动核心沿用同一程序。
