@@ -194,22 +194,10 @@ namespace Pal98Timer
                     new SdlpalSplitRule { Id = "dream-baiyue-bridge", Name = "过拜月教主", Kind = "battle", Team = 313, Enemy = 546, Scenes = new[] { 281 } },
                     new SdlpalSplitRule { Id = "dream-ending", Name = "通关", Kind = "completion" },
                 };
-                case "geshi-hard-v1": return new[] {
-                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
-                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
-                };
-                case "geshi-nightwolf-v1": return new[] {
-                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
-                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
-                };
-                case "geshi-fanmade-v1": return new[] {
-                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
-                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
-                };
-                case "geshi-fanmade-entertainment-v1": return new[] {
-                    new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
-                    new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" },
-                };
+                case "geshi-hard-v1":
+                case "geshi-nightwolf-v1":
+                case "geshi-fanmade-v1":
+                case "geshi-fanmade-entertainment-v1": return SdlpalGeshiRoutes.Create();
                 default: throw new ArgumentException("Unknown expanded maintenance profile");
             }
         }

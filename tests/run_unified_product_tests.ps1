@@ -11,5 +11,5 @@ $hostExe=Join-Path $out 'UnifiedProductBehavior.exe'
 Copy-Item -LiteralPath (Join-Path $RuntimeDirectory 'Pal98Timer.exe.config') -Destination ($hostExe+'.config')
 & $csc /nologo /target:exe /platform:x64 "/out:$hostExe" /reference:System.dll /reference:System.Core.dll (Join-Path $PSScriptRoot 'unified_product_behavior.cs')
 if($LASTEXITCODE){throw 'Product probe compilation failed.'}
-& $hostExe (Join-Path $out 'Pal98Timer.exe') (Join-Path $out 'PalTimerOnline.dll') 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt')
+& $hostExe (Join-Path $out 'Pal98Timer.exe') (Join-Path $out 'PalTimerOnline.dll') (Join-Path $out 'sdlpal-default-routes.json') 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt')
 if($LASTEXITCODE){throw 'Product probe failed.'}
