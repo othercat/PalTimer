@@ -36,28 +36,34 @@ namespace Pal98Timer
         public int? Music { get; set; } public int? Item { get; set; }
         public SdlpalLocationRule[] Alternatives { get; set; }
         public int? ReturnScene { get; set; }
+        public int? Event { get; set; }
+        public int? EventState { get; set; }
         internal bool MatchesState(SdlpalSnapshot s) => s.started && (!Scene.HasValue || s.scene == Scene) &&
             (Kind == "position" && s.scene == Scene && Math.Abs((long)s.viewportX - X.Value) <= Radius.Value * 16 && Math.Abs((long)s.viewportY - Y.Value) <= Radius.Value * 8 ||
              Kind == "music" && s.music == Music || Kind == "item" && s.inventory != null && s.inventory.Any(i => i.id == Item && i.amount > 0) ||
              Kind == "any-location" && Alternatives.Any(p => p.Matches(s)));
         internal static SdlpalSplitRule[] Defaults(string profile) => profile == "geshi-easy-v1" ? Defaults() : SdlpalDreamRoutes.ForProfile(profile);
-        internal bool Matches(SdlpalBattleEvent battle) => ((Kind == "battle" || Kind == "completion" && Team.HasValue) && battle.result == 3 || Kind == "battle-end") &&
+        internal bool Matches(SdlpalBattleEvent battle) => ((Kind == "battle" || Kind == "battle-after-loss" || Kind == "battle-finish" || Kind == "completion" && Team.HasValue) && battle.result == 3 || Kind == "battle-end") &&
             (!Team.HasValue || Team == battle.team) && (!Scene.HasValue || Scene == battle.scene) &&
             (Scenes == null || Scenes.Contains(battle.scene)) &&
             (!Enemy.HasValue || battle.enemies.Contains(Enemy.Value));
-        internal static SdlpalSplitRule[] Defaults() => new[] {
-            new SdlpalSplitRule { Id = "geshi-eight-headed-serpent", Name = "八头蛇胜利", Kind = "battle", Team = 315, Enemy = 547 },
-            new SdlpalSplitRule { Id = "geshi-ending", Name = "通关", Kind = "completion" }
-        };
+        internal bool MatchesPrelude(SdlpalBattleEvent battle) => Kind == "battle-after-loss" && battle.result == 1 &&
+            (!Team.HasValue || Team == battle.team) && (!Scene.HasValue || Scene == battle.scene) &&
+            (Scenes == null || Scenes.Contains(battle.scene)) && (!Enemy.HasValue || battle.enemies.Contains(Enemy.Value));
+        internal static SdlpalSplitRule[] Defaults() => SdlpalGeshiRoutes.Create();
         internal static void Validate(SdlpalSplitRule[] rules)
         {
             if (rules == null || rules.Length < 1 || rules.Length > 64 || rules.Any(r => r == null || !CompetitionProtocol.Identifier(r.Id) ||
                 string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.Name.Any(char.IsControl) ||
-                (r.Kind != "battle" && r.Kind != "battle-end" && r.Kind != "scene" && r.Kind != "completion" && r.Kind != "position" && r.Kind != "music" && r.Kind != "item" && r.Kind != "any-location" && r.Kind != "water-pearl") ||
+                (r.Kind != "battle" && r.Kind != "battle-end" && r.Kind != "battle-after-loss" && r.Kind != "battle-finish" && r.Kind != "scene" && r.Kind != "scene-transition" && r.Kind != "completion" && r.Kind != "position" && r.Kind != "music" && r.Kind != "item" && r.Kind != "item-consumed" && r.Kind != "any-location" && r.Kind != "water-pearl") ||
                 r.Kind == "any-location" && (r.Alternatives == null || r.Scene.HasValue) ||
                 r.Alternatives != null && (r.Kind != "any-location" || r.Alternatives.Length < 1 || r.Alternatives.Length > 8 || r.Alternatives.Any(p => p == null || !p.Valid)) ||
                 r.Kind == "water-pearl" && (!r.Scene.HasValue || r.Scene < 1 || r.Scene >= 300 || !r.ReturnScene.HasValue || r.ReturnScene < 1 || r.ReturnScene >= 300 || r.Scene == r.ReturnScene) ||
-                r.ReturnScene.HasValue && r.Kind != "water-pearl" ||
+                r.ReturnScene.HasValue && r.Kind != "water-pearl" && r.Kind != "item-consumed" && r.Kind != "scene-transition" ||
+                r.Kind == "scene-transition" && (!r.Scene.HasValue || r.Scene < 1 || r.Scene >= 300 || !r.ReturnScene.HasValue || r.ReturnScene < 1 || r.ReturnScene >= 300 || r.Scene == r.ReturnScene) ||
+                r.Kind == "item-consumed" && (!r.Scene.HasValue || r.Scene < 1 || r.Scene >= 300 || !r.ReturnScene.HasValue || r.ReturnScene < 1 || r.ReturnScene >= 300 || !r.Item.HasValue || r.Item < 1 || r.Item >= 700) ||
+                (r.Event.HasValue || r.EventState.HasValue) && ((r.Kind != "item-consumed" && r.Kind != "battle-after-loss") || !r.Event.HasValue || !r.EventState.HasValue || r.Event < 1 || r.Event > 65535 || r.EventState < -32768 || r.EventState > 32767) ||
+                (r.Kind == "battle-after-loss" || r.Kind == "battle-finish") && (!r.Team.HasValue || !r.Enemy.HasValue || !r.Scene.HasValue || r.Scene < 1 || r.Scene >= 300) ||
                 (r.Kind == "battle" || r.Kind == "battle-end") && !r.Team.HasValue && !r.Enemy.HasValue || r.Kind == "scene" && !r.Scene.HasValue ||
                 r.Scenes != null && (r.Scenes.Length == 0 || r.Scenes.Length > 16 || r.Scenes.Any(v => v < 1 || v >= 300) || r.Scenes.Distinct().Count() != r.Scenes.Length) ||
                 r.Kind == "completion" && (r.Team.HasValue || r.Enemy.HasValue || r.Scene.HasValue) && (!r.Team.HasValue || !r.Enemy.HasValue || !r.Scene.HasValue) ||
@@ -66,8 +72,9 @@ namespace Pal98Timer
                 r.Kind == "item" && (!r.Item.HasValue || r.Item < 1 || r.Item >= 700) ||
                 r.Team < 0 || r.Team > 65535 || r.Scene < 0 || r.Scene > 65535 || r.Enemy < 0 || r.Enemy > 65535) ||
                 rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != rules.Length ||
-                rules.Count(r => r.Kind == "completion") != 1 || rules[rules.Length - 1].Kind != "completion")
-                throw new InvalidDataException("节点须有唯一 ID；战斗填队伍或敌人 ID，场景填 scene，最后且仅一个节点为 completion");
+                rules.Count(r => r.Kind == "completion" || r.Kind == "battle-finish") != 1 ||
+                (rules[rules.Length - 1].Kind != "completion" && rules[rules.Length - 1].Kind != "battle-finish"))
+                throw new InvalidDataException("节点须有唯一 ID及完整条件；末行且仅一行须为 completion 或 battle-finish");
         }
         internal static string Identity(SdlpalSplitRule[] rules)
         {
@@ -78,7 +85,10 @@ namespace Pal98Timer
                 (r.Enemy.HasValue ? r.Enemy.Value.ToString(CultureInfo.InvariantCulture) : "-") +
                 (r.Kind == "position" ? ":" + r.X + ":" + r.Y + ":" + r.Radius : r.Kind == "music" ? ":" + r.Music : r.Kind == "item" ? ":" + r.Item : "") +
                 (r.Kind == "any-location" ? ":any=" + string.Join(";", r.Alternatives.Select(p => p.Identity).OrderBy(v => v, StringComparer.Ordinal)) :
-                    r.Kind == "water-pearl" ? ":return=" + r.ReturnScene + ":gate=pal98-water-pearl-v1" : "") +
+                    r.Kind == "water-pearl" ? ":return=" + r.ReturnScene + ":gate=pal98-water-pearl-v1" :
+                    r.Kind == "scene-transition" ? ":return=" + r.ReturnScene + ":gate=scene-transition-v1" :
+                    r.Kind == "battle-after-loss" && r.Event.HasValue ? ":event=" + r.Event + ":state=" + r.EventState + ":gate=loss-win-event-v1" :
+                    r.Kind == "item-consumed" ? ":item=" + r.Item + ":return=" + r.ReturnScene + ":event=" + r.Event + ":state=" + r.EventState + ":gate=count-decrease-v1" : "") +
                 (r.Scenes == null ? "" : ":scenes=" + string.Join(",", r.Scenes.OrderBy(v => v)))));
             return CompetitionProtocol.Hash("SDLPAL.GeshiSplits.v1\n" + text + "\n");
         }
@@ -99,6 +109,9 @@ namespace Pal98Timer
         private bool initialWuQiang;
         private string initialBestConfiguration;
         private readonly Dictionary<string, Pal98WaterSpiritPearlGate> waterPearlGates = new Dictionary<string, Pal98WaterSpiritPearlGate>();
+        private readonly Dictionary<string, SdlpalItemConsumptionGate> consumptionGates = new Dictionary<string, SdlpalItemConsumptionGate>();
+        private readonly HashSet<string> battlePreludes = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> pendingBattleGates = new HashSet<string>(StringComparer.Ordinal);
         internal SdlpalSnapshot ConfigurationSnapshot => Snapshot;
         internal void Observe(SdlpalSnapshot next, SdlpalSplitRule[] rules)
         {
@@ -108,6 +121,7 @@ namespace Pal98Timer
             if (first || EpochChanged)
             {
                 waterPearlGates.Clear();
+                consumptionGates.Clear(); battlePreludes.Clear(); pendingBattleGates.Clear();
                 lastBattle = next.battleEvents.Length == 0 ? (next.battle.active && next.battle.sequence > 0 ? next.battle.sequence - 1 : next.battle.sequence) : next.battleEvents.Last().seq;
                 bool ordinaryLoad = Started && Snapshot != null && Snapshot.Pid == next.Pid &&
                     Snapshot.Created == next.Created && next.loadedFrom > 0 && initialIdentity == next.ResourceEngineIdentity;
@@ -131,16 +145,40 @@ namespace Pal98Timer
             {
                 var pending = next.battleEvents.Where(e => e.seq > lastBattle).ToArray();
                 if (pending.Length != 0 && lastBattle != 0 && pending[0].seq != lastBattle + 1)
-                { Issue = "战斗事件记录缺口，请检查节点"; }
+                { Issue = "战斗事件记录缺口，请检查节点"; battlePreludes.Clear(); pendingBattleGates.Clear(); }
                 else foreach (var battle in pending)
                     foreach (var rule in rules)
-                        if (!Reached.Contains(rule.Id) && rule.Matches(battle)) { Reached.Add(rule.Id); break; }
+                    {
+                        if (rule.MatchesPrelude(battle)) battlePreludes.Add(rule.Id);
+                        if (!Reached.Contains(rule.Id) && rule.Matches(battle) &&
+                            (rule.Kind != "battle-after-loss" || battlePreludes.Contains(rule.Id)))
+                        {
+                            if (rule.Kind == "battle-after-loss" && rule.Event.HasValue) pendingBattleGates.Add(rule.Id);
+                            else Reached.Add(rule.Id);
+                            break;
+                        }
+                    }
                 if (pending.Length != 0) lastBattle = pending.Last().seq;
             }
+            foreach (var rule in rules.Where(r => r.Kind == "battle-after-loss" && r.Event.HasValue))
+                if (pendingBattleGates.Contains(rule.Id) && next.started && next.scene == rule.Scene &&
+                    next.EventDataError == null && next.events != null &&
+                    next.events.Any(e => e != null && e.id == rule.Event && e.state == rule.EventState))
+                    Reached.Add(rule.Id);
             if (next.started && (Snapshot == null || !Snapshot.started || next.scene != Snapshot.scene))
                 foreach (var rule in rules)
                     if (!Reached.Contains(rule.Id) && rule.Kind == "scene" && next.scene == rule.Scene) { Reached.Add(rule.Id); break; }
+            if (!first && !EpochChanged && Snapshot.started && next.started)
+                foreach (var rule in rules)
+                    if (rule.Kind == "scene-transition" && Snapshot.scene == rule.Scene && next.scene == rule.ReturnScene)
+                        Reached.Add(rule.Id);
             foreach (var rule in rules) if (rule.MatchesState(next)) Reached.Add(rule.Id);
+            foreach (var rule in rules.Where(r => r.Kind == "item-consumed" && !Reached.Contains(r.Id)))
+            {
+                if (!consumptionGates.TryGetValue(rule.Id, out SdlpalItemConsumptionGate gate))
+                    consumptionGates[rule.Id] = gate = new SdlpalItemConsumptionGate();
+                if (gate.Observe(next, rule)) Reached.Add(rule.Id);
+            }
             foreach (var rule in rules.Where(r => r.Kind == "water-pearl"))
             {
                 string key = rule.Id + ":" + rule.Scene + ":" + rule.ReturnScene;
@@ -163,6 +201,7 @@ namespace Pal98Timer
         internal void MarkImported(SdlpalSnapshot snapshot, bool wuqiangChanged = false, bool bestConfigurationChanged = false)
         {
             waterPearlGates.Clear();
+            consumptionGates.Clear(); battlePreludes.Clear(); pendingBattleGates.Clear();
             Snapshot = snapshot; Started = snapshot.started; BeganHere = false; EpochChanged = false;
             WuQiangChanged |= wuqiangChanged;
             BestConfigurationChanged |= bestConfigurationChanged;
@@ -795,7 +834,7 @@ namespace Pal98Timer
         {
             string profile; SdlpalSplitRule[] initialRules; SdlpalSnapshot snapshot;
             lock (gate) { profile = activeProfile; initialRules = rules; snapshot = observer.Snapshot; }
-            using (var dialog = new SdlpalRulesForm(initialRules, snapshot))
+            using (var dialog = new SdlpalRulesForm(initialRules, snapshot, profile))
                 if (dialog.ShowDialog(form) == DialogResult.OK && form.Confirm("保存新节点并重置计时器？"))
                 {
                     try { lock (gate) { SaveProfileRules(dialog.Rules, profile); form._ResetAll(); } }
@@ -806,6 +845,7 @@ namespace Pal98Timer
         {
             lock (gate) {
                 if (unloaded || profile != activeProfile) throw new InvalidOperationException("游戏内容已切换，请重新打开节点编辑器；旧节点未保存。");
+                SdlpalSplitRule.Validate(value);
                 string json = SdlpalBridge.Json().Serialize(value); string path = TimerUserSettings.GetPath(RulesFile);
                 if (File.Exists(path)) File.Copy(path, path + ".backup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff"));
                 TimerUserSettings.WriteText(RulesFile, json, new UTF8Encoding(false));
@@ -817,17 +857,21 @@ namespace Pal98Timer
     {
         internal SdlpalSplitRule[] Rules;
         private readonly DataGridView grid = new DataGridView { Dock = DockStyle.Fill, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, AllowUserToAddRows = true, AllowUserToDeleteRows = true };
-        internal SdlpalRulesForm(SdlpalSplitRule[] rules, SdlpalSnapshot snapshot)
+        internal SdlpalRulesForm(SdlpalSplitRule[] rules, SdlpalSnapshot snapshot, string profile = null)
         {
             Text = "SDLPAL 自动节点（当前内容，按表格顺序）"; Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi; Width = 1040; Height = 560; MinimumSize = new Size(850, 420); StartPosition = FormStartPosition.CenterParent;
-            var help = new Label { Text = "battle 匹配胜利；position 使用视口坐标；any-location 满足任一入口；water-pearl 为水灵珠交换或返回大理；最后为 completion。每种内容独立保存。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
-            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes", "Alternatives", "ReturnScene" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合", "可选入口 JSON", "返回场景" };
+            var help = new Label { Text = "battle 匹配胜利；battle-after-loss 为同场景敌队先败后胜；item-consumed 核对物品减量和目标场景/事件状态；末行为 completion 或 battle-finish。恢复默认仅更改表格，保存后生效。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
+            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes", "Alternatives", "ReturnScene", "Event", "EventState" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合", "可选入口 JSON", "返回场景", "事件 ID", "事件状态" };
             for (int i = 0; i < names.Length; i++) grid.Columns.Add(names[i], captions[i]);
             grid.Columns[0].FillWeight = 190; grid.Columns[1].FillWeight = 120; grid.RowTemplate.Height = 28;
             foreach (DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
-            foreach (var rule in rules) grid.Rows.Add(rule.Id, rule.Name, rule.Kind, rule.Team, rule.Scene, rule.Enemy, rule.X, rule.Y, rule.Radius, rule.Music, rule.Item, rule.Scenes == null ? "" : string.Join(",", rule.Scenes),
-                rule.Alternatives == null ? "" : SdlpalBridge.Json().Serialize(rule.Alternatives), rule.ReturnScene);
+            Action<SdlpalSplitRule[]> populate = values => {
+                grid.Rows.Clear();
+                foreach (var rule in values) grid.Rows.Add(rule.Id, rule.Name, rule.Kind, rule.Team, rule.Scene, rule.Enemy, rule.X, rule.Y, rule.Radius, rule.Music, rule.Item, rule.Scenes == null ? "" : string.Join(",", rule.Scenes),
+                    rule.Alternatives == null ? "" : SdlpalBridge.Json().Serialize(rule.Alternatives), rule.ReturnScene, rule.Event, rule.EventState);
+            };
+            populate(rules);
             var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45, Padding = new Padding(5) };
             var capture = new Button { Text = "捕获战斗", AutoSize = true };
             capture.Click += (s, e) => {
@@ -838,6 +882,9 @@ namespace Pal98Timer
                 grid.Rows.Insert(index, "battle-" + team + "-" + Guid.NewGuid().ToString("N").Substring(0, 6), "战斗 " + team, "battle", team, null, null);
             };
             bar.Controls.Add(capture);
+            var defaults = new Button { Text = "恢复本内容默认节点", AutoSize = true };
+            defaults.Click += (s, e) => populate(SdlpalSplitRule.Defaults(profile ?? snapshot?.profile ?? "geshi-easy-v1"));
+            bar.Controls.Add(defaults);
             foreach (int direction in new[] { -1, 1 })
             {
                 int offset = direction; var move = new Button { Text = direction < 0 ? "上移" : "下移", AutoSize = true };
@@ -853,7 +900,7 @@ namespace Pal98Timer
                     foreach (DataGridViewRow row in grid.Rows) if (!row.IsNewRow)
                         result.Add(new SdlpalSplitRule { Id = Convert.ToString(row.Cells[0].Value).Trim(), Name = Convert.ToString(row.Cells[1].Value).Trim(), Kind = Convert.ToString(row.Cells[2].Value).Trim(),
                             Team = Number(row.Cells[3].Value), Scene = Number(row.Cells[4].Value), Enemy = Number(row.Cells[5].Value), X = Number(row.Cells[6].Value), Y = Number(row.Cells[7].Value), Radius = Number(row.Cells[8].Value), Music = Number(row.Cells[9].Value), Item = Number(row.Cells[10].Value), Scenes = Numbers(row.Cells[11].Value),
-                            Alternatives = Locations(row.Cells[12].Value), ReturnScene = Number(row.Cells[13].Value) });
+                            Alternatives = Locations(row.Cells[12].Value), ReturnScene = Number(row.Cells[13].Value), Event = Number(row.Cells[14].Value), EventState = Number(row.Cells[15].Value) });
                     Rules = result.ToArray(); SdlpalSplitRule.Validate(Rules); DialogResult = DialogResult.OK;
                 }
                 catch (Exception ex) { MessageBox.Show(this, ex.Message, "节点无效", MessageBoxButtons.OK, MessageBoxIcon.Warning); }

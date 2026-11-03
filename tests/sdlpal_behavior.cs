@@ -13,7 +13,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-internal static class SdlpalBehavior
+internal static partial class SdlpalBehavior
 {
     static int count;
     static readonly string root = AppDomain.CurrentDomain.BaseDirectory;
@@ -566,8 +566,8 @@ internal static class SdlpalBehavior
     static SdlpalBattleEvent Victory(ulong sequence, ulong epoch=1, int result=3) => new SdlpalBattleEvent { seq=sequence,epoch=epoch,team=315,result=result,enemies=new[]{547},scene=10 };
     static void ObserverTests()
     {
-        var rules=SdlpalSplitRule.Defaults(); SdlpalSplitRule.Validate(rules);
-        var renamed=SdlpalSplitRule.Defaults();renamed[0].Name="八頭蛇勝利";
+        var rules=LegacyGeshiRules(); SdlpalSplitRule.Validate(rules);
+        var renamed=LegacyGeshiRules();renamed[0].Name="八頭蛇勝利";
         Check(SdlpalSplitRule.Identity(rules)==SdlpalSplitRule.Identity(renamed),"split display names do not partition ranking identity");
         var run=new SdlpalRunObserver();var state=Snapshot();run.Observe(Clone(state),rules);state.started=true;run.Observe(Clone(state),rules);
         Check(run.Started&&run.BeganHere&&run.Issue=="","new-game start is observed without claiming a late attach");
@@ -1137,7 +1137,7 @@ internal static class SdlpalBehavior
         {
             run.StartNewGame();run.Engine.State.battleEvents=new[]{Victory(1)};run.Tick();
             run.Core.IsUIPause=true;run.Tick();
-            var defaults=SdlpalSplitRule.Defaults().Select(rule=>rule.Name).ToArray();
+            var defaults=LegacyGeshiRules().Select(rule=>rule.Name).ToArray();
             var times=run.Core.CheckPoints.Select(point=>point.Current).ToArray();
             var statuses=run.Core.CheckPoints.Select(point=>point.Status).ToArray();
             var elapsed=run.Core.GetMainWatch();
@@ -1345,19 +1345,24 @@ internal static class SdlpalBehavior
         foreach (string profile in new[]{"geshi-hard-v1", "geshi-nightwolf-v1", "geshi-fanmade-v1", "geshi-fanmade-entertainment-v1"})
         {
             var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
-            Check(rules.Length == 2 && SdlpalBridge.SupportedProfile(profile), "independent Geshi route: " + profile);
-            var fight = new SdlpalBattleEvent{team=315,enemies=new[]{547},result=3};
-            Check(rules[0].Matches(fight), "Geshi audited eight-headed serpent victory");
-            fight.result = 1; Check(!rules[0].Matches(fight), "Geshi defeat cannot split");
-            fight.result = 3; fight.team = 314; Check(!rules[0].Matches(fight), "another team cannot split Geshi");
+            Check(rules.Length == 18 && SdlpalBridge.SupportedProfile(profile), "independent Geshi identity with shared eighteen-node route: " + profile);
+            Check(SdlpalSplitRule.Identity(rules)==SdlpalSplitRule.Identity(SdlpalSplitRule.Defaults()),"all audited Geshi cores use the same node semantics");
+            var firstBoss=rules.Single(r=>r.Id=="geshi-qian-wutong");
+            var fight = new SdlpalBattleEvent{scene=86,team=382,enemies=new[]{579},result=3};
+            Check(firstBoss.Matches(fight), "Geshi audited Qian Wutong victory");
+            fight.result = 1; Check(!firstBoss.Matches(fight), "Geshi defeat cannot split");
+            fight.result = 3; fight.team = 381; Check(!firstBoss.Matches(fight), "another team cannot split Geshi");
             var state = Snapshot(); state.profile = profile; state.started = false;
             var observer = new SdlpalRunObserver(); observer.Observe(Clone(state),rules);
             state.started = true; observer.Observe(Clone(state),rules);
-            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,team=315,enemies=new[]{547},result=3}};
+            state.battleEvents = new[]{new SdlpalBattleEvent{seq=1,epoch=1,scene=86,team=382,enemies=new[]{579},result=3}};
             observer.Observe(Clone(state),rules);
-            Check(!observer.Reached.Contains(rules[1].Id), "Geshi boss victory waits for the ending");
+            Check(!observer.Reached.Contains(rules.Last().Id), "early Geshi boss victory is not the final node");
             state.completed = true; observer.Observe(Clone(state),rules);
-            Check(observer.Reached.Contains(rules[1].Id), "actual Geshi ending completes route");
+            Check(!observer.Reached.Contains(rules.Last().Id), "ending flag cannot replace requested underworld victory");
+            state.battleEvents = new[]{state.battleEvents[0],new SdlpalBattleEvent{seq=2,epoch=1,scene=154,team=307,enemies=new[]{541},result=3}};
+            observer.Observe(Clone(state),rules);
+            Check(observer.Reached.Contains(rules.Last().Id), "exact underworld Geshi victory completes the shared route");
             var facts = state.RankingFacts();
             Check(facts["profile"] == profile && facts["family"] == "sdlpal-geshi", "Geshi difficulty keeps independent ranking identity");
         }
@@ -1444,7 +1449,7 @@ internal static class SdlpalBehavior
                     previous=core.ActiveBestPath;engine.State.profile="dream22-puppet100-v1";engine.Publish();Call(core,"OnTick");
                     Check(core.ActiveProfile==engine.State.profile&&previous!=core.ActiveBestPath&&core.CheckPoints.Count==21&&core.GetGameVersion().Contains("傀儡100%"),"actual core selects Dream 2.2 puppet route and separate PB");
                     engine.State.profile="geshi-easy-v1";engine.Publish();Call(core,"OnTick");
-                    Check(core.CheckPoints.Count==2&&core.GetGameVersion().Contains("隔世"),"switch back restores original Geshi route");
+                    Check(core.CheckPoints.Count==2&&core.GetGameVersion().Contains("隔世"),"switch back preserves explicitly configured legacy Geshi user route");
                 } finally {core.Unload();}
             }
         }
@@ -1711,6 +1716,12 @@ internal static class SdlpalBehavior
         {
             typeof(TimerUserSettings).GetField("store",BindingFlags.NonPublic|BindingFlags.Static).SetValue(null,new TimerSettingsStore(root,Path.Combine(root,"localappdata"),_=>{}));
             TimerUserSettings.ClearPathCache();SoundConfig.ins.GlobalEnabled=false;
+            if(args.Contains("--geshi-gates-only")) {GeshiGateTests();Console.WriteLine("PASS total="+count);return 0;}
+            if(args.Contains("--geshi-lifecycle-only")) {GeshiLifecycleTests();Console.WriteLine("PASS total="+count);return 0;}
+            // Retain historical clock/load/relay regressions as a real custom
+            // two-node route; dedicated tests above exercise the new defaults.
+            using(var legacyRules=new TemporaryGeshiRules(LegacyGeshiRules()))
+            {
             bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
             if(args.Contains("--split-display-only")) {SplitDisplayTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--best-configuration-only")) {BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;}
@@ -1735,6 +1746,7 @@ internal static class SdlpalBehavior
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
             GameLoadResumeTests();IsolationTests();RankingTests();GameplayRuleTests();DreamspaceThrowTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
+            }
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
     }

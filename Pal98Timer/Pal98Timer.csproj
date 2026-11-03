@@ -139,6 +139,8 @@
     <Compile Include="$(PalSharedSourceRoot)\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
     <Compile Include="SdlpalBridge.cs" />
     <Compile Include="SdlpalGeshi.cs" />
+    <Compile Include="SdlpalGeshiRoutes.cs" />
+    <Compile Include="SdlpalItemConsumptionGate.cs" />
     <Compile Include="MaintenanceExecutable.cs" />
     <Compile Include="SdlpalDreamRoutes.cs" />
     <Compile Include="SdlpalClassicRoutes.cs" />

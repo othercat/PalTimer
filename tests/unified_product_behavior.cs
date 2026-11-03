@@ -37,11 +37,19 @@ static class UnifiedProductBehavior
             string[] profiles = {"pal-dos-v1","pal98-classic-v6-v1","geshi-easy-v1","dream22-puppet100-v1","dream222-normal-v1","dream222-hard-v1","dreamspace39x-hard-v1","dreamspace35-v1","dream211-v1","hunqian-branch-v1","hunqian167-easy-v1","hunqian167-hard-v1","mogai10-v1","dream211-pudu-v1","dream211-yueying-v1","tianqi20-v1","dream211-yueying-rat-v1","geshi-hard-v1","geshi-nightwolf-v1","geshi-fanmade-v1","geshi-fanmade-entertainment-v1"};
             var bridge = product.GetType("Pal98Timer.SdlpalBridge");
             var ruleType = product.GetType("Pal98Timer.SdlpalSplitRule");
+            var actualRoutes = new Dictionary<string, object>();
             foreach (string profile in profiles) {
                 Check((bool)bridge.GetMethod("SupportedProfile", F).Invoke(null, new object[] {profile}), "frozen EXE supports " + profile);
                 object rules = ruleType.GetMethod("Defaults", F, null, new[] {typeof(string)}, null).Invoke(null, new object[] {profile});
+                actualRoutes.Add(profile, rules);
                 ruleType.GetMethod("Validate", F).Invoke(null, new[] {rules});
                 Check(((Array)rules).Length > 1, "frozen EXE contains route for " + profile);
+                if(profile.StartsWith("geshi-",StringComparison.Ordinal))
+                {
+                    var nodes=((Array)rules).Cast<object>().ToArray();
+                    Check(nodes.Length==18&&(int?)ruleType.GetProperty("Scene").GetValue(nodes[11])==106&&
+                        (string)ruleType.GetProperty("Kind").GetValue(nodes[17])=="battle-finish", "frozen Geshi defaults include confirmed cave and exact final battle: "+profile);
+                }
             }
             var battleType = product.GetType("Pal98Timer.SdlpalBattleEvent");
             var dragon35 = Route(ruleType, "dreamspace35-v1", "dream-blood-dragon");
@@ -73,6 +81,12 @@ static class UnifiedProductBehavior
             var online = Assembly.LoadFrom(args[1]);
             Check(online.GetName().Version.ToString() == "1.0.2.5", "unified Online version");
             Check(online.GetType("Pal98.Challenges.ChallengeRelayContract") != null, "frozen Online uses generic challenge relay");
+            if(args.Length>2)
+            {
+                var serializer=bridge.GetMethod("Json",F).Invoke(null,null);
+                string json=(string)serializer.GetType().GetMethod("Serialize",new[]{typeof(object)}).Invoke(serializer,new object[]{actualRoutes});
+                System.IO.File.WriteAllText(args[2],json,new System.Text.UTF8Encoding(false));
+            }
             Console.WriteLine("PASS unified product total=" + checks + "; game/network/UI=none"); return 0;
         } catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }

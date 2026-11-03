@@ -50,6 +50,11 @@ namespace Pal98Timer
         public string name { get; set; }
         public int[] data { get; set; }
     }
+    internal sealed class SdlpalMapEvent
+    {
+        public int id { get; set; }
+        public int state { get; set; }
+    }
     internal sealed class SdlpalSnapshot
     {
         public int schema { get; set; }
@@ -97,7 +102,9 @@ namespace Pal98Timer
         public SdlpalItemRole[] roles { get; set; }
         public SdlpalCatalogEntry[] catalog { get; set; }
         public int[] itemIds { get; set; }
+        public SdlpalMapEvent[] events { get; set; }
         internal string ItemDataError;
+        internal string EventDataError;
         internal int Pid;
         internal ulong Created, Published;
         // Online categories describe gameplay, not the executable or its UI.
@@ -334,7 +341,19 @@ namespace Pal98Timer
                 !HasItemFields(fields, "inventory", "slot", "id", "amount", "inUse") ||
                 !HasItemFields(fields, "roles", "id", "name", "equipment") || !HasItemFields(fields, "catalog", "id", "name", "data")
                 ? "游戏未提供完整物品数据，请更新配套游戏" : null;
+            // Existing engines already publish map events. This optional view
+            // is used only by story-state gates; old timing snapshots stay valid.
+            value.EventDataError = ValidMapEvents(fields, value.events) ? null : "游戏未提供有效事件状态";
             return value;
+        }
+        private static bool ValidMapEvents(Dictionary<string, object> root, SdlpalMapEvent[] events)
+        {
+            if (events == null || events.Length > 16384 ||
+                events.Any(e => e == null || e.id < 1 || e.id > 65535 || e.state < -32768 || e.state > 32767) ||
+                events.Select(e => e.id).Distinct().Count() != events.Length || !HasItemFields(root, "events", "id", "state")) return false;
+            foreach (Dictionary<string, object> entry in (System.Collections.IEnumerable)root["events"])
+                if (!(entry["id"] is int) || !(entry["state"] is int)) return false;
+            return true;
         }
         private static bool HasItemFields(Dictionary<string, object> root, string name, params string[] required)
         {
