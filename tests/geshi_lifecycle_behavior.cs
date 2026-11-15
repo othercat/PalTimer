@@ -59,8 +59,13 @@ internal static partial class SdlpalBehavior
                     if(team==305)s.events=new[]{new SdlpalMapEvent{id=223,state=result==3?0:2}};
                     s.battleEvents=events.ToArray();tick(step,"battle "+team+" result "+result);
                 };
-                s.scene=277;tick(1,"出地宫");s.scene=285;tick(2,"进试炼窟");
-                battle(382,86,579,3,3);battle(383,80,580,3,4);battle(27,59,473,3,5);battle(25,156,502,3,6);
+                bool easy=profile=="geshi-easy-v1";
+                s.scene=277;tick(1,"出地宫");
+                if(easy){s.scene=215;tick(1,"trial cave outside all three entries");}
+                s.scene=easy?216:285;tick(2,"进试炼窟");
+                battle(easy?381:382,easy?174:86,easy?566:579,3,3);
+                battle(easy?39:383,easy?139:80,easy?468:580,3,4);
+                battle(27,59,473,3,5);battle(25,156,502,3,6);
                 s.scene=65;s.inventory=new SdlpalInventory[0];tick(6,"sword reward not yet granted");
                 s.inventory=new[]{new SdlpalInventory{id=175,amount=1}};tick(7,"actual sword reward");
                 battle(21,168,480,3,8);

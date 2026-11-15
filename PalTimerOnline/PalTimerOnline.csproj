@@ -20,6 +20,7 @@
     <Reference Include="Pal98Timer" Condition="'$(PalTimerHostPath)' != ''"><HintPath>$(PalTimerHostPath)</HintPath><Private>False</Private></Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Pal98Timer\RunStatistics.cs"><Link>RunStatistics.cs</Link></Compile>
     <Compile Include="$(PalSharedSourceRoot)\ChallengeRelayContract.cs"><Link>ChallengeRelayContract.cs</Link></Compile>
     <Compile Include="$(PalSharedSourceRoot)\ChallengeJsonSyntax.cs"><Link>ChallengeJsonSyntax.cs</Link></Compile>
     <Compile Include="..\Pal98Timer\EffectiveChallengeConfiguration.cs"><Link>EffectiveChallengeConfiguration.cs</Link></Compile>
@@ -41,6 +42,7 @@
     <Compile Include="OnlineGameplayModels.cs"/>
     <Compile Include="..\Pal98Timer\SdlpalBridge.cs"><Link>SdlpalBridge.cs</Link></Compile>
     <Compile Include="OnlineEntryPoint.cs"/>
+    <Compile Include="SdlpalOnlineConfiguration.cs"/>
     <Compile Include="AssemblyInfo.cs"/>
     <Compile Include="..\Pal98Timer\RankingConfiguration.cs"><Link>RankingConfiguration.cs</Link></Compile>
   </ItemGroup>

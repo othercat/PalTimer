@@ -1127,6 +1127,7 @@ namespace Pal98Timer
             importedUnverifiedTiming = true;
             runTimingMode = RecordedTimingMode;
             AdvanceScoreRunSequence(imported: true);
+            RestoreRunStatistics(ho.ToDic().ContainsKey("RunStatisticsState") ? ho.GetValue<string>("RunStatisticsState") : null);
             hardcoreRun.ImportUnverified();
             try
             {

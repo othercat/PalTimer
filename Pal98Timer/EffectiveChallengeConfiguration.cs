@@ -15,8 +15,12 @@ namespace Pal98.Challenges
         internal static readonly string[] SdlSlots = { "SoloArt", "HelplessHusband", "TrueDuel", "LevelOneSolo", "IndividualFlee", "ChosenHero",
             "StartingSupplies", "NoCoopMagic", "Drop99", "StealAll", "NoInvisibilityItem", "InvisibilityMana1", "SilkwormStatsOnly", "AdvancedTrade",
             "AutoCollect", "SellStoryItems", "Steal99", "SpiritShop", "BanSilkworm", "BanInvisibilityItem", "BanQianKun", "BanJiuShen", "HelplessWife", "StartingHolyTalisman",
-            "BanTenMileIncense", "BanExorcismIncense", "BanVajraTalisman", "YoumengIllusion1", "BloodBattle", "ErraticSpeed", "BattleAtWill", "UniversalTrouble", "YoumengIllusion2" };
-        internal static bool CompleteSdl(IDictionary<string, string> values) => SdlSlots.All(slot => values.TryGetValue(slot, out string value) &&
+            "BanTenMileIncense", "BanExorcismIncense", "BanVajraTalisman", "YoumengIllusion1", "BloodBattle", "ErraticSpeed", "BattleAtWill", "UniversalTrouble", "YoumengIllusion2",
+            "MustWin", "MaleShopBoycott", "FemaleShopBoycott", "SwordFlight", "CreditShops", "NoMapItems", "RandomMapItems", "StoryMod01" };
+        internal static bool CompleteSdl(IDictionary<string, string> values) => SdlSlots.Take(
+            SdlSlots.Skip(36).Any(slot => values.ContainsKey(slot) || values.ContainsKey("Priority"+slot)) ? 41 :
+            SdlSlots.Skip(34).Take(2).Any(slot => values.ContainsKey(slot) || values.ContainsKey("Priority"+slot)) ? 36 :
+            values.ContainsKey("MustWin") || values.ContainsKey("PriorityMustWin") ? 34 : 33).All(slot => values.TryGetValue(slot, out string value) &&
             (value == "0" || value == "1") && values.ContainsKey("Priority" + slot)) && values.TryGetValue("Hero", out string hero) &&
             new[] { "li-xiaoyao", "zhao-linger", "lin-yueru", "anu", "wuhou" }.Contains(hero);
         internal static Dictionary<string, string> Parse(string ini, bool complete = true)

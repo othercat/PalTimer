@@ -16,7 +16,7 @@ namespace Pal98Timer
         internal static CompetitionRun CreateMaintenance(SdlpalSnapshot snapshot, string hwid, string version,
             string[] checkpointIds, string id = null, string stamp = null)
         {
-            if (snapshot == null || snapshot.schema != 1 || !snapshot.verified || snapshot.diagnostic ||
+            if (snapshot == null || (snapshot.schema != 1 && !(snapshot.schema == 3 && snapshot.storyMod01 && snapshot.storyModRevision == 3)) || !snapshot.verified || snapshot.diagnostic ||
                 !SdlpalBridge.SupportedProfile(snapshot.profile) || !CompetitionProtocol.Digest(snapshot.exeHash) ||
                 snapshot.resourceHashes == null || !CompetitionProtocol.ReleaseRevision(snapshot.releaseRevision) ||
                 checkpointIds == null || checkpointIds.Length == 0 || checkpointIds.Length > 64 ||

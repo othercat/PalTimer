@@ -12,16 +12,30 @@ namespace Pal98Timer
             new SdlpalSplitRule { Id=id, Name=name, Kind="scene-transition", Scene=from, ReturnScene=to };
         private static SdlpalSplitRule Battle(string id, string name, int scene, int team, int enemy) =>
             new SdlpalSplitRule { Id=id, Name=name, Kind="battle", Scene=scene, Team=team, Enemy=enemy };
-        internal static SdlpalSplitRule[] Create()
+        // Refs #57. Only factory-owned default labels are shortened; saved/custom rules retain their text.
+        internal static string DefaultDisplayName(string name)
+        {
+            var text=new System.Text.StringBuilder();int depth=0;
+            foreach(char c in name)
+            {
+                if(c=='(' || c=='（') {++depth;continue;}
+                if(c==')' || c=='）') {if(depth>0)--depth;continue;}
+                if(depth==0)text.Append(c);
+            }
+            return text.ToString();
+        }
+        internal static SdlpalSplitRule[] Create(bool easy = false)
         {
             var youle = Battle("geshi-youle", "过游乐", 14, 305, 539); youle.Kind = "battle-after-loss";
             youle.Event = 223; youle.EventState = 0; // 263D, only after the second phase wins.
             var final = Battle("geshi-underworld-youtianba", "过阴间游天霸", 154, 307, 541); final.Kind = "battle-finish";
-            return new[] {
+            var rules = new[] {
                 Transition("geshi-dungeon-out", "出地宫", 281, 277),
-                Transition("geshi-trial-cave-in", "进试炼窟", 277, 285),
-                Battle("geshi-qian-wutong", "过大理钱无通", 86, 382, 579),
-                Battle("geshi-zhao-lianer", "过京城赵莲儿", 80, 383, 580),
+                // Refs #55/r106: all three trial entries 887E/8886/888E enter216.
+                Transition("geshi-trial-cave-in", "进试炼窟", easy ? 215 : 277, easy ? 216 : 285),
+                // Easy's actual Dali battle7E4F and capital battle56CC.
+                Battle("geshi-qian-wutong", "过大理钱无通", easy ? 174 : 86, easy ? 381 : 382, easy ? 566 : 579),
+                Battle("geshi-zhao-lianer", "过京城赵莲儿", easy ? 139 : 80, easy ? 39 : 383, easy ? 468 : 580),
                 Battle("geshi-red-ghost", "过赤鬼王", 59, 27, 473),
                 Battle("geshi-dikui", "过地魁", 156, 25, 502),
                 new SdlpalSplitRule { Id="geshi-guifu-sword", Name="收归服之剑", Kind="item", Scene=65, Item=175 },
@@ -36,6 +50,8 @@ namespace Pal98Timer
                 Battle("geshi-youtianba-living", "过阳间游天霸", 154, 309, 543),
                 youle, final
             };
+            foreach(var rule in rules)rule.Name=DefaultDisplayName(rule.Name);
+            return rules;
         }
     }
 }

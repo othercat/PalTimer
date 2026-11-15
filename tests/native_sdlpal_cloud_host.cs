@@ -77,7 +77,7 @@ internal static partial class NativeSdlpalRelayHost
         }
         internal string Remote(string key)
         {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(key, "\\Ageshi-[0-9]+-[a-f0-9]{32}\\.bin\\z"))
+            if (!System.Text.RegularExpressions.Regex.IsMatch(key, "\\A(?:[0-9A-Za-z]{8}|geshi-[0-9]+-[a-f0-9]{32})\\.bin\\z"))
                 throw new InvalidDataException("Unsafe offline object key");
             return Path.Combine(directory, key);
         }
@@ -168,7 +168,7 @@ internal static partial class NativeSdlpalRelayHost
             typeof(SdlpalGeshi).GetMethod("TryDeleteTemporary", All).Invoke(null, new object[] { path });
         }
     }
-    static string NewCode() => "geshi-42-" + Guid.NewGuid().ToString("N");
+    static string NewCode() => (string)Product.GetType("Pal98Timer.SdlpalCloudCode", true).GetMethod("NewCode", All).Invoke(null, null);
     static string Temporary() => Path.Combine(Root, "cloud-operation-" + Guid.NewGuid().ToString("N") + ".bin");
     static Dictionary<string, object> Package(string path) => Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
     static void RejectDownload(CloudEndpoint receiver, string code, string name, bool nativeReject = false)
@@ -220,6 +220,18 @@ internal static partial class NativeSdlpalRelayHost
                 Check(Convert.FromBase64String((string)package["saveBase64"]).SequenceEqual(File.ReadAllBytes(entry.Endpoint.Game.Slot250)),
                     "cloud object contains the exact real native acknowledged save");
                 Check(!File.Exists(path) && entry.Endpoint.Game.Core.IsUIPause, "successful upload cleans its temporary and stays paused");
+                long run=entry.Endpoint.Game.Core.ScoreRunSequence;
+                int cloudId=entry.Endpoint.Game.Ui.CloudID();
+                // Let the ordinary SDL observer see the post-save snapshots.
+                // Saving again must not require a preceding cloud load.
+                for(int tick=0;tick<5;++tick){Call(entry.Endpoint.Game.Core,"OnTick");Thread.Sleep(25);}
+                string secondCode=NewCode();
+                CloudOperation(entry.Endpoint.Game,true,Temporary(),secondCode);
+                Check(entry.Endpoint.Game.Core.ScoreRunSequence==run&&entry.Endpoint.Game.Ui.CloudID()==cloudId,
+                    "second consecutive save without load preserves local run and cloud session");
+                Check(entry.Endpoint.SaveMenu.Enabled&&entry.Endpoint.LoadMenu.Enabled,"both menus remain enabled after consecutive save");
+                Check(Directory.GetFiles(cloud).All(file=>Path.GetExtension(file)==".bin"),"cloud save uploads only bin objects, no screenshots");
+                Check(package.Keys.OrderBy(key=>key).SequenceEqual(new[]{"identity","saveBase64","saveSha256","schema","timer"}),"cloud payload has only save/timer/identity fields, no image field");
             }
             ulong epochA = Convert.ToUInt64(ReadNative(a.Process)["epoch"]), epochB = Convert.ToUInt64(ReadNative(b.Process)["epoch"]);
             CloudOperation(b, false, Temporary(), codeA); CloudOperation(a, false, Temporary(), codeB);
@@ -257,7 +269,7 @@ internal static partial class NativeSdlpalRelayHost
             string truncated = NewCode(); var badNative = Package(ca.Files.Remote(codeB + ".bin")); byte[] shortSave = Convert.FromBase64String((string)badNative["saveBase64"]).Take(1024).ToArray();
             badNative["saveBase64"] = Convert.ToBase64String(shortSave); badNative["saveSha256"] = Hash(shortSave);
             File.WriteAllText(ca.Files.Remote(truncated + ".bin"), Json.Serialize(badNative)); RejectDownload(ca, truncated, "native rejection of truncated RPG", true);
-            Check(ca.Files.Uploads == 3 && cb.Files.Uploads == 1 && ca.Files.Downloads == 13 && cb.Files.Downloads == 1, "all file operations passed through the real GForm and serialized cloud runner");
+            Check(ca.Files.Uploads == 4 && cb.Files.Uploads == 2 && ca.Files.Downloads == 13 && cb.Files.Downloads == 1, "all file operations passed through the real GForm and serialized cloud runner");
             Check(a.Core.GetScoreValidationError().Contains("诊断") && b.Core.GetScoreValidationError().Contains("诊断"), "cloud file success does not grant ranked eligibility");
             Check(a.Process.WaitForExit(25000) && b.Process.WaitForExit(25000) && a.Process.ExitCode == 0 && b.Process.ExitCode == 0, "both native cloud fixtures exit successfully");
             Evidence["cloudUploads"] = ca.Files.Uploads + cb.Files.Uploads; Evidence["cloudDownloads"] = ca.Files.Downloads + cb.Files.Downloads;

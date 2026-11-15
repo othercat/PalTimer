@@ -50,6 +50,30 @@ namespace Pal98Timer
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
     }
+    // Refs #61. Same eight-character alphabet used by PAL98's original cloud
+    // save name. Randomness avoids its same-second overwrite/cross-year collision.
+    internal static class SdlpalCloudCode
+    {
+        internal const string Alphabet = "0123456789ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+        internal static string NewCode()
+        {
+            var result = new char[8]; var next = new byte[1];
+            using (var random = RandomNumberGenerator.Create())
+                for (int i=0;i<result.Length;++i) {
+                    do { random.GetBytes(next); } while (next[0] >= 240);
+                    result[i] = Alphabet[next[0] % 60];
+                }
+            return new string(result);
+        }
+        internal static string Normalize(string code)
+        {
+            code = (code ?? "").Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(code, @"\A(?:[0-9A-Za-z]{8}|geshi-[0-9]+-[a-f0-9]{32})\z"))
+                throw new InvalidDataException("请输入8位云存档短码，或此前保存的完整长编码。");
+            return code;
+        }
+    }
+
     internal sealed class SdlpalControlResult
     {
         internal SdlpalSnapshot Snapshot;

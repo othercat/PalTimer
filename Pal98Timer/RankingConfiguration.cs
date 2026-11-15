@@ -51,9 +51,21 @@ namespace Pal98Timer
                 if (Value("wuqiang") != "1") return false;
                 keys.Add("wuqiang");
             }
+            if (rules.ContainsKey("wuqiang_plus")) {
+                if (Value("wuqiang_plus") != "1" || Value("wuqiang") != "1") return false;
+                keys.Add("wuqiang_plus");
+            }
+            if (rules.ContainsKey("challenge_config_sha256")) {
+                if (!CompetitionProtocol.Digest(Value("challenge_config_sha256"))) return false;
+                keys.Add("challenge_config_sha256");
+            }
             if (rules.ContainsKey("return_linger")) {
                 if (Value("return_linger") != "1") return false;
                 keys.Add("return_linger");
+            }
+            if (rules.ContainsKey("prebattle_slot_residue")) {
+                if (Value("prebattle_slot_residue") != "1") return false;
+                keys.Add("prebattle_slot_residue");
             }
             bool legacy = rules.ContainsKey("engine_sha256") || rules.ContainsKey("engine_build") || rules.ContainsKey("route_rules_sha256");
             if (rules.ContainsKey("respawn_rule"))

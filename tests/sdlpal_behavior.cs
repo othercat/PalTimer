@@ -44,6 +44,40 @@ internal static partial class SdlpalBehavior
         BitConverter.GetBytes(2U).CopyTo(header,20); BitConverter.GetBytes(length).CopyTo(header,24); BitConverter.GetBytes(pid).CopyTo(header,28);
         BitConverter.GetBytes(created).CopyTo(header,32); BitConverter.GetBytes(value.epoch).CopyTo(header,40); BitConverter.GetBytes(now).CopyTo(header,56); return header;
     }
+    static void DeathRedScreenTests()
+    {
+        var state=Snapshot(); state.Pid=777; state.Created=123; state.deathRedScreenCount=9;
+        var rules=new SdlpalSplitRule[0]; var run=new SdlpalRunObserver();
+        run.Observe(state,rules);
+        state=Clone(state);state.Pid=777;state.Created=123;state.started=true;run.Observe(state,rules);
+        Check(run.DeathRedScreens==0 && run.DeathRedScreensComplete,"new match rebases process history without displaying it");
+        state=Clone(state);state.Pid=777;state.Created=123;state.deathRedScreenCount=11;run.Observe(state,rules);run.Observe(state,rules);
+        Check(run.DeathRedScreens==2,"duplicate snapshots do not duplicate red screens");
+        state=Clone(state);state.Pid=777;state.Created=123;state.epoch++;state.loadedFrom=1;state.deathRedScreenCount=12;run.Observe(state,rules);
+        Check(run.DeathRedScreens==3,"RPG load epochs do not reset the match death total");
+        state=Clone(state);state.Pid=778;state.Created=124;state.deathRedScreenCount=2;run.Observe(state,rules);
+        Check(run.DeathRedScreens==5,"restarted game process contributes its own new red screens");
+        var reset=new SdlpalRunObserver();reset.Observe(state,rules);
+        Check(reset.DeathRedScreens==0 && !reset.DeathRedScreensComplete,"new timer match drops previous total and labels late attachment incomplete");
+        reset.RestoreDeathRecord(10,true,state);
+        state=Clone(state);state.Pid=778;state.Created=124;state.deathRedScreenCount=3;reset.Observe(state,rules);
+        Check(reset.DeathRedScreens==11 && reset.DeathRedScreensComplete,"timeline/relay import rebases the process cursor without duplicate counts");
+        state.completed=true;reset.Observe(state,rules);state=Clone(state);state.Pid=778;state.Created=124;state.deathRedScreenCount=8;reset.Observe(state,rules);
+        Check(reset.DeathRedScreens==11,"completed match freezes its count");
+        run=new SdlpalRunObserver();state=Snapshot();run.Observe(state,rules);
+        Check(!run.DeathRedScreensComplete,"old engines keep an unknown completeness record");
+        state=Snapshot();state.deathRedScreenCount=0;var bytes=Encoding.UTF8.GetBytes(SerializeFixture(state));
+        Check(SdlpalBridge.Decode(Header(state,bytes.Length),bytes,777,123,10000).deathRedScreenCount==0,"wire explicitly records true zero");
+        foreach(object bad in new object[]{null,"1",true,-1,1.5,(long)uint.MaxValue+1})
+        {
+            var fields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(state));fields["deathRedScreenCount"]=bad;
+            var payload=Encoding.UTF8.GetBytes(SdlpalBridge.Json().Serialize(fields));
+            Reject(()=>SdlpalBridge.Decode(Header(state,payload.Length),payload,777,123,10000),"invalid death counter rejected: "+(bad??"null"));
+        }
+        state=Snapshot();state.Pid=777;state.Created=123;state.deathRedScreenCount=3;
+        run=new SdlpalRunObserver();run.RestoreDeathRecord(long.MaxValue,true,state);state.deathRedScreenCount=4;run.Observe(state,rules);
+        Check(run.DeathRedScreens==long.MaxValue && !run.DeathRedScreensComplete,"restored count saturates without integer wrap");
+    }
     static SdlpalSnapshot Clone(SdlpalSnapshot value) => SdlpalBridge.Json().Deserialize<SdlpalSnapshot>(SerializeFixture(value));
     // The native legacy wire omits rule fields. New native snapshots publish
     // the complete binding at both root and identity, never JSON nulls.
@@ -53,10 +87,17 @@ internal static partial class SdlpalBehavior
         var state=value as SdlpalSnapshot;
         if(state==null) return serializer.Serialize(value);
         var fields=serializer.Deserialize<Dictionary<string,object>>(serializer.Serialize(state));
+        if (!state.deathRedScreenCount.HasValue) fields.Remove("deathRedScreenCount");
         string[] names={"gameplayRuleId","gameplayRuleRevision","gameplayRuleSha256"};
         if(state.gameplayRuleId==null&&state.gameplayRuleRevision==null&&state.gameplayRuleSha256==null)
             foreach(string name in names) fields.Remove(name);
         else fields["identity"]=names.ToDictionary(n=>n,n=>fields[n]);
+        if(state.prebattleSlotResidue)
+        {
+            if(!fields.ContainsKey("identity")) fields["identity"]=new Dictionary<string,object>();
+            ((Dictionary<string,object>)fields["identity"])["prebattleSlotResidue"]=true;
+        }
+        else fields.Remove("prebattleSlotResidue"); // Preserve old wire/signature fixture bytes.
         return serializer.Serialize(fields);
     }
     static void BindRules(SdlpalSnapshot value)
@@ -223,8 +264,52 @@ internal static partial class SdlpalBehavior
         Reject(()=>decode(fields),"effective throw mode rejected on non-Dreamspace snapshots");
         fields["dreamspaceThrowFormula"]=false;Check(!decode(fields).dreamspaceThrowFormula,"false throw flag allowed on all contents");
     }
+    static void SlotResidueTests()
+    {
+        var old=Snapshot();var enabled=Clone(old);enabled.schema=2;enabled.prebattleSlotResidue=true;
+        Func<Dictionary<string,object>,SdlpalSnapshot> decode=fields=>{
+            byte[] bytes=Encoding.UTF8.GetBytes(SerializeFixture(fields));
+            return SdlpalBridge.Decode(Header(old,bytes.Length),bytes,777,123,10000);
+        };
+        Func<Dictionary<string,string>,bool> valid=facts=>new RankingConfiguration {covered=true,rules=facts,configuration_id=RankingConfiguration.Digest(facts)}.Valid(
+            new GameplayIdentity {family=facts["family"],content_id=facts["profile"],content_sha256=facts["content"],rules_sha256=RankingConfiguration.Digest(facts),fade_ms=800,map_speed_ticks=0,walk_frame_ms=90,speed=0,battle_speed=0});
+        var fields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(enabled));
+        Check(decode(fields).prebattleSlotResidue,"schema2 accepts matching effective position mode");
+        Check(SdlpalBridge.ReadSnapshotJson(SerializeFixture(enabled)).prebattleSlotResidue,"offline initialization preserves validated position mode");
+        Check(!SerializeFixture(old).Contains("prebattleSlotResidue") && !old.RankingFacts().ContainsKey("prebattle_slot_residue"),"disabled mode preserves legacy wire and ranking facts");
+        Check(enabled.RankingFacts()["prebattle_slot_residue"]=="1" && valid(enabled.RankingFacts()),"enabled mode is a complete valid ranking fact");
+        Check(RankingConfiguration.Digest(enabled.RankingFacts())!=RankingConfiguration.Digest(old.RankingFacts()) &&
+            !SdlpalSnapshot.SameResourceEngineIdentity(old.IdentityKey,enabled.IdentityKey),"position mode separates rankings PB and relay engine identities");
+        foreach(string bad in new[]{"0","true","01",""}) {var facts=enabled.RankingFacts();facts["prebattle_slot_residue"]=bad;Check(!valid(facts),"position ranking flag requires exact1: "+bad);}
+        foreach(object bad in new object[]{null,"true",1,0,false})
+        {
+            var f=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(enabled));
+            f["prebattleSlotResidue"]=bad;
+            Reject(()=>decode(f),"schema2 mode rejects missing/null/coerced/false boolean");
+        }
+        var identity=(Dictionary<string,object>)fields["identity"];
+        identity["prebattleSlotResidue"]=false;Reject(()=>decode(fields),"schema2 rejects conflicting inner position mode");
+        identity["prebattleSlotResidue"]=true;fields.Remove("prebattleSlotResidue");Reject(()=>decode(fields),"schema2 rejects nested-only position mode");
+        fields["prebattleSlotResidue"]=true;fields.Remove("identity");Reject(()=>decode(fields),"schema2 requires matching inner position identity");
+        fields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(SerializeFixture(enabled));
+        fields["schema"]=1;Reject(()=>decode(fields),"schema1 cannot hide an enabled position mode from old readers");
+        fields["schema"]=3;Reject(()=>decode(fields),"unknown snapshot schema remains rejected");
+        string wire=SerializeFixture(enabled);
+        foreach(string prefix in new[]{"\"PrebattleSlotResidue\":true,","\"prebattleSlotResidue\":true,","\"Schema\":2,"})
+        {
+            string invalid="{"+prefix+wire.Substring(1);
+            Reject(()=>SdlpalBridge.ReadSnapshotJson(invalid),"aliases/duplicate wire fields cannot hide position mode");
+        }
+        enabled.started=true;enabled.party=new[]{4,5,4};enabled.roles[4].equipment[0]=63;
+        Check(SdlpalItemTracker.Validate(enabled)=="","new mode accepts the real repeated-Anu stone roster");
+        var tracker=new SdlpalItemTracker();tracker.Observe(enabled);
+        Check(tracker.View.Available && tracker.View.Rows.Single(r=>r.Id==63).Equipped==1,"two positions of one role do not duplicate owned equipment");
+        enabled.prebattleSlotResidue=false;enabled.schema=1;
+        Check(SdlpalItemTracker.Validate(enabled)!="","legacy schema retains its existing unique-party contract");
+    }
     static void DecodeTests(string[] paths)
     {
+        SlotResidueTests();
         byte[] malformed=Encoding.UTF8.GetBytes("{\"schema\":");
         try { SdlpalBridge.Decode(Header(Snapshot(),malformed.Length),malformed,777,123,10000);throw new Exception("malformed JSON accepted"); }
         catch(InvalidDataException) {Check(true,"malformed JSON becomes a controlled reader error");}
@@ -695,6 +780,8 @@ internal static partial class SdlpalBehavior
             foreach(var point in core.CheckPoints)point.SetUIItem(form.rr.AddItem(point.GetNickName(),point.Best));
             var keyConfig=core.CreateKeyConfigStartInfo();
             string executableDirectory=Path.GetDirectoryName(engine.Process.MainModule.FileName);
+            Check(bridge.ExecutableDirectory==executableDirectory && bridge.ExecutableDirectory!=engine.State.gamePath,
+                "configuration evidence uses the verified executable directory independently of PAL resources");
             Check(keyConfig.WorkingDirectory==executableDirectory && keyConfig.FileName==Path.Combine(executableDirectory,"我的 配置.exe") &&
                 keyConfig.WorkingDirectory!=engine.State.gamePath,"F11 locates key configuration beside the verified executable, independently of resources");
             Check(keyConfig.Arguments.Contains("--game-exe "+MaintenanceExecutable.Quote(engine.Process.MainModule.FileName)),
@@ -706,8 +793,20 @@ internal static partial class SdlpalBehavior
             core.IsUIPause=false;engine.State.focused=false;engine.Publish();Call(core,"OnTick");paused=core.GetMainWatch();Thread.Sleep(40);Call(core,"OnTick");Check(core.GetMainWatch()==paused,"focus loss freezes clock");
             engine.State.focused=true;engine.Publish();Call(core,"OnTick");Thread.Sleep(40);
             engine.State.battleEvents=new[]{Victory(1)};engine.Publish();Call(core,"OnTick");Check(core.CurrentStep==1&&core.CheckPoints[0].Status==CheckPointStatus.Completed,"production core advances boss node after real ring victory");
+            var deathObserver=(SdlpalRunObserver)typeof(SdlpalGeshi).GetField("observer",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(core);
+            deathObserver.RestoreDeathRecord(4294967298L,true,core.CurrentSnapshot);
             string exported=core.GetRStr();Check(exported.Contains("SdlpalIdentity")&&exported.Contains("SdlpalStatuses"),"timeline export includes runtime identity and statuses");
             var imported=Call(core,"ValidateImport",exported,core.CurrentSnapshot.IdentityKey);Call(core,"Restore",imported,core.CurrentSnapshot);
+            Check(deathObserver.DeathRedScreens==4294967298L && !deathObserver.DeathRedScreensComplete,"actual timeline/relay JSON roundtrip preserves 64-bit count and incomplete legacy-engine evidence");
+            var deathFields=SdlpalBridge.Json().Deserialize<Dictionary<string,object>>(exported);
+            deathFields.Remove("SdlpalDeathRedScreens");deathFields.Remove("SdlpalDeathRedScreensComplete");
+            var oldImport=Call(core,"ValidateImport",SerializeFixture(deathFields),core.CurrentSnapshot.IdentityKey);
+            Check(!(bool)oldImport.GetType().GetField("DeathRedScreensComplete",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(oldImport),"legacy timeline missing counters imports as unknown");
+            foreach(object bad in new object[]{"1",-1,1.5,null})
+            {
+                deathFields["SdlpalDeathRedScreens"]=bad;deathFields["SdlpalDeathRedScreensComplete"]=true;
+                Reject(()=>Call(core,"ValidateImport",SerializeFixture(deathFields),core.CurrentSnapshot.IdentityKey),"actual timeline rejects malformed count: "+(bad??"null"));
+            }
             Check(core.IsUIPause&&core.CurrentStep==1&&core.GetScoreValidationError().Length>0,"timeline import restores progress paused and unverified");
             foreach(var status in new[]{CheckPointStatus.Completed,CheckPointStatus.ManualSkipped,CheckPointStatus.AutoSkipped})
             {
@@ -729,7 +828,7 @@ internal static partial class SdlpalBehavior
             WaitForConfiguration(core);
             var observation=new CompetitionObservation();core.CaptureCompetitionGameplay(observation);
             Check(observation.Gameplay.Valid&&observation.Ranking.Valid(observation.Gameplay)&&observation.Gameplay.map_speed_ticks==0&&observation.Gameplay.walk_frame_ms==90,"independent SDL family uses milliseconds without PALDLL ticks");
-            Check(observation.Ranking.rules.Keys.Count(k=>k.StartsWith("config.slot."))==67&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes full configuration with truthful speed evidence");
+            Check(observation.Ranking.rules.Keys.Count(k=>k.StartsWith("config.slot."))==83&&!observation.Ranking.rules.ContainsKey("engine_sha256"),"actual core publishes full41-rule configuration with truthful speed evidence");
             Set(core,"relayRun",core.ScoreRunSequence);Set(core,"relayBridge",bridge);Call(core,"CheckRelayOwner");
             core.SetTS(TimeSpan.FromSeconds(1));Reject(()=>Call(core,"CheckRelayOwner"),"manual time/reset cancels an earlier relay transaction lease");
             Check(!core.CanBeginCompetitionHere(0),"manual time change cannot claim a fresh competition start");
@@ -1346,7 +1445,7 @@ internal static partial class SdlpalBehavior
         {
             var rules = SdlpalSplitRule.Defaults(profile); SdlpalSplitRule.Validate(rules);
             Check(rules.Length == 18 && SdlpalBridge.SupportedProfile(profile), "independent Geshi identity with shared eighteen-node route: " + profile);
-            Check(SdlpalSplitRule.Identity(rules)==SdlpalSplitRule.Identity(SdlpalSplitRule.Defaults()),"all audited Geshi cores use the same node semantics");
+            Check(SdlpalSplitRule.Identity(rules)==SdlpalSplitRule.Identity(SdlpalGeshiRoutes.Create()),"other Geshi profiles retain their pre-r106 node semantics");
             var firstBoss=rules.Single(r=>r.Id=="geshi-qian-wutong");
             var fight = new SdlpalBattleEvent{scene=86,team=382,enemies=new[]{579},result=3};
             Check(firstBoss.Matches(fight), "Geshi audited Qian Wutong victory");
@@ -1710,6 +1809,21 @@ internal static partial class SdlpalBehavior
             }
         }
     }
+    static void R105Tests()
+    {
+        var s=Snapshot();s.started=true;s.cash=0;s.cashDebt=500;s.cashBalance=-500;
+        Check(SdlpalItemTracker.Validate(s)=="","negative cash is valid only through the matching SDL debt extension");
+        var tracker=new SdlpalItemTracker();tracker.Observe(s);
+        Check(tracker.View.Available && tracker.View.Cash==-500,"real item tracker displays the negative balance");
+        s.cash=1;Check(SdlpalItemTracker.Validate(s)!="","positive cash and outstanding debt cannot coexist");
+        s.cash=0;s.cashDebt=null;Check(SdlpalItemTracker.Validate(s)!="","partial balance extension is rejected");
+        s.cashBalance=null;s.cash=uint.MaxValue;Check(SdlpalItemTracker.Validate(s)=="" && s.CashBalance==uint.MaxValue,"legacy maximum unsigned cash stays positive");
+        var old=Snapshot();var plus=Clone(old);plus.wuqiang=true;plus.wuqiangPlus=true;
+        Check(plus.RankingFacts()["wuqiang_plus"]=="1" && !SdlpalSnapshot.SameResourceEngineIdentity(old.IdentityKey,plus.IdentityKey),"enhanced WuQiang has a distinct ranking and relay identity");
+        var rules=Clone(old);rules.challengeConfigSha256=new string('e',64);
+        Check(rules.RankingFacts().ContainsKey("challenge_config_sha256") && RankingConfiguration.Digest(old.RankingFacts())!=RankingConfiguration.Digest(rules.RankingFacts()),"immutable configured rule hash partitions new rule combinations");
+        Check(Pal98.Challenges.EffectiveChallengeConfiguration.SdlSlots.Length==41,"full SDL evidence includes all41 native slots");
+    }
     [STAThread] static int Main(string[] args)
     {
         try
@@ -1745,7 +1859,7 @@ internal static partial class SdlpalBehavior
             }
             Check(AutomationArgs.Parse(new[]{"timer","--core","sdlpal-geshi-easy"}).RequestedCore=="SdlpalGeshi","explicit core startup alias");
             Reject(()=>AutomationArgs.Parse(new[]{"timer","--core","unknown"}),"unknown core does not silently fall back");
-            GameLoadResumeTests();IsolationTests();RankingTests();GameplayRuleTests();DreamspaceThrowTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
+            DeathRedScreenTests();R105Tests();GameLoadResumeTests();IsolationTests();RankingTests();GameplayRuleTests();DreamspaceThrowTests();DecodeTests(args);WuQiangTests();ReleaseTitleTests();ObserverTests();ItemTests();IntegrationTests();MaintenanceSaveIsolationTests();BestReferenceTests();SpeedConfigurationTests();BattleClockTests();ReconnectTests();OnlineSnapshotBridgeTests();CompletionTests();PauseHotkeyTests();PluginCoreSwitchTests();ItemCoreTests(!noGui);OverlayIdentityTests();MaintenanceProfiles();SplitDisplayTests();BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;
             }
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}

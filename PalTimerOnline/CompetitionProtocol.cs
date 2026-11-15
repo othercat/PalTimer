@@ -21,13 +21,17 @@ namespace Pal98Timer
         internal const string ContentEffectsFeature = "sdl-content-effects.v1";
         internal const string MaintenanceLiveFeature = "sdl-live-identity.v1";
         internal static bool ReleaseRevision(string value) => value != null && Regex.IsMatch(value, @"\Ar[1-9][0-9]{0,5}\z");
+        internal const string RunStatisticsFeature = "final-run-statistics.v1";
         internal const string RestartTimeFeature = "restart-time.v1";
         internal static string SerializeRun(CompetitionRun run, bool includeRestartTime = true) {
             var serializer = Json();
             var fields = serializer.Deserialize<Dictionary<string, object>>(serializer.Serialize(run));
             RemoveUnusedWalkField(fields, "gameplay");
             if (fields.TryGetValue("observations", out var observationFields) && observationFields is Dictionary<string, object> observed)
+            {
                 RemoveUnusedWalkField(observed, "initial_gameplay");
+                if (run.observations.final_statistics == null) observed.Remove("final_statistics");
+            }
             if (run.protocol == Name) { fields.Remove("timeline_id"); fields.Remove("gameplay"); fields.Remove("hardcore"); }
             if (run.protocol != OnlineV2) fields.Remove("observations");
             if (run.protocol != OnlineV2 || !includeRestartTime) fields.Remove("restart_ms");
@@ -117,6 +121,8 @@ namespace Pal98Timer
         }
         private static string ValidateV2(CompetitionRun run)
         {
+            if (run.observations?.final_statistics != null && !run.observations.final_statistics.Valid)
+                return "通关统计格式无效，仅本地保存。";
             // Eligibility belongs to the server. Preserve missing/changed facts
             // and the actual route order, including non-monotonic timestamps.
             Guid id; Version version; DateTimeOffset at;
@@ -238,6 +244,7 @@ namespace Pal98Timer
         public GameplayIdentity initial_gameplay { get; set; }
         public RankingConfiguration initial_ranking { get; set; }
         public CompetitionHardcore initial_hardcore { get; set; }
+        public FinalRunStatistics final_statistics { get; set; }
     }
     // Immutable after publication; only scalar copies/arrays of values cross the timing boundary.
     internal sealed class CompetitionObservation
@@ -246,11 +253,13 @@ namespace Pal98Timer
         internal GameplayIdentity Gameplay;
         internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;
+        internal FinalRunStatistics FinalStatistics;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
         internal long? RestartMilliseconds;
         internal bool? LiveTimingValid;
         internal DateTimeOffset ObservedAt;
+        internal DateTimeOffset? FinishedAt;
         internal bool Finished, BeganHere;
         internal CompetitionSplit[] Splits;
         internal CompetitionRunContext Context;
