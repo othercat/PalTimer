@@ -47,6 +47,7 @@ namespace Pal98.Challenges
                 if (!Regex.IsMatch(key, @"\A[A-Z][A-Za-z0-9]{0,71}\z") || !names.Add(key) ||
                     !(key == "WealthOpponent" ? ValidWealthOpponent(value) : Regex.IsMatch(value, @"\A(?:0|[1-9][0-9]{0,9}|[a-z][a-z0-9-]{0,63})\z")))
                     throw new InvalidDataException("挑战配置字段无效或重复：" + key);
+                R132RuleSettings.ValidateSlot(key,value);
                 values.Add(key, value);
             }
             if (!values.TryGetValue("SchemaVersion", out string schema) || schema != "1") throw new InvalidDataException("有效挑战配置版本无效。");
@@ -74,7 +75,7 @@ namespace Pal98.Challenges
         internal static void AddFacts(IDictionary<string, string> facts, string ini)
         {
             facts["config.schema"] = Schema; facts["config.evidence"] = "configuration-file";
-            foreach (var pair in Parse(ini)) facts["config.slot." + pair.Key] = pair.Value;
+            foreach (var pair in R132RuleSettings.NormalizeFacts(Parse(ini))) facts["config.slot." + pair.Key] = pair.Value;
         }
         internal static bool ValidFacts(IDictionary<string, string> facts)
         {

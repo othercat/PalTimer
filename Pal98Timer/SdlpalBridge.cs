@@ -64,6 +64,19 @@ namespace Pal98Timer
         public uint controlledMask { get; set; }
         public uint gaps { get; set; }
     }
+    // Real operation facts published by r132; absent in older engines.
+    internal sealed class SdlpalStoryFacts {
+        public int revision {get;set;}
+        public ulong sequence {get;set;}
+        public ulong gate1 {get;set;} public ulong gate2 {get;set;} public ulong gate3 {get;set;}
+        public ulong gate4 {get;set;} public ulong gate5 {get;set;} public ulong gate6 {get;set;}
+        public bool endingShown {get;set;}
+        internal ulong Gate(int id) => id==1?gate1:id==2?gate2:id==3?gate3:id==4?gate4:id==5?gate5:id==6?gate6:0;
+    }
+    internal sealed class SdlpalMa35State {
+        public int revision {get;set;} public bool enabled {get;set;} public int feeds {get;set;}
+        public bool departed {get;set;} public bool npcGone {get;set;}
+    }
     internal sealed class SdlpalSnapshot
     {
         public int schema { get; set; }
@@ -98,6 +111,8 @@ namespace Pal98Timer
         public bool busy { get; set; }
         public bool canControl { get; set; }
         public bool completed { get; set; }
+        public SdlpalStoryFacts storyFacts {get;set;}
+        public SdlpalMa35State ma35 {get;set;}
         public ulong epoch { get; set; }
         public ulong frame { get; set; }
         public int loadedFrom { get; set; }
@@ -156,9 +171,13 @@ namespace Pal98Timer
             if (wuqiang) facts["wuqiang"] = "1";
             if (wuqiangPlus) facts["wuqiang_plus"] = "1";
             if (prebattleSlotResidue) facts["prebattle_slot_residue"] = "1";
+            // Completed now follows an actual ending presentation. Preserve
+            // old custom files, but never attach their earlier-timing PB to a
+            // new runtime which exposes this always-on presentation contract.
+            if (storyFacts != null) facts["config.slot.RuntimeEndingShownRevision"] = storyFacts.revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (storyMod01) {
                 facts["config.slot.RuntimeStoryMod01"] = "1";
-                facts["config.slot.RuntimeStoryModRevision"] = "3";
+                facts["config.slot.RuntimeStoryModRevision"] = storyModRevision.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 facts["config.slot.StoryMod01"] = "1";
             }
             if (challengeConfigSha256 != null) facts["challenge_config_sha256"] = challengeConfigSha256;
@@ -178,7 +197,7 @@ namespace Pal98Timer
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
             (wuqiang ? "|wuqiang=1" : "") + (returnLinger ? "|return_linger=1" : "") +
             (wuqiangPlus ? "|wuqiang_plus=1" : "") +
-            (storyMod01 ? "|story_mod_01=3" : "") +
+            (storyMod01 ? "|story_mod_01="+storyModRevision.ToString(System.Globalization.CultureInfo.InvariantCulture) : "") +
             (prebattleSlotResidue ? "|prebattle_slot_residue=1" : "") +
             (challengeConfigSha256 == null ? "" : "|challenge_config_sha256=" + challengeConfigSha256) +
             (!string.IsNullOrEmpty(respawnRule) ? "|respawn_rule=" + respawnRule : "") +
@@ -263,6 +282,7 @@ namespace Pal98Timer
             // conversion so aliases or duplicate keys cannot hide a binding.
             var root = new HashSet<string>(StringComparer.Ordinal);
             var inner = new HashSet<string>(StringComparer.Ordinal);
+            var storyFields=new HashSet<string>(StringComparer.Ordinal);var maFields=new HashSet<string>(StringComparer.Ordinal);
             string parent = null;
             try {
             using (var reader = System.Runtime.Serialization.Json.JsonReaderWriterFactory.CreateJsonReader(
@@ -272,8 +292,10 @@ namespace Pal98Timer
                 if (reader.NodeType != System.Xml.XmlNodeType.Element) continue;
                 string name = reader.GetAttribute("item") ?? reader.LocalName;
                 if (reader.Depth == 1) parent = name;
+                if(reader.Depth==2 && (parent=="storyFacts" || parent=="ma35") && !(parent=="storyFacts"?storyFields:maFields).Add(name))
+                    throw new InvalidDataException("真实剧情事实含重复字段");
                 if (reader.Depth != 1 && !(reader.Depth == 2 && parent == "identity")) continue;
-                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity", "schema", "storyMod01", "storyModRevision", "storyModAfterBaiyue", "prebattleSlotResidue" })
+                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity", "schema", "storyMod01", "storyModRevision", "storyModAfterBaiyue", "prebattleSlotResidue", "storyFacts", "ma35" })
                     if (name.Equals(key, StringComparison.OrdinalIgnoreCase) && name != key)
                         throw new InvalidDataException("公式身份字段大小写不规范");
                 if (!(reader.Depth == 1 ? root : inner).Add(name))
@@ -293,7 +315,7 @@ namespace Pal98Timer
             if (present && !(mode is bool) || hasRevision && !(revision is int))
                 throw new InvalidDataException("Invalid story mod identity types");
             if (value.schema == 3) {
-                if (!present || !(bool)mode || !value.storyMod01 || !hasRevision || (int)revision != 3 || value.storyModRevision != 3 ||
+                if (!present || !(bool)mode || !value.storyMod01 || !hasRevision || ((int)revision != 3 && (int)revision != 4) || value.storyModRevision != (int)revision ||
                     identity == null || !identity.TryGetValue("storyMod01", out nested) || !Equals(nested, mode) ||
                     !identity.TryGetValue("storyModRevision", out nested) || !Equals(nested, revision) ||
                     !fields.TryGetValue("storyModAfterBaiyue", out after) || !(after is bool))
@@ -302,9 +324,31 @@ namespace Pal98Timer
                 identity != null && (identity.ContainsKey("storyMod01") || identity.ContainsKey("storyModRevision")))
                 throw new InvalidDataException("Update the complete package for this story mod");
         }
+        private static void ValidateR132Facts(Dictionary<string,object> fields,SdlpalSnapshot value) {
+            object raw;
+            if(fields.TryGetValue("storyFacts",out raw) && raw!=null) {
+                var facts=raw as Dictionary<string,object>;var typed=value.storyFacts;
+                var names=new[]{"revision","sequence","gate1","gate2","gate3","gate4","gate5","gate6","endingShown"};
+                if(facts==null || typed==null || facts.Count!=names.Length || names.Any(k=>!facts.ContainsKey(k)) ||
+                    !(facts["revision"] is int r) || r!=1 || !(facts["endingShown"] is bool) ||
+                    names.Where(k=>k!="revision" && k!="endingShown").Any(k=>!(facts[k] is int || facts[k] is long) || Convert.ToInt64(facts[k])<0))
+                    throw new InvalidDataException("真实剧情事实格式无效");
+                var gates=Enumerable.Range(1,6).Select(typed.Gate).Where(n=>n!=0).ToArray();
+                if(gates.Any(n=>n>typed.sequence) || gates.Distinct().Count()!=gates.Length)throw new InvalidDataException("真实剧情事实序列无效");
+            } else if(value.storyFacts!=null)throw new InvalidDataException("真实剧情事实缺失");
+            if(fields.TryGetValue("ma35",out raw) && raw!=null) {
+                var facts=raw as Dictionary<string,object>;var typed=value.ma35;
+                var names=new[]{"revision","enabled","feeds","departed","npcGone"};
+                if(facts==null || typed==null || facts.Count!=5 || names.Any(k=>!facts.ContainsKey(k)) ||
+                    !(facts["revision"] is int r) || r!=1 || !(facts["feeds"] is int n) || n<0 || n>35 ||
+                    !(facts["enabled"] is bool) || !(facts["departed"] is bool) || !(facts["npcGone"] is bool) || typed.npcGone!=(n>=35))
+                    throw new InvalidDataException("35麻状态格式无效");
+            } else if(value.ma35!=null)throw new InvalidDataException("35麻状态缺失");
+        }
         internal static void ValidateSlotResidueFields(Dictionary<string, object> fields, SdlpalSnapshot value)
         {
             ValidateStoryModFields(fields, value);
+            ValidateR132Facts(fields,value);
             if (fields == null || !fields.TryGetValue("schema", out object schema) || !(schema is int) ||
                 (int)schema != value.schema || value.schema != 1 && value.schema != 2 && value.schema != 3)
                 throw new InvalidDataException("未知游戏快照版本");
