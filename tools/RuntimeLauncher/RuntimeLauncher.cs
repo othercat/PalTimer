@@ -164,6 +164,17 @@ namespace PalTimer.RuntimeLauncher
             }
             return result;
         }
+        internal static bool PreserveRunningTimer(string path, string timer)
+        {
+            return path == null || string.Equals(path, timer, StringComparison.OrdinalIgnoreCase);
+        }
+        private static bool HasRunningTimer(string timer)
+        {
+            foreach (var existing in Process.GetProcessesByName("Pal98Timer")) using (existing) {
+                if (PreserveRunningTimer(ProcessPath(existing.Id), timer)) return true;
+            }
+            return false;
+        }
         [STAThread]
         private static int Main(string[] args)
         {
@@ -171,6 +182,9 @@ namespace PalTimer.RuntimeLauncher
             try {
                 string directory = AppDomain.CurrentDomain.BaseDirectory;
                 string timer = System.IO.Path.Combine(directory, "Pal98Timer.exe");
+                // P restarts prepare the package again. Reuse the current run
+                // before selecting a core; never switch or reset a live timer.
+                if (!probe && HasRunningTimer(timer)) return 0;
                 if (!File.Exists(timer)) throw new FileNotFoundException("请将自动启动器放在 Pal98Timer.exe 旁。");
                 var forwarded = args.Where(a => a != "--probe").ToList();
                 int explicitCore = forwarded.IndexOf("--core");
@@ -188,11 +202,7 @@ namespace PalTimer.RuntimeLauncher
                 using (var mutex = new System.Threading.Mutex(false, "Local\\PalTimer.RuntimeLauncher." + HashPath(timer))) {
                     if (!mutex.WaitOne(0)) return 0;
                     try {
-                        foreach (var existing in Process.GetProcessesByName("Pal98Timer")) using (existing) {
-                            string path = ProcessPath(existing.Id);
-                            if (path == null || string.Equals(path, timer, StringComparison.OrdinalIgnoreCase))
-                                throw new InvalidOperationException("计时器已开启。请先关闭它再自动选核，以保留当前计时。");
-                        }
+                        if (HasRunningTimer(timer)) return 0;
                         Process.Start(new ProcessStartInfo(timer, command) { WorkingDirectory = directory, UseShellExecute = false });
                     }
                     finally { mutex.ReleaseMutex(); }

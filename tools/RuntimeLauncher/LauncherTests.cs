@@ -27,6 +27,10 @@ static class LauncherTests
         foreach (string text in new[] { "", "hello", "中文 空格", @"C:\a b\", "x\"y", "a\\\\\"b", "`$()&%" })
             Check(Unquote(RuntimeSelection.Quote(text)) == text, "argument preserves " + text);
         Check(RuntimeSelection.ImageKind(@"C:\does-not-exist.exe") == RuntimeKind.Unknown, "missing image is unknown");
+        Check(Program.PreserveRunningTimer(@"C:\suite\Pal98Timer.exe", @"C:\suite\Pal98Timer.exe"), "same timer keeps its current run");
+        Check(Program.PreserveRunningTimer(@"c:\SUITE\pal98timer.EXE", @"C:\suite\Pal98Timer.exe"), "same timer comparison ignores Windows path case");
+        Check(Program.PreserveRunningTimer(null, @"C:\suite\Pal98Timer.exe"), "inaccessible process is conservatively preserved");
+        Check(!Program.PreserveRunningTimer(@"C:\other\Pal98Timer.exe", @"C:\suite\Pal98Timer.exe"), "another installation retains its independent launch policy");
         Console.WriteLine("PASS launcher total=" + count + "; game/process/network=none");
     }
     // Independent command-line inverse: paired backslashes precede a literal quote.

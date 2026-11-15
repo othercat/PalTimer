@@ -67,6 +67,8 @@ namespace Pal98Timer
         {
             var g = o.Gameplay; var r = o.Ranking; var h = o.Hardcore;
             var extensions = new System.Collections.Generic.Dictionary<string, string>();
+            if (o.FinalStatistics != null) extensions["run_statistics.v1"] = FinalRunStatistics.Json().Serialize(o.FinalStatistics);
+            if (o.Finished && o.FinishedAt.HasValue) extensions["run_statistics.finished_at"] = o.FinishedAt.Value.ToString("o");
             if (o.RestartMilliseconds.HasValue) extensions["restart_ms"] = o.RestartMilliseconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (g?.walk_frame_ms.HasValue == true) extensions["sdlpal.walk_frame_ms"] = g.walk_frame_ms.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             // Actual SDL speeds are observations, not ranking rules. Preserve
@@ -96,6 +98,7 @@ namespace Pal98Timer
         {
             if (competitionClosing) return;
             competitionClosing = true; competitionUiTimer?.Stop();
+            core?.PreserveCompletedStatisticsBeforeClose();
             try {
                 if (competition != null && !await competition.CloseAsync()) {
                     competitionClosing = false; competition.ShowSettings(this); return;

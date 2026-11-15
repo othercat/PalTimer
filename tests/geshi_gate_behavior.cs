@@ -10,13 +10,59 @@ internal static partial class SdlpalBehavior
     {
         var template=SdlpalGeshiRoutes.Create();SdlpalSplitRule.Validate(template);
         var names=new[]{"出地宫","进试炼窟","过大理钱无通","过京城赵莲儿","过赤鬼王","过地魁","收归服之剑",
-            "回阳间（打败南盗侠李逍遥）","出桃源村幻境（使用命运罗盘）","过剑圣","回现实（打败楼澈）","进麻烦洞",
-            "进扬州","救林品如（第二次使用命运罗盘）","出扬州","过阳间游天霸","过游乐","过阴间游天霸"};
-        Check(template.Select(r=>r.Name).SequenceEqual(names),"route template retains all eighteen user-specified labels and their order");
+            "回阳间","出桃源村幻境","过剑圣","回现实","进麻烦洞",
+            "进扬州","救林品如","出扬州","过阳间游天霸","过游乐","过阴间游天霸"};
+        Check(template.Select(r=>r.Name).SequenceEqual(names),"route template has eighteen shortened default labels in the original order");
+        foreach(var pair in new[]{Tuple.Create("节点（说明）","节点"),Tuple.Create("节点(说明)","节点"),
+            Tuple.Create("前（外(内)后）尾","前尾"),Tuple.Create("前(外（内）后)尾","前尾"),
+            Tuple.Create("甲（说明）乙(第二)丙","甲乙丙"),Tuple.Create("无括号","无括号")})
+            Check(SdlpalGeshiRoutes.DefaultDisplayName(pair.Item1)==pair.Item2,"default labels remove complete full/halfwidth and nested annotations: "+pair.Item1);
+        var annotated=SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(SerializeFixture(template));
+        annotated[7].Name="回阳间（打败南盗侠李逍遥）";annotated[8].Name="出桃源村幻境（使用命运罗盘）";
+        annotated[10].Name="回现实（打败楼澈）";annotated[13].Name="救林品如（第二次使用命运罗盘）";
+        Check(SdlpalSplitRule.Identity(annotated)==SdlpalSplitRule.Identity(template),"shortened labels preserve the existing route and best-time identity");
+        foreach(string profile in new[]{"geshi-easy-v1","geshi-hard-v1","geshi-nightwolf-v1","geshi-fanmade-v1","geshi-fanmade-entertainment-v1"})
+            Check(SdlpalSplitRule.Defaults(profile).Select(rule=>rule.Name).SequenceEqual(names),"all five Geshi default profiles use shortened labels: "+profile);
+        var custom=new SdlpalSplitRule {Id="custom-label",Name="自定义（保留说明）(保留细节)",Kind="scene",Scene=106};
+        var customRules=new[]{custom,new SdlpalSplitRule {Id="custom-end",Name="End",Kind="completion"}};
+        SdlpalSplitRule.Validate(customRules);var saved=SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(SerializeFixture(customRules));
+        Check(saved[0].Name==custom.Name,"custom rule names retain full/halfwidth parentheses on save/load");
         foreach(string p in new[]{"geshi-easy-v1","geshi-hard-v1","geshi-nightwolf-v1","geshi-fanmade-v1","geshi-fanmade-entertainment-v1"})
             Check(SdlpalGeshiRoutes.Supports(p),"audited shared-template scope: "+p);
         Check(!SdlpalGeshiRoutes.Supports("dreamspace35-v1")&&!SdlpalGeshiRoutes.Supports("future-geshi-v1"),"unrelated or unknown content cannot borrow Geshi definitions");
         Check(template[11].Kind=="scene"&&template[11].Scene==106,"cave entrance uses the confirmed human-Buhuagu road scene");
+        var easy=SdlpalSplitRule.Defaults("geshi-easy-v1");SdlpalSplitRule.Validate(easy);
+        Check(easy.Select(r=>r.Id).SequenceEqual(template.Select(r=>r.Id)),"easy corrections retain all eighteen stable node IDs");
+        Check(SdlpalSplitRule.Identity(easy)!=SdlpalSplitRule.Identity(template),"corrected easy gates cannot inherit an old route's timing identity");
+        foreach(string profile in new[]{"geshi-hard-v1","geshi-nightwolf-v1","geshi-fanmade-v1","geshi-fanmade-entertainment-v1"})
+            Check(SerializeFixture(SdlpalSplitRule.Defaults(profile))==SerializeFixture(template),"other Geshi profiles retain their existing conditions: "+profile);
+        foreach(int entry in new[]{3884,3885,3886})
+        {
+            var observer=new SdlpalRunObserver();var s=Snapshot();s.started=true;s.scene=215;
+            s.events=new[]{new SdlpalMapEvent{id=entry,state=0}};observer.Observe(Clone(s),easy);
+            Check(!observer.Reached.Contains(easy[1].Id),"outside the trial cave does not split: "+entry);
+            s.scene=216;observer.Observe(Clone(s),easy);
+            Check(observer.Reached.Contains(easy[1].Id),"each real entrance splits inside trial cave: "+entry);
+        }
+        {
+            var observer=new SdlpalRunObserver();var s=Snapshot();s.started=true;s.scene=277;observer.Observe(Clone(s),easy);
+            s.scene=285;observer.Observe(Clone(s),easy);
+            Check(!observer.Reached.Contains(easy[1].Id),"old dungeon elevator transition cannot complete trial cave");
+            observer=new SdlpalRunObserver();s.scene=216;observer.Observe(Clone(s),easy);
+            Check(!observer.Reached.Contains(easy[1].Id),"initial connection inside trial cave is not an observed entrance");
+        }
+        foreach(var gate in new[]{easy[2],easy[3]})
+        {
+            foreach(int result in new[]{0,1,32767,65535,3})
+                Check(gate.Matches(new SdlpalBattleEvent{scene=gate.Scene.Value,team=gate.Team.Value,enemies=new[]{gate.Enemy.Value},result=result})==(result==3),
+                    "requested boss gate accepts victory only: "+gate.Id+"/"+result);
+            Check(!gate.Matches(new SdlpalBattleEvent{scene=gate.Scene.Value+1,team=gate.Team.Value,enemies=new[]{gate.Enemy.Value},result=3}),"same boss in another scene is rejected: "+gate.Id);
+            Check(!gate.Matches(new SdlpalBattleEvent{scene=gate.Scene.Value,team=gate.Team.Value+1,enemies=new[]{gate.Enemy.Value},result=3}),"wrong enemy team is rejected: "+gate.Id);
+            Check(!gate.Matches(new SdlpalBattleEvent{scene=gate.Scene.Value,team=gate.Team.Value,enemies=new[]{gate.Enemy.Value+1},result=3}),"wrong enemy object is rejected: "+gate.Id);
+        }
+        foreach(var oldGate in new[]{template[2],template[3]})
+            Check(!easy.First(r=>r.Id==oldGate.Id).Matches(new SdlpalBattleEvent{scene=oldGate.Scene.Value,team=oldGate.Team.Value,enemies=new[]{oldGate.Enemy.Value},result=3}),
+                "old same-named battle is not the requested simple-version boss: "+oldGate.Id);
         System.IO.File.WriteAllText(System.IO.Path.Combine(root,"route-template.json"),SerializeFixture(new{
             node12Verified=true,runtimeDefaultsUpdated=true,rules=template}));
         foreach(var rule in template.Where(r=>r.Kind=="scene-transition"))

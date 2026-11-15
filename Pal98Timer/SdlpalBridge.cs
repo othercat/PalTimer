@@ -55,6 +55,15 @@ namespace Pal98Timer
         public int id { get; set; }
         public int state { get; set; }
     }
+    internal sealed class SdlpalRunStatistics
+    {
+        public int schema { get; set; }
+        public string epoch { get; set; }
+        public long[] roleDeaths { get; set; }
+        public long battleDefeats { get; set; }
+        public uint controlledMask { get; set; }
+        public uint gaps { get; set; }
+    }
     internal sealed class SdlpalSnapshot
     {
         public int schema { get; set; }
@@ -62,6 +71,12 @@ namespace Pal98Timer
         public bool verified { get; set; }
         public bool diagnostic { get; set; }
         public bool wuqiang { get; set; }
+        public bool wuqiangPlus { get; set; }
+        public bool prebattleSlotResidue { get; set; }
+        public bool storyMod01 { get; set; }
+        public int storyModRevision { get; set; }
+        public bool storyModAfterBaiyue { get; set; }
+        public string challengeConfigSha256 { get; set; }
         public bool returnLinger { get; set; }
         public bool monsterRush { get; set; }
         public bool invisibleMonsters { get; set; }
@@ -86,6 +101,8 @@ namespace Pal98Timer
         public ulong epoch { get; set; }
         public ulong frame { get; set; }
         public int loadedFrom { get; set; }
+        public uint? deathRedScreenCount { get; set; }
+        public SdlpalRunStatistics runStatistics { get; set; }
         public int speed { get; set; }
         public int battleSpeed { get; set; }
         public int walkFrameMs { get; set; }
@@ -95,6 +112,13 @@ namespace Pal98Timer
         public int viewportX { get; set; } public int viewportY { get; set; } public int music { get; set; }
         public int? partyOffsetX { get; set; } public int? partyOffsetY { get; set; } public int? partyDirection { get; set; }
         public long cash { get; set; }
+        public long? cashBalance { get; set; }
+        public long? cashDebt { get; set; }
+        internal long CashBalance => cashBalance ?? cash;
+        internal bool ValidCash => cash >= 0 && cash <= uint.MaxValue &&
+            (cashBalance.HasValue == cashDebt.HasValue) && (!cashBalance.HasValue ||
+             cashDebt.Value >= 0 && cashDebt.Value <= uint.MaxValue &&
+             (cashDebt.Value == 0 || cash == 0) && cashBalance.Value == cash - cashDebt.Value);
         public SdlpalBattle battle { get; set; }
         public SdlpalBattleEvent[] battleEvents { get; set; }
         public SdlpalInventory[] inventory { get; set; }
@@ -129,6 +153,14 @@ namespace Pal98Timer
             foreach (var pair in resourceHashes) facts["resource." + pair.Key] = pair.Value;
             // Preserve ordinary categories and historical records byte-for-byte.
             if (wuqiang) facts["wuqiang"] = "1";
+            if (wuqiangPlus) facts["wuqiang_plus"] = "1";
+            if (prebattleSlotResidue) facts["prebattle_slot_residue"] = "1";
+            if (storyMod01) {
+                facts["config.slot.RuntimeStoryMod01"] = "1";
+                facts["config.slot.RuntimeStoryModRevision"] = "3";
+                facts["config.slot.StoryMod01"] = "1";
+            }
+            if (challengeConfigSha256 != null) facts["challenge_config_sha256"] = challengeConfigSha256;
             if (returnLinger) facts["return_linger"] = "1";
             if (!string.IsNullOrEmpty(respawnRule)) facts["respawn_rule"] = respawnRule;
             if (monsterRush) facts["monster_rush"] = "1";
@@ -144,6 +176,10 @@ namespace Pal98Timer
         internal string ResourceEngineIdentity => profile + "|" + exeHash + "|" + build + "|" +
             string.Join("|", resourceHashes.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Key + "=" + x.Value)) +
             (wuqiang ? "|wuqiang=1" : "") + (returnLinger ? "|return_linger=1" : "") +
+            (wuqiangPlus ? "|wuqiang_plus=1" : "") +
+            (storyMod01 ? "|story_mod_01=3" : "") +
+            (prebattleSlotResidue ? "|prebattle_slot_residue=1" : "") +
+            (challengeConfigSha256 == null ? "" : "|challenge_config_sha256=" + challengeConfigSha256) +
             (!string.IsNullOrEmpty(respawnRule) ? "|respawn_rule=" + respawnRule : "") +
             (monsterRush ? "|monster_rush=1" : "") + (invisibleMonsters ? "|invisible_monsters=1" : "") +
             (gameplayRuleId == null ? "" : "|gameplay.rule=" + gameplayRuleId + "|gameplay.revision=" +
@@ -192,6 +228,7 @@ namespace Pal98Timer
         internal Process Process { get; private set; }
         internal ulong Created { get; private set; }
         internal string ExeHash { get; private set; }
+        internal string ExecutableDirectory { get; private set; }
         internal string Error { get; private set; } = "等待隔世追凶-简单";
         [DllImport("kernel32.dll")] internal static extern ulong GetTickCount64();
         internal static bool Digest(string text) => text != null && text.Length == 64 && text.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
@@ -235,7 +272,7 @@ namespace Pal98Timer
                 string name = reader.GetAttribute("item") ?? reader.LocalName;
                 if (reader.Depth == 1) parent = name;
                 if (reader.Depth != 1 && !(reader.Depth == 2 && parent == "identity")) continue;
-                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity" })
+                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity", "schema", "storyMod01", "storyModRevision", "storyModAfterBaiyue", "prebattleSlotResidue" })
                     if (name.Equals(key, StringComparison.OrdinalIgnoreCase) && name != key)
                         throw new InvalidDataException("公式身份字段大小写不规范");
                 if (!(reader.Depth == 1 ? root : inner).Add(name))
@@ -246,12 +283,48 @@ namespace Pal98Timer
             }
         }
         internal static JavaScriptSerializer Json() => new JavaScriptSerializer { MaxJsonLength = Capacity, RecursionLimit = 32 };
+        private static void ValidateStoryModFields(Dictionary<string, object> fields, SdlpalSnapshot value)
+        {
+            object mode, revision, nested, after;
+            bool present = fields.TryGetValue("storyMod01", out mode);
+            bool hasRevision = fields.TryGetValue("storyModRevision", out revision);
+            var identity = fields.TryGetValue("identity", out nested) ? nested as Dictionary<string, object> : null;
+            if (present && !(mode is bool) || hasRevision && !(revision is int))
+                throw new InvalidDataException("Invalid story mod identity types");
+            if (value.schema == 3) {
+                if (!present || !(bool)mode || !value.storyMod01 || !hasRevision || (int)revision != 3 || value.storyModRevision != 3 ||
+                    identity == null || !identity.TryGetValue("storyMod01", out nested) || !Equals(nested, mode) ||
+                    !identity.TryGetValue("storyModRevision", out nested) || !Equals(nested, revision) ||
+                    !fields.TryGetValue("storyModAfterBaiyue", out after) || !(after is bool))
+                    throw new InvalidDataException("Story mod requires matching revision3 identities");
+            } else if (value.storyMod01 || hasRevision && (int)revision != 0 ||
+                identity != null && (identity.ContainsKey("storyMod01") || identity.ContainsKey("storyModRevision")))
+                throw new InvalidDataException("Update the complete package for this story mod");
+        }
+        internal static void ValidateSlotResidueFields(Dictionary<string, object> fields, SdlpalSnapshot value)
+        {
+            ValidateStoryModFields(fields, value);
+            if (fields == null || !fields.TryGetValue("schema", out object schema) || !(schema is int) ||
+                (int)schema != value.schema || value.schema != 1 && value.schema != 2 && value.schema != 3)
+                throw new InvalidDataException("未知游戏快照版本");
+            bool present = fields.TryGetValue("prebattleSlotResidue", out object raw);
+            if (present && !(raw is bool) || value.prebattleSlotResidue != (present && (bool)raw))
+                throw new InvalidDataException("战前位置残留模式须为规范布尔字段");
+            var identity = fields.TryGetValue("identity", out object nested) ? nested as Dictionary<string,object> : null;
+            bool inside = identity != null && identity.TryGetValue("prebattleSlotResidue", out _);
+            if (inside && (!present || !(identity["prebattleSlotResidue"] is bool) || !Equals(raw,identity["prebattleSlotResidue"])))
+                throw new InvalidDataException("战前位置残留身份与状态不一致");
+            if (value.schema == 2 ? !present || !inside || !value.prebattleSlotResidue : value.schema == 1 ? value.prebattleSlotResidue : !present || !inside)
+                throw new InvalidDataException("位置残留模式与快照版本不一致");
+        }
         internal static SdlpalSnapshot ReadSnapshotJson(string json)
         {
             ValidateGameplayRuleJson(json);
             var serializer = Json();
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
-            ValidateGameplayRuleFields(serializer.Deserialize<Dictionary<string, object>>(json), value);
+            var fields = serializer.Deserialize<Dictionary<string, object>>(json);
+            ValidateGameplayRuleFields(fields, value);
+            ValidateSlotResidueFields(fields, value);
             return value;
         }
         internal static string HashFile(string path)
@@ -279,6 +352,9 @@ namespace Pal98Timer
                 "gamePath", "savePath", "started", "focused", "busy", "canControl", "completed", "epoch", "frame", "loadedFrom",
                 "speed", "battleSpeed", "walkFrameMs", "fadeCycleMs", "scene", "map", "battle", "battleEvents" };
             if (fields == null || required.Any(k => !fields.ContainsKey(k))) throw new InvalidDataException("游戏快照缺少必要字段");
+            if (fields.TryGetValue("deathRedScreenCount", out object deaths) &&
+                (!(deaths is int || deaths is long) || Convert.ToInt64(deaths) < 0 || Convert.ToInt64(deaths) > uint.MaxValue))
+                throw new InvalidDataException("死亡红屏计数无效");
             // Older engines omit this additive field and have no runtime no-wall
             // switch. Do not let the JSON serializer coerce strings/numbers/null.
             object wuqiang;
@@ -302,11 +378,12 @@ namespace Pal98Timer
                 validLabel = false;
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
             ValidateGameplayRuleFields(fields, value);
+            ValidateSlotResidueFields(fields, value);
             foreach (string key in new[] { "partyOffsetX", "partyOffsetY", "partyDirection" })
                 if (fields.TryGetValue(key, out object coordinate) && coordinate != null &&
                     (!(coordinate is int) || (int)coordinate < 0 || (int)coordinate > (key == "partyDirection" ? 3 : 65535)))
                     throw new InvalidDataException("队伍触发位置字段无效");
-            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "returnLinger", "respawnRule", "dreamspaceThrowFormula" })
+            foreach (string key in new[] { "monsterRush", "invisibleMonsters", "returnLinger", "respawnRule", "dreamspaceThrowFormula", "wuqiangPlus" })
             {
                 object field;
                 bool present = fields.TryGetValue(key, out field);
@@ -317,13 +394,21 @@ namespace Pal98Timer
                     modeIdentity.TryGetValue(key, out nestedField) && (!present || !Equals(nestedField, field)))
                     throw new InvalidDataException("玩法规则身份与状态不一致");
             }
+            if (value.wuqiangPlus && !value.wuqiang || value.challengeConfigSha256 != null && !Digest(value.challengeConfigSha256))
+                throw new InvalidDataException("维护版规则身份无效");
+            foreach (string key in new[] {"cashBalance", "cashDebt"})
+                if (fields.TryGetValue(key, out object money) && money != null && !(money is int || money is long))
+                    throw new InvalidDataException("余额与债务必须是整数");
+            if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string,object> challengeIdentity &&
+                challengeIdentity.TryGetValue("challengeConfigSha256", out object challengeHash) && !Equals(challengeHash,value.challengeConfigSha256))
+                throw new InvalidDataException("维护版配置身份与状态不一致");
             if (value.dreamspaceThrowFormula && value.profile != "dreamspace39x-hard-v1")
                 throw new InvalidDataException("梦时空投掷公式不适用于当前内容");
             if (!string.IsNullOrEmpty(value.respawnRule) && value.respawnRule != "pal98-current-scene-v1" ||
                 (value.monsterRush || value.invisibleMonsters) && value.respawnRule != "pal98-current-scene-v1")
                 throw new InvalidDataException("未知怪物刷新规则");
             value.releaseRevision = validLabel ? label : null;
-            if (value.schema != 1 || !SupportedProfile(value.profile) || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
+            if ((value.schema != 1 && value.schema != 2 && value.schema != 3) || !SupportedProfile(value.profile) || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||
                 value.resourceHashes["SSS.MKF"] != value.resourceHash || string.IsNullOrWhiteSpace(value.build) || value.build.Length > 128 ||
                 value.build.Any(char.IsControl) || !AbsolutePath(value.gamePath) || !AbsolutePath(value.savePath) ||
@@ -380,6 +465,7 @@ namespace Pal98Timer
                     view = map.CreateViewAccessor(0, Capacity, MemoryMappedFileAccess.Read);
                     Process = process; Created = created;
                     ExeHash = HashFile(process.MainModule.FileName);
+                    ExecutableDirectory = Path.GetDirectoryName(process.MainModule.FileName);
                     SdlpalSnapshot snapshot;
                     if (!TryRead(out snapshot)) throw new InvalidDataException(Error);
                 }
@@ -439,7 +525,7 @@ namespace Pal98Timer
         private void Close()
         {
             view?.Dispose(); map?.Dispose(); view = null; map = null;
-            Process?.Dispose(); Process = null; Created = 0; ExeHash = null;
+            Process?.Dispose(); Process = null; Created = 0; ExeHash = null; ExecutableDirectory = null;
         }
         public void Dispose() { lock (gate) Close(); }
     }

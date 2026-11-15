@@ -27,8 +27,19 @@ $dependencies = @('PalUserData.cs','ChallengeRelayContract.cs','ChallengeJsonSyn
     $p=Join-Path $shared $_
     [ordered]@{name=$_;sha256=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
+$sourceCommit = $null
+$sourceDirty = $true
+$sourceStateHash = $null
+if (Test-Path -LiteralPath (Join-Path $repo '.git')) {
+    $sourceCommit = & git -C $repo rev-parse HEAD
+    $sourceDirty = [bool](& git -C $repo status --porcelain)
+} else {
+    $sourceState = Join-Path $repo 'SOURCE-STATE.json'
+    if (!(Test-Path -LiteralPath $sourceState)) { throw 'A frozen source archive requires SOURCE-STATE.json.' }
+    $sourceStateHash = (Get-FileHash -LiteralPath $sourceState -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 $record = [ordered]@{
-    schema='PalTimer.UnifiedBuild.v1';commit=(& git -C $repo rev-parse HEAD);source_dirty=[bool](& git -C $repo status --porcelain);
+    schema='PalTimer.UnifiedBuild.v1';commit=$sourceCommit;source_dirty=$sourceDirty;source_state_sha256=$sourceStateHash;
     version=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $out 'bin\Pal98Timer.exe')).FileVersion;
     editions=@('PALDLL_DX9','sdlpal-lostedit');products=$products;shared_sources=$dependencies;
     authentication='Freeze EXE/Online first, then sign their one shared Auth composition. Production approval and legacy-cloud core registrations remain separate.'

@@ -55,7 +55,7 @@ static class EffectiveConfigurationHost
             File.WriteAllText(Path.Combine(root,"config.ini"), "[Gameplay]\nSteal99=1\n");
             Call(type, subject, "ReadFiles", root, 7003, created, "geshi-easy-v1");
             Check(error() == null && facts()["config.slot.Steal99"] == "1" && facts()["config.slot.AutoCollect"] == "1" && facts()["config.slot.SpiritShop"] == "1", "Old local files publish explicit loader fallback values");
-            Check(facts().Keys.Count(k => k.StartsWith("config.slot.")) == 67, "Local play also includes all actual configuration slots");
+            Check(facts().Keys.Count(k => k.StartsWith("config.slot.")) == 83, "Local play also includes all41 actual configuration slots");
             Console.WriteLine("PASS " + checks + " effective configuration checks"); return 0;
         } catch (Exception error) {Console.Error.WriteLine(error); return 1;}
     }

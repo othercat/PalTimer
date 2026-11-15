@@ -61,7 +61,7 @@ internal static partial class CompetitionBehavior
     {
         internal int Active, MaxActive, Gets, Posts, Registers;
         internal bool HoldGet, BadJson; internal bool V2=true; internal bool Published=true;
-        internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature };
+        internal string[] Features = new[] { CompetitionProtocol.RestartTimeFeature, CompetitionProtocol.RunStatisticsFeature };
         internal Action BeforeChallenge;
         internal bool Approved = true, RejectChallenge;
         internal string DeniedBuild;
@@ -922,6 +922,10 @@ internal static partial class CompetitionBehavior
     }
     static int Main(string[] args)
     {
+        if (args.Length == 2 && args[1] == "--statistics-only") {
+            try { root=args[0]; Directory.CreateDirectory(root); FinalStatisticsOnlineCases().GetAwaiter().GetResult(); Console.WriteLine("PASS statistics total="+count); return 0; }
+            catch(Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        }
         if (args.Length == 2 && args[1] == "--snapshot-bridge-only") {
             try {
                 root = args[0]; Directory.CreateDirectory(root);

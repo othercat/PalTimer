@@ -67,11 +67,15 @@ namespace Pal98Timer
                     throw new ArgumentException("Invalid restart_ms extension.");
                 restartMilliseconds = milliseconds;
             }
-            return new CompetitionObservation {
+            var observation = new CompetitionObservation {
                 Token = value.Token, Core = value.Core, DllHash = value.DllHash, GameVersion = value.GameVersion,
                 ValidationError = value.ValidationError, TimelineId = value.TimelineId, GameTitle = value.GameTitle,
                 Step = value.Step, FadeMilliseconds = value.Fade, MapSpeedTicks = value.Speed, TotalMilliseconds = value.Total,
                 RestartMilliseconds = restartMilliseconds,
+                FinalStatistics = value.Extensions.TryGetValue("run_statistics.v1", out var statistics) ? FinalRunStatistics.Parse(statistics) : null,
+                FinishedAt = value.Finished && value.Extensions.TryGetValue("run_statistics.finished_at", out var finishText) &&
+                    DateTimeOffset.TryParseExact(finishText, "o", System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var finishedAt) && finishedAt <= value.ObservedAt ? (DateTimeOffset?)finishedAt : null,
                 LiveTimingValid = ReadLiveTimingValid(value),
                 ReleaseRevision = ReadReleaseRevision(value),
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
@@ -88,6 +92,7 @@ namespace Pal98Timer
                     run_verified = value.Hardcore.Verified, rules_version = value.Hardcore.RulesVersion, evidence_status = value.Hardcore.Status },
                 Splits = value.Splits.Select(s => new CompetitionSplit { checkpoint_id = s.Id, elapsed_ms = s.Elapsed, status = s.Status }).ToArray()
             };
+            return SdlpalOnlineConfiguration.Prepare(observation);
         }
         public void PublishClock(string token, long elapsed, bool running, long observedTick) => client.PublishClock(token, elapsed, running, observedTick);
         private static bool? ReadLiveTimingValid(OnlineSnapshotV1 value)

@@ -41,11 +41,13 @@ namespace Pal98Timer
         internal GameplayIdentity Gameplay;
         internal RankingConfiguration Ranking;
         internal CompetitionHardcore Hardcore;
+        internal FinalRunStatistics FinalStatistics;
         internal int Step, FadeMilliseconds, MapSpeedTicks;
         internal long TotalMilliseconds;
         internal long? RestartMilliseconds;
         internal bool? LiveTimingValid;
         internal DateTimeOffset ObservedAt;
+        internal DateTimeOffset? FinishedAt;
         internal bool Finished, BeganHere;
         internal CompetitionSplit[] Splits;
     }

@@ -11,7 +11,8 @@ internal static partial class CompetitionBehavior
         var client=new CompetitionClient(store,wire,auth);client.Configure(Config());
         await Until(()=>wire.Registers>0,"challenge compatibility server registered");
         var identity=new OriginalChallengeIdentity {Id=Guid.NewGuid().ToString(),Revision=1,
-            Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64),Title="挑战"};
+            Content="paldll-dx9-pal98fix-classic-v5",RulesHash=new string('c',64),Title="挑战",
+            EffectiveIni="[Challenge]\nSchemaVersion=1\nOriginalFastFade=1\nPriorityOriginalFastFade=0\n"};
         var start=Observation("challenge",0);start.Ranking=identity.Decorate(start.Ranking);client.Publish(start);
         var finish=Observation("challenge",2);finish.Ranking=identity.Decorate(finish.Ranking);client.Publish(finish);
         await Until(()=>store.LoadPending(Config()).Any(p=>p.LastStatus?.Contains("原版挑战") == true),"unsupported server retains challenge score for upgrade");

@@ -44,7 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
-        private bool serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects, serverSupportsOriginalChallenges, serverSupportsMaintenanceLive;
+        private bool serverSupportsRunStatistics, serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects, serverSupportsOriginalChallenges, serverSupportsMaintenanceLive;
         private DateTime capabilityExpires;
         private long generation, querySerial;
         private int publishedStep = int.MinValue, publishedFade, publishedSpeed;
@@ -194,7 +194,8 @@ namespace Pal98Timer
                 if (observation.Step <= 0 && lease.Fade == 0)
                 { lease = lease.Copy(); lease.Fade = observation.FadeMilliseconds; lease.Speed = observation.MapSpeedTicks; }
                 if (observation.Finished && lease.FinishedAt == default(DateTimeOffset))
-                { lease = lease.Copy(); lease.FinishedAt = observation.ObservedAt; }
+                { lease = lease.Copy(); lease.FinishedAt = observation.FinishedAt.HasValue && observation.FinishedAt >= lease.StartedAt &&
+                    observation.FinishedAt <= observation.ObservedAt ? observation.FinishedAt.Value : observation.ObservedAt; }
                 // Latch observed changes even if the settings later return to
                 // their initial values. Only bounded scalar comparisons here.
                 if (lease.Started) {
@@ -281,7 +282,7 @@ namespace Pal98Timer
                 if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
-                serverSupportsV2 = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = serverSupportsOriginalChallenges = serverSupportsMaintenanceLive = false;
+                serverSupportsV2 = serverSupportsRunStatistics = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = serverSupportsOriginalChallenges = serverSupportsMaintenanceLive = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
                 approvals.Clear(); candidates.Clear(); activationText = "仅本地保存";
@@ -427,7 +428,7 @@ namespace Pal98Timer
                 game_version = string.IsNullOrEmpty(observation.GameVersion) ? null : observation.GameVersion,
                 pal_dll_sha256 = CompetitionProtocol.Digest(observation.DllHash) ? observation.DllHash : null,
                 observations = new CompetitionRunObservations { began_here = beganHere, finished = observation.Finished, issues = issues.Distinct(StringComparer.Ordinal).Take(32).ToArray(),
-                    initial_gameplay = bound.InitialGameplay, initial_ranking = bound.InitialRanking, initial_hardcore = bound.InitialHardcore },
+                    initial_gameplay = bound.InitialGameplay, initial_ranking = bound.InitialRanking, initial_hardcore = bound.InitialHardcore, final_statistics = observation.FinalStatistics?.Copy() },
                 splits = observation.Splits.Select(s => new CompetitionSplit { checkpoint_id = CompetitionProtocol.CheckpointId(s.checkpoint_id), elapsed_ms = s.elapsed_ms, status = s.status }).ToArray()
             };
             string error = CompetitionProtocol.Validate(run);
@@ -496,6 +497,7 @@ namespace Pal98Timer
                 PublishLocalIdentity(identityRequest, response.Body);
                 registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5);
                 serverSupportsV2 = reply.supported_run_protocols?.Contains(CompetitionProtocol.OnlineV2) == true;
+                serverSupportsRunStatistics = reply.supported_features?.Contains(CompetitionProtocol.RunStatisticsFeature) == true;
                 serverSupportsRestartTime = reply.supported_features?.Contains(CompetitionProtocol.RestartTimeFeature) == true;
                 serverSupportsMaintenance = reply.supported_features?.Contains(CompetitionProtocol.MaintenanceFeature) == true;
                 serverSupportsContentEffects = reply.supported_features?.Contains(CompetitionProtocol.ContentEffectsFeature) == true;
@@ -621,6 +623,12 @@ namespace Pal98Timer
             if (validation.Length != 0) { item.Rejected = true; item.LastStatus = validation; storage.SavePending(item); return; }
             if (!item.ValidUploadVariants())
             { item.LocalRejected = item.Rejected = true; item.LastStatus = "兼容签封与原始事实不一致，仅保留本地"; storage.SavePending(item); return; }
+            if (item.Run.observations?.final_statistics != null && !serverSupportsRunStatistics)
+            {
+                item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);
+                item.LastStatus = "服务器尚未支持通关统计；原始签封已保留，等待服务器升级";
+                storage.SavePending(item); storage.LogNetwork("awaiting-final-statistics-server", 0); return;
+            }
             if (item.Run.ranking?.SpeedIndependent == true && !serverSupportsContentEffects)
             {
                 item.NextAttemptUtc = DateTime.UtcNow.AddMinutes(5);

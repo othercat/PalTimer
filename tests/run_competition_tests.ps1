@@ -1,5 +1,5 @@
 param([string]$Server = '', [string]$PalSharedSourceRoot = '', [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [string]$RuntimeDirectory = '', [switch]$SnapshotBridgeOnly)
+    [string]$RuntimeDirectory = '', [switch]$RunStatisticsOnly, [switch]$SnapshotBridgeOnly, [string]$SdlpalContractCases = '')
 $ErrorActionPreference = 'Stop'
 if ($SnapshotBridgeOnly -and (!$RuntimeDirectory -or $Server)) { throw '-SnapshotBridgeOnly requires -RuntimeDirectory and no live server.' }
 $repo = Split-Path -Parent $PSScriptRoot
@@ -12,6 +12,7 @@ $csc = & $vswhere -latest -products '*' -version '[18.0,19.0)' -find 'MSBuild\**
 if (!$csc) { throw 'VS 2026 Roslyn not found' }
 $sources = @('RankingConfiguration.cs','GameplayIdentity.cs','CompetitionProtocol.cs','CompetitionStorage.cs','CompetitionTransport.cs','CompetitionAuth.cs','CompetitionBuildRegistration.cs','CompetitionClient.cs','CompetitionGameSettings.cs','CompetitionPlayerIdentity.cs','LocalPlayerIdentity.cs','IdentityBehaviorSnapshot.cs','CompetitionWindows.cs') | ForEach-Object { $component = Join-Path $repo ('PalTimerOnline\' + $_); if (Test-Path -LiteralPath $component) { $component } else { Join-Path $repo ('Pal98Timer\' + $_) } }
 $sources += Join-Path $PSScriptRoot 'competition_behavior.cs'
+$sources += Join-Path $PSScriptRoot 'final_statistics_online_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'original_challenge_online_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'identity_behavior.cs'
 $sources += Join-Path $PSScriptRoot 'maintenance_initialization.cs'
@@ -21,8 +22,10 @@ $sources += @('TimingModeReader.cs', 'Dx9TimingCategory.cs', 'HObj.cs') | ForEac
 if (!$PalSharedSourceRoot) { $PalSharedSourceRoot = Join-Path $repo '..\PALDLL_DX9\shared' }
 $sources += Join-Path $PalSharedSourceRoot 'PalUserData.cs'
 $sources += Join-Path $repo 'Pal98Timer\OriginalChallengeIdentity.cs'
+$sources += Join-Path $repo 'Pal98Timer\EffectiveChallengeConfiguration.cs'
 $sources += @('ChallengeRelayContract.cs','ChallengeJsonSyntax.cs','OriginalChallengeRuntimeContract.cs') | ForEach-Object { Join-Path $PalSharedSourceRoot $_ }
 $sources += Join-Path $repo 'Pal98Timer\SdlpalBridge.cs'
+$sources += Join-Path $repo 'Pal98Timer\RunStatistics.cs'
 $sources += Join-Path $repo 'PalTimerOnline\CompetitionLive.cs'
 $exe = Join-Path $out 'CompetitionBehavior.exe'
 & $csc /nologo /noconfig /target:exe /platform:x64 "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.dll /reference:System.Data.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.dll /reference:System.Security.dll /reference:System.Net.Http.dll "/reference:$repo\Pal98Timer\lib\System.Web.Script.Serialization.dll" $sources *> (Join-Path $out 'build.log')
@@ -33,12 +36,15 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "ranking-configuration-vectors.j
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "fixtures\identity-registration.json") -Destination $out
 $arguments = @(Join-Path $out 'data')
 if ($Server) { $arguments += $Server }
+if ($RunStatisticsOnly) { if ($Server -or $SnapshotBridgeOnly) { throw 'Statistics-only tests must remain offline and exclusive.' }; $arguments += '--statistics-only' }
 if ($SnapshotBridgeOnly) { $arguments += '--snapshot-bridge-only' }
 $priorRuntime = $env:PALTIMER_TEST_RUNTIME
+$priorContracts = $env:PALTIMER_TEST_CONTRACTS
 try {
     $env:PALTIMER_TEST_RUNTIME = if ($RuntimeDirectory) { (Resolve-Path -LiteralPath $RuntimeDirectory).Path } else { $null }
+    $env:PALTIMER_TEST_CONTRACTS = if ($SdlpalContractCases) { (Resolve-Path -LiteralPath $SdlpalContractCases).Path } else { $null }
     & $exe @arguments 2>&1 | Tee-Object -FilePath (Join-Path $out 'result.txt')
     $result = $LASTEXITCODE
-} finally { $env:PALTIMER_TEST_RUNTIME = $priorRuntime }
+} finally { $env:PALTIMER_TEST_RUNTIME = $priorRuntime; $env:PALTIMER_TEST_CONTRACTS = $priorContracts }
 Write-Output "Evidence: $out"
 if ($result -ne 0) { throw 'Competition behavior failed' }

@@ -996,13 +996,61 @@ namespace Pal98Timer
         /// <summary>
         /// 重置
         /// </summary>
+        private readonly RunStatisticsAccumulator runStatistics = new RunStatisticsAccumulator();
+        private DateTimeOffset? runStatisticsFinishedAt;
+        private readonly object runStatisticsObservationGate = new object();
+        private Process runStatisticsProcess;
+        private bool runStatisticsResetPending;
+        internal virtual RunStatisticsSample CaptureRunStatistics() => NativeRunStatisticsReader.Read(CompetitionGameProcess);
+        private void ObserveRunStatistics()
+        {
+            try {
+                lock (runStatisticsObservationGate) {
+                // Capture and reset/import share one order. A partial Reset
+                // cannot freeze the preceding run under the new sequence.
+                if (runStatisticsResetPending && CurrentStep > 0) return;
+                runStatisticsResetPending = false;
+                bool finished = CheckPoints != null && CheckPoints.Count != 0 && CurrentStep >= CheckPoints.Count;
+                if (finished && !runStatisticsFinishedAt.HasValue) runStatisticsFinishedAt = DateTimeOffset.UtcNow;
+                if (!finished) runStatisticsFinishedAt = null;
+                var currentProcess = CompetitionGameProcess;
+                if (currentProcess != null) runStatisticsProcess = currentProcess;
+                bool sourceEnded;
+                try { sourceEnded = runStatisticsProcess == null || runStatisticsProcess.HasExited; } catch { sourceEnded = true; }
+                runStatistics.Observe(CaptureRunStatistics(), MT.IsRunning || MT.CurrentTSOnly.Ticks > 0 || CurrentStep > 0, finished, sourceEnded);
+                }
+            } catch { } // diagnostic observations never interrupt local timing
+        }
+        protected void RestoreRunStatistics(string text) { lock (runStatisticsObservationGate) runStatistics.Restore(text); }
+        internal void PreserveCompletedStatisticsBeforeClose()
+        {
+            try {
+                if (CheckPoints == null || CheckPoints.Count == 0 || CurrentStep < CheckPoints.Count) return;
+                long sequence = ScoreRunSequence;
+                ObserveRunStatistics();
+                lock (runStatisticsObservationGate) {
+                    if (sequence != ScoreRunSequence || CurrentStep < CheckPoints.Count) return;
+                    // Closing cannot wait for a reward dialog. Preserve the
+                    // completed score with unknown money rather than losing it.
+                    if (!runStatistics.FinalReady) runStatistics.Observe(null, true, true, true);
+                }
+                competitionPoll = 0;
+                PublishCompetitionIfChanged();
+            } catch { } // the normal outbox close still owns persistence errors
+        }
         private long scoreRunSequence;
         public long ScoreRunSequence { get { return System.Threading.Interlocked.Read(ref scoreRunSequence); } }
         protected bool competitionImportedRun;
         protected void AdvanceScoreRunSequence(bool imported = false)
         {
             competitionImportedRun = imported;
+            lock (runStatisticsObservationGate) {
+            runStatisticsFinishedAt = null;
+            if (imported) runStatistics.Imported(); else runStatistics.Reset();
+            runStatisticsResetPending = !imported;
+            if (!imported) runStatisticsProcess = null;
             System.Threading.Interlocked.Increment(ref scoreRunSequence);
+            }
             form?.InvalidateCompetition(this, competitionCoreId + ":" + ScoreRunSequence);
         }
         private string competitionCoreId = Guid.NewGuid().ToString("N");
@@ -1037,12 +1085,16 @@ namespace Pal98Timer
             // Exports still report pending as unverified; failed transitions
             // leave this gate and publish the original sticky failure normally.
             if(CompetitionMetadataPending) { competitionMetadataPoll = 0; return; }
+            // Preserve the stopped clock and original finish instant while the
+            // game settles rewards; do not seal pre-reward money as final.
+            if (step >= CheckPoints.Count && !runStatistics.FinalReady) return;
             Process process = CompetitionGameProcess;
             string hash, version, error; int fade, speed;
             CaptureCompetitionIdentity(out hash, out version, out fade, out speed, out error);
             if (sequence != competitionSequence) competitionBeganHere = CanBeginCompetitionHere(step);
             var observation = new CompetitionObservation();
             CaptureCompetitionGameplay(observation);
+            observation.FinalStatistics = runStatistics.Snapshot();
             string fingerprint = (observation.TimelineId ?? "") + "|" + observation.Ranking?.configuration_id + "|" + observation.ValidationError + "|" + observation.LiveTimingValid + "|" + (observation.Hardcore?.run_verified ?? false) + "|" + coreIdentity + "|" + sequence + "|" + step + "|" + hash + "|" + version + "|" + fade + "|" + speed + "|" + error;
             // A reconnect can discard the consumer's last snapshot without
             // changing gameplay or the node. Republish on process changes and
@@ -1061,9 +1113,9 @@ namespace Pal98Timer
             if (coreIdentity != competitionCoreId || sequence != ScoreRunSequence || step != CurrentStep) return;
             competitionSequence = sequence; competitionStep = step; competitionFingerprint = fingerprint;
             competitionProcess = process; competitionMetadataPoll = now + 5 * Stopwatch.Frequency;
-            form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, Token = coreIdentity + ":" + sequence, Core = CoreName,
+            form.PublishCompetition(this, new CompetitionObservation { TimelineId = observation.TimelineId, Gameplay = observation.Gameplay, Ranking = observation.Ranking, Hardcore = observation.Hardcore, FinalStatistics = observation.FinalStatistics, Token = coreIdentity + ":" + sequence, Core = CoreName,
                 Step = step, TotalMilliseconds = totalMilliseconds, RestartMilliseconds = RestartMilliseconds, LiveTimingValid = observation.LiveTimingValid, ReleaseRevision = observation.ReleaseRevision, GameTitle = GetGameVersion(),
-                Finished = step >= splits.Length, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
+                Finished = step >= splits.Length, FinishedAt = runStatisticsFinishedAt, BeganHere = competitionBeganHere, ObservedAt = DateTimeOffset.UtcNow,
                 DllHash = hash, GameVersion = version, FadeMilliseconds = fade, MapSpeedTicks = speed, ValidationError = string.IsNullOrEmpty(observation.ValidationError) ? error : observation.ValidationError, Splits = splits });
         }
         protected virtual void ValidateBestReference(HObj reference) { }
@@ -1111,6 +1163,7 @@ namespace Pal98Timer
                     try
                     {
                         OnTick();
+                        ObserveRunStatistics();
                         // After the local result has been fixed. A failure in diagnostics
                         // cannot prevent the next local tick, pause or reset.
                         PublishCompetitionIfChanged();
@@ -1361,6 +1414,7 @@ namespace Pal98Timer
         /// <returns></returns>
         public string GetTimerJson()
         {
+            ObserveRunStatistics();
             HObj exdata = new HObj();
             exdata["Current"] = MT.ToFullString();
             exdata["Step"] = CurrentStep;
@@ -1379,6 +1433,8 @@ namespace Pal98Timer
                 exdata["CheckPoints"] = cps;
             }
             FillMoreTimerData(exdata);
+            exdata["RunStatisticsState"] = runStatistics.Save();
+            exdata["FinalRunStatistics"] = new HObj(runStatistics.Snapshot());
             return exdata.ToJson();
         }
         /// <summary>

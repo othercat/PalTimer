@@ -82,7 +82,7 @@ namespace Pal98Timer
         internal static string Validate(SdlpalSnapshot s)
         {
             if (!s.started) return "";
-            if (s.cash < 0 || s.cash > uint.MaxValue || s.inventory == null || s.inventory.Length > 256 ||
+            if (!s.ValidCash || s.inventory == null || s.inventory.Length > 256 ||
                 s.catalog == null || s.catalog.Length != 700 || s.itemIds == null || s.itemIds.Length > 700 ||
                 s.roles == null || s.roles.Length != 6 || s.party == null || s.party.Length > 5)
                 return "游戏物品数据缺失或超出范围";
@@ -94,7 +94,7 @@ namespace Pal98Timer
             if (s.roles.Any(r => r == null || r.id < 0 || r.id >= 6 || r.name == null || r.name.Length > 256 || r.name.Any(char.IsControl) ||
                     r.equipment == null || r.equipment.Length != 6 || r.equipment.Any(id => id < 0 || id >= 700)) ||
                 s.roles.Select(r => r.id).Distinct().Count() != 6 || s.party.Any(id => id < 0 || id >= 6) ||
-                s.party.Distinct().Count() != s.party.Length)
+                (!(s.schema >= 2 && s.prebattleSlotResidue) && s.party.Distinct().Count() != s.party.Length))
                 return "游戏队伍或装备数据无效";
             if (s.inventory.Any(i => i == null || i.slot < 0 || i.slot >= 256 || i.id <= 0 || i.id >= 700 ||
                     i.amount < 0 || i.amount > ushort.MaxValue || i.inUse < 0 || i.inUse > i.amount) ||
@@ -140,7 +140,7 @@ namespace Pal98Timer
                 Get(stock, id), Get(reserved, id), equipment.ContainsKey(id) ? equipment[id].Count : 0,
                 Get(totals, id) - Get(baseline, id), equipment.ContainsKey(id) ? string.Join("、", equipment[id]) : "",
                 names[id].data[1])).ToArray();
-            View = new SdlpalItemView(true, s.cash, s.epoch, rows, changed ? "已建立观察基线" : "实时物品数据");
+            View = new SdlpalItemView(true, s.CashBalance, s.epoch, rows, changed ? "已建立观察基线" : "实时物品数据");
         }
         private static int Get(Dictionary<int, int> values, int id) { int value; return values.TryGetValue(id, out value) ? value : 0; }
     }
