@@ -481,6 +481,7 @@ namespace Pal98Timer
             observation.ValidationError = GetScoreValidationError();
             var current = observer.Snapshot;
             observation.ReleaseRevision = current.releaseRevision;
+            observation.Wealth = WealthLocalReport.Capture(current);
             observation.LiveTimingValid = freshSnapshot && !current.diagnostic && current.fadeCycleMs > 0 && current.walkFrameMs > 0;
         }
         protected override void OnTick()
@@ -612,7 +613,7 @@ namespace Pal98Timer
                 (string.IsNullOrEmpty(integrityTitle) ? "" : " " + integrityTitle) + onlineSuffix + ReleaseSuffix;
         }
         public override string GetMoreInfo() => T(status + (!freshSnapshot || observer.Snapshot == null ? "" : "  场景 " + observer.Snapshot.scene +
-            (items.View.Available ? "  金钱 " + items.View.Cash : "  物品数据不可用")));
+            (observer.Snapshot.wealthBalance?.schema==1 && observer.Snapshot.wealthBalance.enabled ? "  总资产 " + observer.Snapshot.wealthBalance.total.ToString(CultureInfo.InvariantCulture) : items.View.Available ? "  金钱 " + items.View.Cash : "  物品数据不可用")));
         public override string GetAAction() => "";
         public override string GetCriticalError() { string value = warning; warning = ""; return value; }
         public override string GetRuntimeIntegrityStatus() => GetScoreValidationError();

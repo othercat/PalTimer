@@ -6,7 +6,7 @@ namespace Pal98Timer
     // scenes are reordered and must not be obtained by subtracting one.
     internal static class SdlpalClassicRoutes
     {
-        internal static bool Supports(string profile) => profile == "pal-dos-v1" || profile == "pal98-classic-v6-v1";
+        internal static bool Supports(string profile) => profile == "pal-dos-v1" || (profile == "pal98-classic-v6-v1" || profile == "pal98-suiji-v02-v1");
         private static SdlpalSplitRule Position(string id, string name, int scene, int x, int y, int radius) =>
             new SdlpalSplitRule { Id = "classic-" + id, Name = name, Kind = "position", Scene = scene, X = x, Y = y, Radius = radius };
         private static SdlpalSplitRule Battle(string id, string name, int scene, int team, int enemy, string kind = "battle") =>

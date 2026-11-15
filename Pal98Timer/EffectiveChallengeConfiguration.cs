@@ -11,6 +11,16 @@ namespace Pal98.Challenges
     // merged configuration file and never claims to be a memory observation.
     internal static class EffectiveChallengeConfiguration
     {
+        internal static bool ValidWealthOpponent(string text, bool required = false)
+        {
+            if (text == null || text.Length > 80 || text != text.Trim() || required && text.Length == 0 || text.IndexOfAny(new[] {'=', '[', ']', ';', '#'}) >= 0) return false;
+            for (int i=0; i<text.Length; i++) {
+                var c=System.Globalization.CharUnicodeInfo.GetUnicodeCategory(text,i);
+                if (c==System.Globalization.UnicodeCategory.Control || c==System.Globalization.UnicodeCategory.Format || c==System.Globalization.UnicodeCategory.Surrogate || c==System.Globalization.UnicodeCategory.PrivateUse || c==System.Globalization.UnicodeCategory.OtherNotAssigned || text[i]=='\u2028' || text[i]=='\u2029') return false;
+                if (char.IsHighSurrogate(text[i])) i++;
+            }
+            return true;
+        }
         internal const string Schema = "PAL.ChallengeEffective.v1";
         internal static readonly string[] SdlSlots = { "SoloArt", "HelplessHusband", "TrueDuel", "LevelOneSolo", "IndividualFlee", "ChosenHero",
             "StartingSupplies", "NoCoopMagic", "Drop99", "StealAll", "NoInvisibilityItem", "InvisibilityMana1", "SilkwormStatsOnly", "AdvancedTrade",
@@ -35,7 +45,7 @@ namespace Pal98.Challenges
                 int equal = line.IndexOf('='); if (equal <= 0) throw new InvalidDataException("挑战配置行无效。");
                 string key = line.Substring(0, equal).Trim(), value = line.Substring(equal + 1).Trim();
                 if (!Regex.IsMatch(key, @"\A[A-Z][A-Za-z0-9]{0,71}\z") || !names.Add(key) ||
-                    !Regex.IsMatch(value, @"\A(?:0|[1-9][0-9]{0,9}|[a-z][a-z0-9-]{0,63})\z"))
+                    !(key == "WealthOpponent" ? ValidWealthOpponent(value) : Regex.IsMatch(value, @"\A(?:0|[1-9][0-9]{0,9}|[a-z][a-z0-9-]{0,63})\z")))
                     throw new InvalidDataException("挑战配置字段无效或重复：" + key);
                 values.Add(key, value);
             }
