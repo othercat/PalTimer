@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 using HFrame.ENT;
 using System;
 using System.Collections.Generic;
@@ -62,7 +62,7 @@ namespace Pal98Timer
             var last = rules.Last();
             if (last.Id != "story-mod01-yuhang-richest" || last.Kind != "completion" || last.Team.HasValue || last.Scene.HasValue || last.Enemy.HasValue ||
                 !rules.Any(r => r.Id == "story-mod01-baiyue" && r.Kind == "story-baiyue"))
-                throw new InvalidDataException("仙1mod-01须保留拜月节点及余杭首富庆祝终点");
+                throw new InvalidDataException("余杭首富须保留拜月节点及余杭首富庆祝终点");
         }
         internal bool Matches(SdlpalBattleEvent battle) => ((Kind == "battle" || Kind == "battle-after-loss" || Kind == "battle-finish" || Kind == "completion" && Team.HasValue) && battle.result == 3 || Kind == "battle-end") &&
             (!Team.HasValue || Team == battle.team) && (!Scene.HasValue || Scene == battle.scene) &&
@@ -597,7 +597,7 @@ namespace Pal98Timer
         public override string GetSecondWatch() => idleTimer.ToFullString();
         internal string GameplayDisplayName
         {
-            get { lock (gate) return activeStoryMod ? "仙1mod-01" : SdlpalBridge.ProfileName(activeProfile) + (freshSnapshot && observer.Snapshot?.wuqiang == true ? (observer.Snapshot.wuqiangPlus ? "（甄吴强）" : "（吴强）") : "") +
+            get { lock (gate) return activeStoryMod ? "余杭首富" : SdlpalBridge.ProfileName(activeProfile) + (freshSnapshot && observer.Snapshot?.wuqiang == true ? (observer.Snapshot.wuqiangPlus ? "（甄吴强）" : "（吴强）") : "") +
                 (freshSnapshot && observer.Snapshot?.monsterRush == true ? "（突脸）" : "") +
                 (freshSnapshot && observer.Snapshot?.invisibleMonsters == true ? "（隐形）" : ""); }
         }
