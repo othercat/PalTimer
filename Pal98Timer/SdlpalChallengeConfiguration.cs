@@ -70,7 +70,7 @@ namespace Pal98Timer
                 string legacy = inheritedSteal ? LegacySteal99(root) : "0";
                 foreach (string slot in EffectiveChallengeConfiguration.SdlSlots) {
                     if (!values.ContainsKey(slot)) values[slot] = slot == "Steal99" ? legacy :
-                        (slot == "AutoCollect" || slot == "SpiritShop") && content != "pal-dos" && content != "pal98-classic-v6" ? "1" : "0";
+                        (slot == "AutoCollect" || slot == "SpiritShop") && content != "pal-dos" && (content != "pal98-classic-v6" && content != "pal98-suiji-v02") ? "1" : "0";
                     if (!values.ContainsKey("Priority" + slot)) values["Priority" + slot] = slot == "AutoCollect" ? "999" : "0";
                 }
                 if (!values.ContainsKey("Hero")) values["Hero"] = "li-xiaoyao";

@@ -138,6 +138,7 @@
   <ItemGroup>
     <Compile Include="$(PalSharedSourceRoot)\PalUserData.cs"><Link>Storage\PalUserData.cs</Link></Compile>
     <Compile Include="SdlpalBridge.cs" />
+    <Compile Include="..\PalTimerOnline\WealthBalance.cs"><Link>WealthBalance.cs</Link></Compile>
     <Compile Include="SdlpalGeshi.cs" />
     <Compile Include="SdlpalGeshiRoutes.cs" />
     <Compile Include="SdlpalItemConsumptionGate.cs" />

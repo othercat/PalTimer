@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -76,6 +76,7 @@ namespace Pal98Timer
         public string game_title { get; set; }
         public string release_revision { get; set; }
         public RankingConfiguration maintenance_ranking { get; set; }
+        public WealthObservation wealth_balance { get; set; }
         public long elapsed_ms { get; set; }
         public long? restart_ms { get; set; }
         public string current_checkpoint { get; set; }
@@ -104,6 +105,7 @@ namespace Pal98Timer
         public long sequence { get; set; }
         public string received_at { get; set; }
         public CompetitionReply standings { get; set; }
+        public WealthReply wealth_balance { get; set; }
     }
 
     internal sealed partial class CompetitionClient
@@ -115,6 +117,7 @@ namespace Pal98Timer
         private CompetitionLiveSession liveSession;
         private string serverLiveProtocol, liveObservedRunId;
         private long nextLiveDueTick, nextLiveAttemptTick;
+        private WealthLocalReport lastWealth;
         private volatile CompetitionClockWarning clockWarning;
         private long clockWarningSequence;
         private long liveSequence, liveGeneration, liveRevision, liveObservedRevision;
@@ -179,6 +182,7 @@ namespace Pal98Timer
         { Interlocked.Increment(ref liveRevision); Interlocked.Exchange(ref liveClock, null); }
         private void ResetLiveConnection()
         {
+            ClearWealth();
             liveSession = null; serverLiveProtocol = null; liveFailures = 0;
             nextLiveDueTick = nextLiveAttemptTick = 0;
             clockWarning = null;
@@ -193,11 +197,13 @@ namespace Pal98Timer
         }
         private void LiveFailure(string detail, int status, bool force = false)
         {
+            ClearWealth();
             var old = liveConnection;
             liveConnection = new CompetitionLiveConnection { Id = old.Id, AckTick = force ? 0 : old.AckTick, Failed = true, Detail = detail, CompatibilityMode = old.CompatibilityMode };
         }
         private void LiveRetry(CompetitionHttpResult response, string detail)
         {
+            ClearWealth();
             liveFailures = Math.Min(8, liveFailures + 1);
             int delay = liveFailures == 1 ? 5 : liveFailures == 2 ? 10 : liveFailures == 3 ? 20 : liveFailures == 4 ? 30 : 60;
             int seconds = Math.Max(delay, response.RetryAfterSeconds);
@@ -289,6 +295,7 @@ namespace Pal98Timer
             liveConnection = new CompetitionLiveConnection { Id = session.public_id, Detail = "等待服务器确认本次心跳" };
             return true;
         }
+        private void ClearWealth() { WealthChannel.Publish(lastWealth,null,0); }
         private CompetitionLiveObservation CaptureLiveObservation()
         {
             long revision = Interlocked.Read(ref liveRevision);
@@ -320,6 +327,7 @@ namespace Pal98Timer
                 route_sha256 = observation == null ? null : route,
                 game_title = LiveText(observation?.GameTitle ?? observation?.GameVersion, 240),
                 release_revision = observation?.ReleaseRevision,
+                wealth_balance = serverSupportsWealth && state != "invalid" && state != "no_game" && GameplayIdentity.IsSdlFamily(observation?.Gameplay?.family) && observation?.Ranking?.Valid(observation.Gameplay) == true && observation.Wealth?.Fresh == true ? observation.Wealth.Observation : null,
                 maintenance_ranking = observation?.Ranking?.Value("challenge.id") != null ||
                     GameplayIdentity.IsSdlFamily(observation?.Gameplay?.family) && observation?.Ranking?.Valid(observation.Gameplay) == true
                     ? observation.Ranking.Copy() : null,
@@ -410,9 +418,14 @@ namespace Pal98Timer
             long revision = Interlocked.Read(ref liveRevision), serial = Interlocked.Read(ref querySerial);
             string token = Volatile.Read(ref activeToken);
             var snapshot = CaptureLiveObservation(); var compare = LiveComparison(snapshot);
+            var wealthLocal = current?.Wealth;
+            if (snapshot.wealth_balance==null || lastWealth != null && (wealthLocal==null || lastWealth.pid!=wealthLocal.pid || lastWealth.created!=wealthLocal.created || lastWealth.epoch!=wealthLocal.epoch || lastWealth.opponent!=wealthLocal.opponent)) ClearWealth();
+            lastWealth=wealthLocal;
+            long wealthSent=Stopwatch.GetTimestamp();
             var session = liveSession; long sequence = ++liveSequence;
             bool includeRestartTime = serverSupportsRestartTime;
             var wireObservation = CompetitionProtocol.Json().Deserialize<System.Collections.Generic.Dictionary<string, object>>(CompetitionProtocol.Json().Serialize(snapshot));
+            if (snapshot.wealth_balance==null) wireObservation.Remove("wealth_balance");
             if (!includeRestartTime) wireObservation.Remove("restart_ms");
             if (!serverSupportsMaintenance || snapshot.release_revision == null) wireObservation.Remove("release_revision");
             if (snapshot.maintenance_ranking?.Value("config.schema") == null && (snapshot.maintenance_ranking == null || (GameplayIdentity.IsSdlFamily(snapshot.maintenance_ranking.Value("family"))
@@ -442,6 +455,7 @@ namespace Pal98Timer
             if (ack == null || ack.protocol != LiveProtocol || ack.scope != CompetitionProtocol.Scope || ack.server_origin != cfg.Server ||
                 ack.session_id != session.session_id || ack.public_id != session.public_id || ack.sequence != sequence)
             { LiveRetry(response, "实时心跳未获确认，正在后台重连"); return; }
+            WealthChannel.Publish(wealthLocal,ack.wealth_balance,(Stopwatch.GetTimestamp()-wealthSent)*1000/Stopwatch.Frequency);
             liveFailures = 0; nextLiveAttemptTick = 0;
             nextLiveDueTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
             if (challengeCompatibility) {

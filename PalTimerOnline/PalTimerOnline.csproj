@@ -34,6 +34,7 @@
     <Compile Include="CompetitionStorage.cs"/>
     <Compile Include="CompetitionClient.cs"/>
     <Compile Include="CompetitionLive.cs"/>
+    <Compile Include="WealthBalance.cs"/>
     <Compile Include="CompetitionGameSettings.cs"/>
     <Compile Include="LocalPlayerIdentity.cs"/>
     <Compile Include="IdentityBehaviorSnapshot.cs"/>

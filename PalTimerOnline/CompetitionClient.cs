@@ -44,6 +44,7 @@ namespace Pal98Timer
         private string registrationFailure = "无法连接联机服务器，正在后台重试";
         private int registrationStatus;
         private bool serverSupportsV2;
+        private bool serverSupportsWealth;
         private bool serverSupportsRunStatistics, serverSupportsRestartTime, serverSupportsMaintenance, serverSupportsContentEffects, serverSupportsOriginalChallenges, serverSupportsMaintenanceLive;
         private DateTime capabilityExpires;
         private long generation, querySerial;
@@ -282,6 +283,7 @@ namespace Pal98Timer
                 if (!networkChanged) return true;
                 pending.Clear(); pending.AddRange(preparedPending);
                 registeredKey = ""; registrationRejected = false; nextRegister = DateTime.MinValue;
+                serverSupportsWealth = false;
                 serverSupportsV2 = serverSupportsRunStatistics = serverSupportsRestartTime = serverSupportsMaintenance = serverSupportsContentEffects = serverSupportsOriginalChallenges = serverSupportsMaintenanceLive = false;
                 registrationStatus = 0; registrationFailure = "无法连接联机服务器，正在后台重试";
                 if (replacementSecret != null) storage.LogNetwork("device-credential-replaced", 0);
@@ -493,6 +495,7 @@ namespace Pal98Timer
             var reply = Parse(response, cfg);
             if (reply != null)
             {
+                serverSupportsWealth = reply.supported_features?.Contains(WealthChannel.Feature) == true;
                 identityBehaviorCapability = reply.supported_features?.Contains(IdentityBehaviorSnapshot.Feature) == true;
                 PublishLocalIdentity(identityRequest, response.Body);
                 registeredKey = cfg.Server + "|" + CompetitionProtocol.Scope; capabilityExpires = DateTime.UtcNow.AddMinutes(5);

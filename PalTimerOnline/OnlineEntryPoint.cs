@@ -78,6 +78,7 @@ namespace Pal98Timer
                         System.Globalization.DateTimeStyles.RoundtripKind, out var finishedAt) && finishedAt <= value.ObservedAt ? (DateTimeOffset?)finishedAt : null,
                 LiveTimingValid = ReadLiveTimingValid(value),
                 ReleaseRevision = ReadReleaseRevision(value),
+                Wealth = value.Extensions.TryGetValue("sdlpal.wealth_balance",out var wealthJson) ? CompetitionProtocol.Json().Deserialize<WealthLocalReport>(wealthJson) : null,
                 ObservedAt = value.ObservedAt, Finished = value.Finished, BeganHere = value.BeganHere,
                 Gameplay = value.Gameplay == null ? null : new GameplayIdentity { schema = value.Gameplay.Schema,
                     rules_sha256 = value.Gameplay.RulesHash, content_id = value.Gameplay.ContentId, content_sha256 = value.Gameplay.ContentHash,
