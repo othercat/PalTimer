@@ -29,6 +29,7 @@ namespace Pal98Timer
         public string Name { get; set; }
         public string Kind { get; set; }
         public int? Team { get; set; }
+        public int? Fact {get;set;}
         public int? Scene { get; set; }
         public int? Enemy { get; set; }
         public int[] Scenes { get; set; }
@@ -45,7 +46,11 @@ namespace Pal98Timer
         internal static SdlpalSplitRule[] Defaults(string profile, bool storyMod = false)
         {
             var original = profile == "geshi-easy-v1" ? Defaults() : SdlpalDreamRoutes.ForProfile(profile);
-            if (!storyMod) return original;
+            if (!storyMod) {
+                var last=original[original.Length-1];
+                original[original.Length-1]=new SdlpalSplitRule {Id=last.Id.EndsWith("-shown-r132",StringComparison.Ordinal)?last.Id:last.Id+"-shown-r132",Name="通关",Kind="ending-shown"};
+                return original;
+            }
             // The mod intercepts the real original Baiyue victory. Later dream
             // and Geshi endings belong to the replaced story and cannot gate it.
             int cut = Array.FindIndex(original, r => r.Team == 313);
@@ -76,7 +81,9 @@ namespace Pal98Timer
         {
             if (rules == null || rules.Length < 1 || rules.Length > 64 || rules.Any(r => r == null || !CompetitionProtocol.Identifier(r.Id) ||
                 string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.Name.Any(char.IsControl) ||
-                (r.Kind != "story-baiyue" && r.Kind != "battle" && r.Kind != "battle-end" && r.Kind != "battle-after-loss" && r.Kind != "battle-finish" && r.Kind != "scene" && r.Kind != "scene-transition" && r.Kind != "completion" && r.Kind != "position" && r.Kind != "music" && r.Kind != "item" && r.Kind != "item-consumed" && r.Kind != "any-location" && r.Kind != "water-pearl") ||
+                (r.Kind != "story-fact" && r.Kind != "ending-shown" && r.Kind != "story-baiyue" && r.Kind != "battle" && r.Kind != "battle-end" && r.Kind != "battle-after-loss" && r.Kind != "battle-finish" && r.Kind != "scene" && r.Kind != "scene-transition" && r.Kind != "completion" && r.Kind != "position" && r.Kind != "music" && r.Kind != "item" && r.Kind != "item-consumed" && r.Kind != "any-location" && r.Kind != "water-pearl") ||
+                (r.Kind=="story-fact" ? !r.Fact.HasValue || r.Fact<1 || r.Fact>6 || r.Team.HasValue || r.Scene.HasValue || r.Enemy.HasValue : r.Fact.HasValue) ||
+                r.Kind=="ending-shown" && (r.Team.HasValue || r.Scene.HasValue || r.Enemy.HasValue) ||
                 r.Kind == "any-location" && (r.Alternatives == null || r.Scene.HasValue) ||
                 r.Alternatives != null && (r.Kind != "any-location" || r.Alternatives.Length < 1 || r.Alternatives.Length > 8 || r.Alternatives.Any(p => p == null || !p.Valid)) ||
                 r.Kind == "water-pearl" && (!r.Scene.HasValue || r.Scene < 1 || r.Scene >= 300 || !r.ReturnScene.HasValue || r.ReturnScene < 1 || r.ReturnScene >= 300 || r.Scene == r.ReturnScene) ||
@@ -93,9 +100,9 @@ namespace Pal98Timer
                 r.Kind == "item" && (!r.Item.HasValue || r.Item < 1 || r.Item >= 700) ||
                 r.Team < 0 || r.Team > 65535 || r.Scene < 0 || r.Scene > 65535 || r.Enemy < 0 || r.Enemy > 65535) ||
                 rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != rules.Length ||
-                rules.Count(r => r.Kind == "completion" || r.Kind == "battle-finish") != 1 ||
-                (rules[rules.Length - 1].Kind != "completion" && rules[rules.Length - 1].Kind != "battle-finish"))
-                throw new InvalidDataException("节点须有唯一 ID及完整条件；末行且仅一行须为 completion 或 battle-finish");
+                rules.Count(r => r.Kind == "completion" || r.Kind == "battle-finish" || r.Kind=="ending-shown") != 1 ||
+                (rules[rules.Length - 1].Kind != "completion" && rules[rules.Length - 1].Kind != "battle-finish" && rules[rules.Length-1].Kind!="ending-shown"))
+                throw new InvalidDataException("节点须有唯一 ID及完整条件；末行且仅一行须为 ending-shown（r132）、completion 或 battle-finish（历史/自定义）");
         }
         internal static string Identity(SdlpalSplitRule[] rules)
         {
@@ -105,7 +112,7 @@ namespace Pal98Timer
                 (r.Scene.HasValue ? r.Scene.Value.ToString(CultureInfo.InvariantCulture) : "-") + ":" +
                 (r.Enemy.HasValue ? r.Enemy.Value.ToString(CultureInfo.InvariantCulture) : "-") +
                 (r.Kind == "position" ? ":" + r.X + ":" + r.Y + ":" + r.Radius : r.Kind == "music" ? ":" + r.Music : r.Kind == "item" ? ":" + r.Item : "") +
-                (r.Kind == "any-location" ? ":any=" + string.Join(";", r.Alternatives.Select(p => p.Identity).OrderBy(v => v, StringComparer.Ordinal)) :
+                (r.Kind=="story-fact" ? ":fact="+r.Fact+":contract=r132-v1" : r.Kind=="ending-shown" ? ":contract=r132-first-visible-v1" : r.Kind == "any-location" ? ":any=" + string.Join(";", r.Alternatives.Select(p => p.Identity).OrderBy(v => v, StringComparer.Ordinal)) :
                     r.Kind == "water-pearl" ? ":return=" + r.ReturnScene + ":gate=pal98-water-pearl-v1" :
                     r.Kind == "scene-transition" ? ":return=" + r.ReturnScene + ":gate=scene-transition-v1" :
                     r.Kind == "battle-after-loss" && r.Event.HasValue ? ":event=" + r.Event + ":state=" + r.EventState + ":gate=loss-win-event-v1" :
@@ -228,7 +235,7 @@ namespace Pal98Timer
                     if (rule.Kind == "scene-transition" && Snapshot.scene == rule.Scene && next.scene == rule.ReturnScene)
                         Reached.Add(rule.Id);
             foreach (var rule in rules) if (rule.MatchesState(next)) Reached.Add(rule.Id);
-            if (next.storyMod01 && next.storyModRevision == 3 && next.storyModAfterBaiyue && next.started)
+            if (next.storyMod01 && (next.storyModRevision == 3 || next.storyModRevision==4) && next.storyModAfterBaiyue && next.started)
                 foreach (var rule in rules.Where(r => r.Kind == "story-baiyue")) Reached.Add(rule.Id);
             foreach (var rule in rules.Where(r => r.Kind == "item-consumed" && !Reached.Contains(r.Id)))
             {
@@ -250,6 +257,17 @@ namespace Pal98Timer
                 pearl.ObserveGameState(area, next.viewportX + next.partyOffsetX.Value, next.viewportY + next.partyOffsetY.Value,
                     next.partyDirection.Value, next.inventory.Where(i => i.id == 265).Sum(i => i.amount));
                 if (pearl.CanComplete()) Reached.Add(rule.Id);
+            }
+            // Only newly observed completed operations qualify. A load/attach
+            // rebases these cursors, and never replays a saved/stale fact.
+            if(!first && !EpochChanged && Snapshot.started && next.started && Snapshot.storyFacts!=null && next.storyFacts!=null &&
+                Snapshot.storyFacts.revision==1 && next.storyFacts.revision==1) {
+                foreach(var rule in rules.Where(r=>r.Kind=="story-fact")) {
+                    ulong fact=next.storyFacts.Gate(rule.Fact.Value);
+                    if(fact>Snapshot.storyFacts.sequence && fact>Snapshot.storyFacts.Gate(rule.Fact.Value))Reached.Add(rule.Id);
+                }
+                if(!Snapshot.storyFacts.endingShown && next.storyFacts.endingShown)
+                    foreach(var rule in rules.Where(r=>r.Kind=="ending-shown"))Reached.Add(rule.Id);
             }
             foreach (var rule in rules)
                 if (next.started && rule.Kind == "completion" && next.completed) Reached.Add(rule.Id);
@@ -369,7 +387,7 @@ namespace Pal98Timer
             {
                 rules = SdlpalSplitRule.Defaults(activeProfile, activeStoryMod);
                 string path = TimerUserSettings.GetPath(RulesFile);
-                try { if (File.Exists(path)) { var parsed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(File.ReadAllText(path)); SdlpalSplitRule.Validate(parsed); if (activeStoryMod) SdlpalSplitRule.ValidateStoryRoute(parsed); rules = parsed; } }
+                try { if (File.Exists(path)) { var parsed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(File.ReadAllText(path)); SdlpalSplitRule.Validate(parsed); if (activeStoryMod) SdlpalSplitRule.ValidateStoryRoute(parsed); rules = parsed; if(!activeStoryMod && parsed.Last().Kind!="ending-shown")warning="已保留旧版/自定义节点及其独立PB；采用r132真实剧情节点请打开自动节点，恢复默认后保存。"; } }
                 catch (Exception ex) { warning = "节点配置无效，保留默认节点：" + ex.Message; rules = SdlpalSplitRule.Defaults(activeProfile, activeStoryMod); }
                 LoadBest(); _CurrentStep = -1; CheckPoints = new List<CheckPoint>();
                 foreach (var rule in rules)
@@ -424,7 +442,7 @@ namespace Pal98Timer
             {
                 var s = observer.Snapshot;
                 data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.wuqiangPlus, s.prebattleSlotResidue, s.challengeConfigSha256, s.monsterRush, s.invisibleMonsters, s.respawnRule,
-                    s.gameplayRuleId, s.gameplayRuleRevision, s.gameplayRuleSha256, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
+                    s.gameplayRuleId, s.gameplayRuleRevision, s.gameplayRuleSha256, s.storyFacts, s.ma35, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
             }
             data["SdlpalWuQiangChanged"] = observer.WuQiangChanged;
             data["SdlpalBestConfigurationChanged"] = observer.BestConfigurationChanged;
@@ -436,6 +454,7 @@ namespace Pal98Timer
         }
         public override string GetScoreValidationError()
         {
+            if(observer.Snapshot?.started==true && rules.Any(r=>r.Kind=="story-fact" || r.Kind=="ending-shown") && observer.Snapshot.storyFacts==null)return "此默认路线需要r132真实剧情/全剧终信号，请更新配套完整包。";
             var s = observer.Snapshot;
             if (s == null) return "尚未连接已验证的 SDLPAL 资源";
             if (s.diagnostic) return "诊断模式禁止榜单和成绩上传";
@@ -951,15 +970,15 @@ namespace Pal98Timer
         {
             Text = "SDLPAL 自动节点（当前内容，按表格顺序）"; Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi; Width = 1040; Height = 560; MinimumSize = new Size(850, 420); StartPosition = FormStartPosition.CenterParent;
-            var help = new Label { Text = "battle 匹配胜利；battle-after-loss 为同场景敌队先败后胜；item-consumed 核对物品减量和目标场景/事件状态；末行为 completion 或 battle-finish。恢复默认仅更改表格，保存后生效。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
-            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes", "Alternatives", "ReturnScene", "Event", "EventState" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合", "可选入口 JSON", "返回场景", "事件 ID", "事件状态" };
+            var help = new Label { Text = "r132：story-fact 匹配真实剧情事实1–6，ending-shown 在全剧终首次显示停表；余杭首富保留庆祝终点。旧自定义文件及PB不覆盖；采用新路线请恢复默认并保存，PB/接力身份独立。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
+            string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes", "Alternatives", "ReturnScene", "Event", "EventState", "Fact" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合", "可选入口 JSON", "返回场景", "事件 ID", "事件状态", "真实事实 ID" };
             for (int i = 0; i < names.Length; i++) grid.Columns.Add(names[i], captions[i]);
             grid.Columns[0].FillWeight = 190; grid.Columns[1].FillWeight = 120; grid.RowTemplate.Height = 28;
             foreach (DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
             Action<SdlpalSplitRule[]> populate = values => {
                 grid.Rows.Clear();
                 foreach (var rule in values) grid.Rows.Add(rule.Id, rule.Name, rule.Kind, rule.Team, rule.Scene, rule.Enemy, rule.X, rule.Y, rule.Radius, rule.Music, rule.Item, rule.Scenes == null ? "" : string.Join(",", rule.Scenes),
-                    rule.Alternatives == null ? "" : SdlpalBridge.Json().Serialize(rule.Alternatives), rule.ReturnScene, rule.Event, rule.EventState);
+                    rule.Alternatives == null ? "" : SdlpalBridge.Json().Serialize(rule.Alternatives), rule.ReturnScene, rule.Event, rule.EventState,rule.Fact);
             };
             populate(rules);
             var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45, Padding = new Padding(5) };
@@ -990,7 +1009,7 @@ namespace Pal98Timer
                     foreach (DataGridViewRow row in grid.Rows) if (!row.IsNewRow)
                         result.Add(new SdlpalSplitRule { Id = Convert.ToString(row.Cells[0].Value).Trim(), Name = Convert.ToString(row.Cells[1].Value).Trim(), Kind = Convert.ToString(row.Cells[2].Value).Trim(),
                             Team = Number(row.Cells[3].Value), Scene = Number(row.Cells[4].Value), Enemy = Number(row.Cells[5].Value), X = Number(row.Cells[6].Value), Y = Number(row.Cells[7].Value), Radius = Number(row.Cells[8].Value), Music = Number(row.Cells[9].Value), Item = Number(row.Cells[10].Value), Scenes = Numbers(row.Cells[11].Value),
-                            Alternatives = Locations(row.Cells[12].Value), ReturnScene = Number(row.Cells[13].Value), Event = Number(row.Cells[14].Value), EventState = Number(row.Cells[15].Value) });
+                            Alternatives = Locations(row.Cells[12].Value), ReturnScene = Number(row.Cells[13].Value), Event = Number(row.Cells[14].Value), EventState = Number(row.Cells[15].Value),Fact=Number(row.Cells[16].Value) });
                     Rules = result.ToArray(); SdlpalSplitRule.Validate(Rules); DialogResult = DialogResult.OK;
                 }
                 catch (Exception ex) { MessageBox.Show(this, ex.Message, "节点无效", MessageBoxButtons.OK, MessageBoxIcon.Warning); }

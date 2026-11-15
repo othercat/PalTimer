@@ -6,7 +6,7 @@ using Pal98Timer;
 
 internal static partial class SdlpalBehavior
 {
-    static void GeshiGateTests()
+    static void LegacyR131GeshiGateTests()
     {
         var template=SdlpalGeshiRoutes.Create();SdlpalSplitRule.Validate(template);
         var names=new[]{"出地宫","进试炼窟","过大理钱无通","过京城赵莲儿","过赤鬼王","过地魁","收归服之剑",

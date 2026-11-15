@@ -28,24 +28,22 @@ namespace Pal98Timer
         {
             var youle = Battle("geshi-youle", "过游乐", 14, 305, 539); youle.Kind = "battle-after-loss";
             youle.Event = 223; youle.EventState = 0; // 263D, only after the second phase wins.
-            var final = Battle("geshi-underworld-youtianba", "过阴间游天霸", 154, 307, 541); final.Kind = "battle-finish";
+            var final = new SdlpalSplitRule {Id="geshi-underworld-youtianba-shown-r132",Name="通关",Kind="ending-shown"};
             var rules = new[] {
-                Transition("geshi-dungeon-out", "出地宫", 281, 277),
-                // Refs #55/r106: all three trial entries 887E/8886/888E enter216.
-                Transition("geshi-trial-cave-in", "进试炼窟", easy ? 215 : 277, easy ? 216 : 285),
-                // Easy's actual Dali battle7E4F and capital battle56CC.
-                Battle("geshi-qian-wutong", "过大理钱无通", easy ? 174 : 86, easy ? 381 : 382, easy ? 566 : 579),
-                Battle("geshi-zhao-lianer", "过京城赵莲儿", easy ? 139 : 80, easy ? 39 : 383, easy ? 468 : 580),
+                new SdlpalSplitRule {Id="geshi-sacrifice-r132",Name="送死",Kind="story-fact",Fact=1},
+                new SdlpalSplitRule {Id="geshi-spirit-awakening-r132",Name="圣灵觉醒",Kind="story-fact",Fact=2},
+                new SdlpalSplitRule {Id="geshi-capital-arrival-r132",Name="到京城",Kind="story-fact",Fact=3},
+                new SdlpalSplitRule {Id="geshi-zhao-lianer",Name="过京城赵莲儿",Kind="story-fact",Fact=4},
                 Battle("geshi-red-ghost", "过赤鬼王", 59, 27, 473),
                 Battle("geshi-dikui", "过地魁", 156, 25, 502),
                 new SdlpalSplitRule { Id="geshi-guifu-sword", Name="收归服之剑", Kind="item", Scene=65, Item=175 },
                 Battle("geshi-return-yang", "回阳间（打败南盗侠李逍遥）", 168, 21, 480),
-                new SdlpalSplitRule { Id="geshi-peach-escape", Name="出桃源村幻境（使用命运罗盘）", Kind="item-consumed", Scene=184, ReturnScene=64, Item=567 },
+                new SdlpalSplitRule { Id="geshi-peach-escape", Name="出桃源村幻境（使用命运罗盘）", Kind="story-fact", Fact=5 },
                 Battle("geshi-sword-saint", "过剑圣", 227, 163, 494),
                 Battle("geshi-return-reality", "回现实（打败楼澈）", 148, 26, 472),
                 new SdlpalSplitRule { Id="geshi-trouble-cave-in", Name="进麻烦洞", Kind="scene", Scene=106 },
                 Transition("geshi-yangzhou-in", "进扬州", 81, 84),
-                new SdlpalSplitRule { Id="geshi-rescue-pinru", Name="救林品如（第二次使用命运罗盘）", Kind="item-consumed", Scene=294, ReturnScene=294, Item=583, Event=5372, EventState=0 },
+                new SdlpalSplitRule { Id="geshi-rescue-pinru", Name="救林品如（第二次使用命运罗盘）", Kind="story-fact", Fact=6 },
                 Transition("geshi-yangzhou-out", "出扬州", 84, 105),
                 Battle("geshi-youtianba-living", "过阳间游天霸", 154, 309, 543),
                 youle, final

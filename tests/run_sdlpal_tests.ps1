@@ -55,7 +55,7 @@ $configOriginal = Join-Path $out '隔世追凶配置工具.exe'
 & $csc /nologo /noconfig /target:exe "/out:$configOriginal" $configFixture *> (Join-Path $out 'config-fixture-build.log')
 if ($LASTEXITCODE -ne 0) { throw 'Configuration identity fixture failed to build' }
 Move-Item -LiteralPath $configOriginal -Destination (Join-Path $out '我的 配置.exe')
-& $csc /nologo /noconfig /target:exe /platform:x64 /main:SdlpalBehavior "/out:$exe" "/resource:$pluginResource,Pal98Timer.PluginMgrForm.resources" $references $sources $hostSource (Join-Path $PSScriptRoot 'geshi_gate_behavior.cs') (Join-Path $PSScriptRoot 'geshi_lifecycle_behavior.cs') *> (Join-Path $out 'host-build.log')
+& $csc /nologo /noconfig /target:exe /platform:x64 /main:SdlpalBehavior "/out:$exe" "/resource:$pluginResource,Pal98Timer.PluginMgrForm.resources" $references $sources $hostSource (Join-Path $PSScriptRoot 'geshi_gate_behavior.cs') (Join-Path $PSScriptRoot 'r132_gate_behavior.cs') (Join-Path $PSScriptRoot 'geshi_lifecycle_behavior.cs') *> (Join-Path $out 'host-build.log')
 if ($LASTEXITCODE -ne 0) { throw "SDL host build failed: $out" }
 Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Copy-Item -Destination $out
 Copy-Item -LiteralPath (Join-Path $runtime 'Pal98Timer.exe') -Destination $out
