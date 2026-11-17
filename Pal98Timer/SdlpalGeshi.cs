@@ -792,7 +792,7 @@ namespace Pal98Timer
             bool hasConfigurationChanged = data.ToDic().TryGetValue("SdlpalBestConfigurationChanged", out configurationChanged);
             if (hasConfigurationChanged && !(configurationChanged is bool)) throw new InvalidDataException("时间线配置变更记录无效");
             var points = data.GetValue<HObj>("CheckPoints")?.ToList(); var states = data.GetValue<HObj>("SdlpalStatuses")?.ToList();
-            var result = new ImportedTimer { RunStatisticsState = data.ToDic().ContainsKey("RunStatisticsState") ? data.GetValue<string>("RunStatisticsState") : null, Current = ParseTime(data.GetValue<string>("Current")), Idle = ParseTime(data.GetValue<string>("SdlpalIdle")),
+            var result = new ImportedTimer { RunStatisticsState = ReadSavedRunStatistics(data), Current = ParseTime(data.GetValue<string>("Current")), Idle = ParseTime(data.GetValue<string>("SdlpalIdle")),
                 Step = data.GetValue<int>("Step"), Times = new TimeSpan[rules.Length], Statuses = new CheckPointStatus[rules.Length],
                 WuQiangChanged = hasChanged && (bool)changed,
                 BestConfigurationChanged = hasConfigurationChanged && (bool)configurationChanged };

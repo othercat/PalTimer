@@ -1642,7 +1642,8 @@ internal static partial class SdlpalBehavior
         foreach(string profile in profiles) foreach(var change in changes)
         using(var run=new CompletionFixture(true))
         {
-            run.Engine.State.profile=profile;run.StartNewGame();
+            // Dream routes require the r132 story transport even before a gate fires.
+            run.Engine.State.profile=profile;run.Engine.State.storyFacts=EmptyR132Facts();run.StartNewGame();
             string path=run.Core.ActiveBestPath;var original=Clone(run.Engine.State);
             try
             {

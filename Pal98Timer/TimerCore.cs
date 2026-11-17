@@ -1022,6 +1022,15 @@ namespace Pal98Timer
             } catch { } // diagnostic observations never interrupt local timing
         }
         protected void RestoreRunStatistics(string text) { lock (runStatisticsObservationGate) runStatistics.Restore(text); }
+        protected static string ReadSavedRunStatistics(HObj data)
+        {
+            object value;
+            if (!data.ToDic().TryGetValue("RunStatisticsState", out value) || value == null) return null;
+            // HObj promotes JSON-looking strings to nested objects on read.
+            // Accept that representation without changing the saved wire format.
+            HObj nested = value as HObj;
+            return nested != null ? nested.ToJson() : data.GetValue<string>("RunStatisticsState");
+        }
         internal void PreserveCompletedStatisticsBeforeClose()
         {
             try {

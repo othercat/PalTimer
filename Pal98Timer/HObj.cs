@@ -433,6 +433,14 @@ namespace HFrame.ENT
         /// </summary>
         /// <param name="IsLocalTime">是否将时间对象转换为当前时区的时间</param>
         /// <returns></returns>
+        private static string QuoteJsonString(string value)
+        {
+            // Stored values can themselves be JSON (for example run statistics).
+            // Keep them as strings and let the existing serializer escape their
+            // quotes, backslashes and control characters for a valid round trip.
+            return new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.Serialize(value);
+        }
+
         public string ToJson(bool IsLocalTime = false)
         {
             if (type == 0)
@@ -440,14 +448,14 @@ namespace HFrame.ENT
                 string res = "{";
                 foreach (KeyValuePair<string, object> kv in _dic)
                 {
-                    res += "\"" + kv.Key + "\":";
+                    res += QuoteJsonString(kv.Key) + ":";
                     if (kv.Value is HObj)
                     {
                         res += ((HObj)(kv.Value)).ToJson(IsLocalTime) + ",";
                     }
                     else if (kv.Value is string || kv.Value is char)
                     {
-                        res += "\"" + kv.Value.ToString() + "\",";
+                        res += QuoteJsonString(kv.Value.ToString()) + ",";
                     }
                     else if (kv.Value is int || kv.Value is long || kv.Value is short || kv.Value is float || kv.Value is double || kv.Value is decimal)
                     {
@@ -499,7 +507,7 @@ namespace HFrame.ENT
                     }
                     else if (v is string || v is char)
                     {
-                        res += "\"" + v.ToString() + "\",";
+                        res += QuoteJsonString(v.ToString()) + ",";
                     }
                     else if (v is int || v is long || v is short || v is float || v is double || v is decimal)
                     {
