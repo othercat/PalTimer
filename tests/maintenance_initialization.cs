@@ -55,6 +55,24 @@ internal static partial class CompetitionBehavior
             }
             string[] ids=profile=="geshi-easy-v1"?new[]{"geshi-eight-headed-serpent","geshi-ending"}:new[]{"dream-ship","dream-ending"};
             var run=GeshiConfigurationInitialization.CreateMaintenance(snapshot,"fixture-device-init","3.38.3.7",ids);
+            if (profile == "geshi-easy-v1" && !wuqiang && !boundRules)
+            {
+                var legacy = GeshiConfigurationInitialization.Create(snapshot, "fixture-device-init", "3.38.3.7");
+                Check(legacy.release_revision == "r54", "legacy initialization includes the actual package revision");
+                var legacyWire = new InitializationWire {Approved=true, Supports=true, LoseReceipt=true};
+                var legacyStore = Store("legacy-init-revision");
+                var saved = legacyStore.Credential("https://fixture.invalid");
+                var legacyDirectory = Path.Combine(legacyStore.Root, "init");
+                snapshot.releaseRevision = null;
+                var authLegacy = new FakeAuth();
+                Func<Task<int>> submitLegacy = () => GeshiConfigurationInitialization.Upload(snapshot, legacyDirectory, "https://fixture.invalid", saved, authLegacy, legacyWire);
+                Check(await submitLegacy() == 2, "legacy client retains its pre-revision sealed pending record after an interrupted response");
+                string file = Path.Combine(legacyDirectory, "initialization.pending.json");
+                string previous = File.ReadAllText(file);
+                snapshot.releaseRevision = "r54";
+                Check(await submitLegacy() == 0 && previous == File.ReadAllText(file) && legacyWire.Last.release_revision == null,
+                    "retry of an existing legacy seal preserves its original bytes when a package revision is now available");
+            }
             Check(run.ranking.Valid(run.gameplay)&&CompetitionProtocol.Validate(run)==""&&categories.Add(run.ranking.configuration_id),"content/effect/formula configurations remain separate");
             Check(run.total_ms==0&&run.restart_ms==0&&!run.observations.began_here&&!run.observations.finished&&
                 run.splits.All(p=>p.status=="in_progress"&&p.elapsed_ms==null)&&run.observations.issues.Contains("synthetic_configuration_initialization"),"initializer cannot claim a completed playthrough");

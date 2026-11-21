@@ -510,6 +510,42 @@ internal static partial class SdlpalBehavior
             run.Engine.State.releaseRevision=null;run.Engine.State.wuqiang=false;run.Tick();
             Check(run.Core.GetGameVersion()==SdlpalGeshi.GameplayName,"reconnecting an older ordinary game retains no r48 or Wuqiang label");
         }
+        // The test host itself publishes the fixture MMF. Its executable stands in for the connected game.
+        string marker = Path.Combine(root, "release-version.txt");
+        string other = Directory.CreateDirectory(Path.Combine(root, "unrelated-working-directory")).FullName;
+        string previous = Environment.CurrentDirectory;
+        if (File.Exists(marker)) throw new InvalidOperationException("The isolated test directory already has a release marker.");
+        try
+        {
+            File.WriteAllText(Path.Combine(other, "release-version.txt"), "r999\n", Encoding.ASCII);
+            Environment.CurrentDirectory = other;
+            Check(SdlpalBridge.ReadPackageRevision(".") == null, "a relative game root cannot borrow the working directory's release");
+            foreach (string bad in new[] { "r0", "r0136", "R136", "r136\nr137", "r136\n\n", "r136 ", "r1234567" })
+            {
+                File.WriteAllText(marker, bad, Encoding.ASCII);
+                Check(SdlpalBridge.ReadPackageRevision(root) == null, "malformed game marker is ignored: " + bad.Trim());
+            }
+            File.Delete(marker);
+            using (var run = new CompletionFixture(true))
+            {
+                run.Engine.State.releaseRevision = "r135"; run.Tick();
+                Check(run.Core.ReleaseSuffix == " r135", "unmarked legacy game uses its snapshot despite the other working directory");
+            }
+            foreach (string revision in new[] { "r136", "r137" })
+            {
+                File.WriteAllText(marker, revision + "\r\n", Encoding.ASCII);
+                using (var run = new CompletionFixture(true))
+                {
+                    run.Engine.State.releaseRevision = "r135"; run.Tick();
+                    var observation = new CompetitionObservation(); run.Core.CaptureCompetitionGameplay(observation);
+                    var local = SdlpalBridge.Json().Deserialize<Dictionary<string, object>>(run.Core.GetRStr());
+                    var profile = (Dictionary<string, object>)local["SdlpalProfileData"];
+                    Check(observation.ReleaseRevision == revision && (string)profile["releaseRevision"] == revision &&
+                          run.Core.ReleaseSuffix == " " + revision, "same engine reports the running package in competition, title and local timeline: " + revision);
+                }
+            }
+        }
+        finally { Environment.CurrentDirectory = previous; File.Delete(marker); }
     }
     static void ItemTests()
     {
@@ -1838,6 +1874,7 @@ internal static partial class SdlpalBehavior
             using(var legacyRules=new TemporaryGeshiRules(LegacyGeshiRules()))
             {
             bool noGui=args.Contains("--no-gui");args=args.Where(arg=>arg!="--no-gui").ToArray();
+            if(args.Contains("--release-revision-only")) {ReleaseTitleTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--split-display-only")) {SplitDisplayTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--best-configuration-only")) {BestConfigurationTests();Console.WriteLine("PASS total="+count);return 0;}
             if(args.Contains("--throw-formula-only")) {DreamspaceThrowTests();Console.WriteLine("PASS total="+count);return 0;}
