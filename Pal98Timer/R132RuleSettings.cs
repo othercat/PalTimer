@@ -21,8 +21,8 @@ namespace Pal98.Challenges {
         internal int Value(object rules) => (int)rules.GetType().GetProperty(Field).GetValue(rules,null);
     }
     internal static class R132RuleSettings {
-        internal static readonly string[] Keys = {"no_battle_items","no_death_benefits","freeze_hidden","minimum_throw","third_round_ghost","no_enemy_control","ban_gourd","ban_steal","closed_shops","no_hide","inventory_quantity","inventory_kinds","captain_illusion","ma35"};
-        internal static readonly string[] Switches = {"NoBattleItems","NoDeathBenefits","FreezeHidden","MinimumThrow","ThirdRoundGhost","NoEnemyControl","BanGourd","BanSteal","ClosedShops","NoHide","InventoryQuantity","InventoryKinds","CaptainIllusion","Ma35"};
+        internal static readonly string[] Keys = {"no_battle_items","no_death_benefits","freeze_hidden","minimum_throw","third_round_ghost","no_enemy_control","ban_gourd","ban_steal","closed_shops","no_hide","inventory_quantity","inventory_kinds","captain_illusion","ma35","ordered_battles"};
+        internal static readonly string[] Switches = {"NoBattleItems","NoDeathBenefits","FreezeHidden","MinimumThrow","ThirdRoundGhost","NoEnemyControl","BanGourd","BanSteal","ClosedShops","NoHide","InventoryQuantity","InventoryKinds","CaptainIllusion","Ma35","OrderedBattles"};
         internal static readonly R132Parameter[] Parameters = {
             new R132Parameter("closed_shops","ClosedShopsScope","closed_shops_scope","scope","关闭范围：1商店、2当铺、3二者",3,3),
             new R132Parameter("no_hide","NoHideWait","no_hide_wait","wait","原无隐等待次数 X",5,65535),

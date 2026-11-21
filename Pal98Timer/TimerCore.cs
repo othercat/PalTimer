@@ -1161,6 +1161,7 @@ namespace Pal98Timer
         /// 是否继续检测线程？unload的时候设置为false就行
         /// </summary>
         private bool IsAllRun = true;
+        internal volatile TimerOverlayHost TimingOverlay;
         /// <summary>
         /// 计时内核开始
         /// </summary>
@@ -1178,6 +1179,7 @@ namespace Pal98Timer
                         PublishCompetitionIfChanged();
                     }
                     catch { }
+                    TimingOverlay?.Sample();
                     WriteAutomationTickSnapshotIfDue();
                     System.Threading.Thread.Sleep(CheckInterval);
                 }

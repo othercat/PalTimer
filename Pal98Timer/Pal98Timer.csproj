@@ -247,6 +247,7 @@
     <Compile Include="Download.Designer.cs">
       <DependentUpon>Download.cs</DependentUpon>
     </Compile>
+    <Compile Include="TimerOverlayHost.cs" />
     <Compile Include="Dx9OverlayForm.cs">
       <SubType>Form</SubType>
     </Compile>

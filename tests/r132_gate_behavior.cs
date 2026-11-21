@@ -12,12 +12,29 @@ internal static partial class SdlpalBehavior {
         var profiles=new[]{"dream211","dream211-pudu","dream211-yueying","dream211-yueying-rat","dream22-puppet100","dream222-hard","dream222-normal","dreamspace35","dreamspace39x-hard","geshi-easy","geshi-fanmade","geshi-fanmade-entertainment","geshi-hard","geshi-nightwolf","hunqian-branch","hunqian167-easy","hunqian167-hard","mogai10","pal-dos","pal98-classic-v6","pal98-suiji-v02","tianqi20"};
         foreach(string cid in profiles) {
             string profile=cid+"-v1";var rules=SdlpalSplitRule.Defaults(profile);SdlpalSplitRule.Validate(rules);
-            var final=rules.Last();Check(final.Kind=="ending-shown" && final.Name=="通关" && final.Id.EndsWith("-shown-r132"),"actual visible ending and online checkpoint identity "+cid);
-            var observer=new SdlpalRunObserver();var s=Snapshot();s.profile=profile;s.storyFacts=EmptyR132Facts();observer.Observe(Clone(s),rules);
-            s.started=true;observer.Observe(Clone(s),rules);s.completed=true;
-            s.battleEvents=new[]{new SdlpalBattleEvent {seq=1,epoch=s.epoch,scene=297,team=389,enemies=new[]{576},result=3}};observer.Observe(Clone(s),rules);
-            Check(!observer.Reached.Contains(final.Id),"last battle/early completion cannot finish new route "+cid);
-            s.storyFacts.endingShown=true;observer.Observe(Clone(s),rules);Check(observer.Reached.Contains(final.Id),"first visible ending finishes without confirmation "+cid);
+            bool geshi=cid.StartsWith("geshi-",StringComparison.Ordinal);
+            var final=rules.Last();
+            Check(final.Name=="通关" && final.Kind==(geshi?"ending-shown":"completion"),"default ending belongs to profile "+cid);
+            var observer=new SdlpalRunObserver();var s=Snapshot();s.profile=profile;s.storyFacts=EmptyR132Facts();s.profileCompletion=true;
+            observer.Observe(Clone(s),rules);s.started=true;observer.Observe(Clone(s),rules);
+            Check(s.RankingFacts().ContainsKey("config.slot.RuntimeEndingShownRevision")==geshi,"r135 completion PB group "+cid);
+            s.profileCompletion=false;
+            Check(s.RankingFacts().ContainsKey("config.slot.RuntimeEndingShownRevision"),"retain r132-r134 completion PB group "+cid);
+            s.profileCompletion=true;
+            if(geshi) {
+                s.completed=true;
+                s.battleEvents=new[]{new SdlpalBattleEvent {seq=1,epoch=s.epoch,scene=154,team=307,enemies=new[]{541},result=3}};
+                observer.Observe(Clone(s),rules);Check(!observer.Reached.Contains(final.Id),"last battle/early completion cannot finish Geshi "+cid);
+                s.storyFacts.endingShown=true;
+            } else {
+                s.storyFacts.endingShown=true;observer.Observe(Clone(s),rules);
+                Check(!observer.Reached.Contains(final.Id),"only current content's completion may finish "+cid);
+                s.storyFacts.endingShown=false;
+                if(final.Team.HasValue) {
+                    s.battleEvents=new[]{new SdlpalBattleEvent {seq=1,epoch=s.epoch,scene=final.Scene.Value,team=final.Team.Value,enemies=new[]{final.Enemy.Value},result=3}};
+                } else s.completed=true;
+            }
+            observer.Observe(Clone(s),rules);Check(observer.Reached.Contains(final.Id),"actual profile-specific ending stops without confirmation "+cid);
             int reached=observer.Reached.Count;observer.Observe(Clone(s),rules);Check(observer.Reached.Count==reached,"ending is idempotent "+cid);
             var story=SdlpalSplitRule.Defaults(profile,true);SdlpalSplitRule.ValidateStoryRoute(story);
             observer=new SdlpalRunObserver();s=Snapshot();s.profile=profile;s.storyFacts=EmptyR132Facts();s.storyMod01=true;s.storyModRevision=4;s.schema=3;

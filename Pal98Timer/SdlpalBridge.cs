@@ -112,6 +112,7 @@ namespace Pal98Timer
         public bool canControl { get; set; }
         public bool completed { get; set; }
         public SdlpalStoryFacts storyFacts {get;set;}
+        public bool profileCompletion { get; set; }
         public SdlpalMa35State ma35 {get;set;}
         public ulong epoch { get; set; }
         public ulong frame { get; set; }
@@ -171,10 +172,9 @@ namespace Pal98Timer
             if (wuqiang) facts["wuqiang"] = "1";
             if (wuqiangPlus) facts["wuqiang_plus"] = "1";
             if (prebattleSlotResidue) facts["prebattle_slot_residue"] = "1";
-            // Completed now follows an actual ending presentation. Preserve
-            // old custom files, but never attach their earlier-timing PB to a
-            // new runtime which exposes this always-on presentation contract.
-            if (storyFacts != null) facts["config.slot.RuntimeEndingShownRevision"] = storyFacts.revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // r132-r134 changed completed for every profile. The r135 engine
+            // restores content-specific completion, including for custom routes.
+            if (storyFacts != null && (!profileCompletion || profile.StartsWith("geshi-", StringComparison.Ordinal))) facts["config.slot.RuntimeEndingShownRevision"] = storyFacts.revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (storyMod01) {
                 facts["config.slot.RuntimeStoryMod01"] = "1";
                 facts["config.slot.RuntimeStoryModRevision"] = storyModRevision.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -295,7 +295,7 @@ namespace Pal98Timer
                 if(reader.Depth==2 && (parent=="storyFacts" || parent=="ma35") && !(parent=="storyFacts"?storyFields:maFields).Add(name))
                     throw new InvalidDataException("真实剧情事实含重复字段");
                 if (reader.Depth != 1 && !(reader.Depth == 2 && parent == "identity")) continue;
-                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity", "schema", "storyMod01", "storyModRevision", "storyModAfterBaiyue", "prebattleSlotResidue", "storyFacts", "ma35" })
+                foreach (string key in new[] { "gameplayRuleId", "gameplayRuleRevision", "gameplayRuleSha256", "identity", "schema", "storyMod01", "storyModRevision", "storyModAfterBaiyue", "prebattleSlotResidue", "storyFacts", "ma35", "profileCompletion" })
                     if (name.Equals(key, StringComparison.OrdinalIgnoreCase) && name != key)
                         throw new InvalidDataException("公式身份字段大小写不规范");
                 if (!(reader.Depth == 1 ? root : inner).Add(name))
@@ -326,6 +326,8 @@ namespace Pal98Timer
         }
         private static void ValidateR132Facts(Dictionary<string,object> fields,SdlpalSnapshot value) {
             object raw;
+            if (fields.TryGetValue("profileCompletion", out raw) && !(raw is bool))
+                throw new InvalidDataException("内容通关合同标记无效");
             if(fields.TryGetValue("storyFacts",out raw) && raw!=null) {
                 var facts=raw as Dictionary<string,object>;var typed=value.storyFacts;
                 var names=new[]{"revision","sequence","gate1","gate2","gate3","gate4","gate5","gate6","endingShown"};
