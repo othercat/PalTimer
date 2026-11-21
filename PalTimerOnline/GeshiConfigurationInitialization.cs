@@ -65,7 +65,7 @@ namespace Pal98Timer
             return new CompetitionRun {
                 protocol = CompetitionProtocol.OnlineV2, run_id = id ?? Guid.NewGuid().ToString("D"), hwid = hwid,
                 started_at = stamp, finished_at = stamp, total_ms = 0, restart_ms = 0, timer_version = version,
-                game_version = "1.0.0.0", pal_dll_sha256 = snapshot.exeHash,
+                game_version = "1.0.0.0", pal_dll_sha256 = snapshot.exeHash, release_revision = snapshot.releaseRevision,
                 gameplay = game, ranking = ranking, hardcore = new CompetitionHardcore(), splits = splits,
                 route_sha256 = route, timeline_id = TimelineIdentity.Create(digest, route, false),
                 observations = new CompetitionRunObservations { began_here = false, finished = false, issues = new[] { Marker },
@@ -120,6 +120,8 @@ namespace Pal98Timer
                     // Retry is byte-for-byte, including timestamp and run id. No
                     // command can turn this pending record into a real finish.
                     var expected = create(item.Run.run_id, item.Run.started_at);
+                    // The legacy initializer originally omitted the optional release field from its signed payload.
+                    if (checkpointIds == null && item.Run.release_revision == null) expected.release_revision = null;
                     if (item.Payload != CompetitionProtocol.SerializeRun(expected) ||
                         item.Payload != CompetitionProtocol.SerializeRun(item.Run)) throw new InvalidDataException("初始化输入已经变化，请使用新的输出目录");
                     var seal = CompetitionAuthProtocol.ReadSeal(item.SealedRun, cfg, item.Run, item.Payload);

@@ -450,7 +450,7 @@ namespace Pal98Timer
             if (observer.Snapshot != null)
             {
                 var s = observer.Snapshot;
-                data["SdlpalProfileData"] = new HObj(new { s.profile, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.wuqiangPlus, s.prebattleSlotResidue, s.challengeConfigSha256, s.monsterRush, s.invisibleMonsters, s.respawnRule,
+                data["SdlpalProfileData"] = new HObj(new { s.profile, s.releaseRevision, s.resourceHash, s.resourceHashes, s.build, s.exeHash, s.wuqiang, s.wuqiangPlus, s.prebattleSlotResidue, s.challengeConfigSha256, s.monsterRush, s.invisibleMonsters, s.respawnRule,
                     s.gameplayRuleId, s.gameplayRuleRevision, s.gameplayRuleSha256, s.storyFacts, s.ma35, s.walkFrameMs, s.fadeCycleMs, s.speed, s.battleSpeed });
             }
             data["SdlpalWuQiangChanged"] = observer.WuQiangChanged;

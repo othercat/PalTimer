@@ -249,6 +249,7 @@ namespace Pal98Timer
         internal ulong Created { get; private set; }
         internal string ExeHash { get; private set; }
         internal string ExecutableDirectory { get; private set; }
+        private string packageRevision;
         internal string Error { get; private set; } = "等待隔世追凶-简单";
         [DllImport("kernel32.dll")] internal static extern ulong GetTickCount64();
         internal static bool Digest(string text) => text != null && text.Length == 64 && text.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
@@ -370,9 +371,43 @@ namespace Pal98Timer
             var serializer = Json();
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
             var fields = serializer.Deserialize<Dictionary<string, object>>(json);
+            value.releaseRevision = SnapshotReleaseRevision(fields);
             ValidateGameplayRuleFields(fields, value);
             ValidateSlotResidueFields(fields, value);
             return value;
+        }
+        private static bool ValidReleaseRevision(string value) => value != null && value.Length >= 2 && value.Length <= 7 &&
+            value[0] == 'r' && value[1] >= '1' && value[1] <= '9' && value.Skip(2).All(c => c >= '0' && c <= '9');
+
+        private static string SnapshotReleaseRevision(Dictionary<string, object> fields)
+        {
+            fields.TryGetValue("releaseRevision", out object release);
+            if (release != null && !(release is string)) throw new InvalidDataException("游戏发行版本必须为文本");
+            string label = release as string;
+            if (fields.TryGetValue("identity", out object nested) && nested is Dictionary<string, object> identity &&
+                identity.TryGetValue("releaseRevision", out object inside) && !Equals(inside, release)) return null;
+            return ValidReleaseRevision(label) ? label : null;
+        }
+
+        internal static string ReadPackageRevision(string gameDirectory)
+        {
+            if (string.IsNullOrEmpty(gameDirectory) || !Path.IsPathRooted(gameDirectory)) return null;
+            try
+            {
+                using (var file = File.OpenRead(Path.Combine(gameDirectory, "release-version.txt")))
+                {
+                    if (file.Length < 2 || file.Length > 9) return null;
+                    using (var reader = new StreamReader(file, Encoding.ASCII, false))
+                    {
+                        string label = reader.ReadToEnd();
+                        if (label.EndsWith("\n", StringComparison.Ordinal)) label = label.Substring(0, label.Length - 1);
+                        if (label.EndsWith("\r", StringComparison.Ordinal)) label = label.Substring(0, label.Length - 1);
+                        return ValidReleaseRevision(label) ? label : null;
+                    }
+                }
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
         }
         internal static string HashFile(string path)
         {
@@ -413,16 +448,7 @@ namespace Pal98Timer
                 (!(nestedWuqiang is bool) || !fields.ContainsKey("wuqiang") || !Equals(nestedWuqiang, wuqiang)))
                 throw new InvalidDataException("游戏无墙身份与状态不一致");
             // Optional display metadata never changes timing/relay identity.
-            object release;
-            string label = fields.TryGetValue("releaseRevision", out release) ? release as string : null;
-            if (release != null && !(release is string))
-                throw new InvalidDataException("游戏发行版本必须为文本");
-            bool validLabel = label != null && label.Length >= 2 && label.Length <= 10 && label[0] == 'r' &&
-                label[1] >= '1' && label[1] <= '9' && label.Skip(2).All(c => c >= '0' && c <= '9');
-            object nestedRelease;
-            if (fields.TryGetValue("identity", out nested) && nested is Dictionary<string, object> releaseIdentity &&
-                releaseIdentity.TryGetValue("releaseRevision", out nestedRelease) && !Equals(nestedRelease, release))
-                validLabel = false;
+            string releaseRevision = SnapshotReleaseRevision(fields);
             var value = serializer.Deserialize<SdlpalSnapshot>(json);
             ValidateGameplayRuleFields(fields, value);
             ValidateSlotResidueFields(fields, value);
@@ -454,7 +480,7 @@ namespace Pal98Timer
             if (!string.IsNullOrEmpty(value.respawnRule) && value.respawnRule != "pal98-current-scene-v1" ||
                 (value.monsterRush || value.invisibleMonsters) && value.respawnRule != "pal98-current-scene-v1")
                 throw new InvalidDataException("未知怪物刷新规则");
-            value.releaseRevision = validLabel ? label : null;
+            value.releaseRevision = releaseRevision;
             if ((value.schema != 1 && value.schema != 2 && value.schema != 3) || !SupportedProfile(value.profile) || !value.verified || !Digest(value.resourceHash) || !Digest(value.exeHash) ||
                 value.resourceHashes == null || new[] { "SSS.MKF", "DATA.MKF", "WORD.DAT", "M.MSG" }.Any(k => !value.resourceHashes.ContainsKey(k) || !Digest(value.resourceHashes[k])) ||
                 value.resourceHashes["SSS.MKF"] != value.resourceHash || string.IsNullOrWhiteSpace(value.build) || value.build.Length > 128 ||
@@ -511,8 +537,10 @@ namespace Pal98Timer
                     map = MemoryMappedFile.OpenExisting(Prefix + process.Id, MemoryMappedFileRights.Read);
                     view = map.CreateViewAccessor(0, Capacity, MemoryMappedFileAccess.Read);
                     Process = process; Created = created;
-                    ExeHash = HashFile(process.MainModule.FileName);
-                    ExecutableDirectory = Path.GetDirectoryName(process.MainModule.FileName);
+                    string executable = process.MainModule.FileName;
+                    ExeHash = HashFile(executable);
+                    ExecutableDirectory = Path.GetDirectoryName(executable);
+                    packageRevision = ReadPackageRevision(ExecutableDirectory);
                     SdlpalSnapshot snapshot;
                     if (!TryRead(out snapshot)) throw new InvalidDataException(Error);
                 }
@@ -542,6 +570,7 @@ namespace Pal98Timer
                         var read = Decode(header, payload, Process.Id, Created, GetTickCount64());
                         if (Process.HasExited) throw new InvalidDataException("游戏已退出");
                         if (read.exeHash != ExeHash) throw new InvalidDataException("运行引擎文件与快照身份不一致");
+                        if (packageRevision != null) read.releaseRevision = packageRevision;
                         snapshot = read; Error = ""; return true;
                     }
                     throw new InvalidDataException("游戏正在更新快照");
@@ -572,7 +601,7 @@ namespace Pal98Timer
         private void Close()
         {
             view?.Dispose(); map?.Dispose(); view = null; map = null;
-            Process?.Dispose(); Process = null; Created = 0; ExeHash = null; ExecutableDirectory = null;
+            Process?.Dispose(); Process = null; Created = 0; ExeHash = null; ExecutableDirectory = null; packageRevision = null;
         }
         public void Dispose() { lock (gate) Close(); }
     }
