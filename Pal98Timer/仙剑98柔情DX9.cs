@@ -1238,7 +1238,8 @@ namespace Pal98Timer
         private ToolStripMenuItem btnDx9OverlayFont;
         private ToolStripMenuItem btnDx9OverlayFontColor;
         private ToolStripMenuItem btnDx9OverlayReset;
-        private Dx9OverlayForm Dx9Overlay;
+        private TimerOverlayHost Dx9Overlay { get => TimingOverlay; set => TimingOverlay = value; }
+        private ToolStripMenuItem btnDx9CaptureWindow;
         private Keys Dx9OverlayToggleHotkey = Keys.None;
         private const int Dx9OverlayTimelineEntryCount = 3;
 
@@ -1339,15 +1340,7 @@ namespace Pal98Timer
                 {
                     return;
                 }
-                if (Dx9Overlay.IsInEditMode)
-                {
-                    Dx9Overlay.EndEditMode();
-                    return;
-                }
-                if (!Dx9Overlay.BeginEditMode())
-                {
-                    form.Alert("独立遮罩窗口暂时不可用，请先关闭后重新启用该窗口。");
-                }
+                Dx9Overlay.ToggleEditMode();
             };
 
             btnDx9OverlayFont = new ToolStripMenuItem();
@@ -1384,8 +1377,11 @@ namespace Pal98Timer
                     form.Error("无法保存独立遮罩默认设置：" + ex.Message);
                 }
             };
+            btnDx9CaptureWindow = new ToolStripMenuItem("直播伴侣窗口采集（洋红色键）");
+            btnDx9CaptureWindow.Click += (sender, args) => Dx9Overlay?.ToggleCaptureWindow();
             btnDx9Overlay.DropDownItems.AddRange(new ToolStripItem[] {
                 btnDx9OverlayEnabled,
+                btnDx9CaptureWindow,
                 btnDx9OverlayHotkey,
                 new ToolStripSeparator(),
                 btnDx9OverlayAdjust,
@@ -1493,10 +1489,11 @@ namespace Pal98Timer
             {
                 if (Dx9Overlay == null || Dx9Overlay.IsDisposed)
                 {
-                    Dx9Overlay = new Dx9OverlayForm(CreateDx9OverlaySnapshot);
+                    Dx9Overlay = new TimerOverlayHost(Dx9OverlayForm.ObsWindowTitle, CreateDx9OverlaySnapshot,
+                        Dx9OverlaySettings.LoadLayout(), Dx9OverlaySettings.SaveLayout);
                     Dx9Overlay.EditModeChanged += Dx9Overlay_EditModeChanged;
-                    Dx9Overlay.LayoutSaveFailed += Dx9Overlay_LayoutSaveFailed;
-                    Dx9Overlay.FormClosed += Dx9Overlay_FormClosed;
+                    Dx9Overlay.Failed += Dx9Overlay_LayoutSaveFailed;
+                    Dx9Overlay.Closed += Dx9Overlay_FormClosed;
                     Dx9Overlay.Start();
                 }
                 btnDx9Overlay.Checked = true;
@@ -1537,9 +1534,8 @@ namespace Pal98Timer
             }
 
             Dx9Overlay.EditModeChanged -= Dx9Overlay_EditModeChanged;
-            Dx9Overlay.LayoutSaveFailed -= Dx9Overlay_LayoutSaveFailed;
-            Dx9Overlay.FormClosed -= Dx9Overlay_FormClosed;
-            Dx9Overlay.Stop();
+            Dx9Overlay.Failed -= Dx9Overlay_LayoutSaveFailed;
+            Dx9Overlay.Closed -= Dx9Overlay_FormClosed;
             Dx9Overlay.Dispose();
             Dx9Overlay = null;
         }
@@ -1553,6 +1549,11 @@ namespace Pal98Timer
             if (btnDx9OverlayEnabled != null)
             {
                 btnDx9OverlayEnabled.Checked = enabled;
+            }
+            if (btnDx9CaptureWindow != null)
+            {
+                btnDx9CaptureWindow.Enabled = enabled;
+                btnDx9CaptureWindow.Checked = enabled && Dx9Overlay != null && Dx9Overlay.CaptureWindow;
             }
             if (btnDx9OverlayAdjust != null)
             {
@@ -1624,17 +1625,17 @@ namespace Pal98Timer
             UpdateDx9OverlayMenuState(Dx9Overlay != null && !Dx9Overlay.IsDisposed);
         }
 
-        private void Dx9Overlay_FormClosed(object sender, FormClosedEventArgs e)
+        private void Dx9Overlay_FormClosed(object sender, EventArgs e)
         {
-            Dx9OverlayForm closed = sender as Dx9OverlayForm;
+            var closed = sender as TimerOverlayHost;
             if (closed == null || !object.ReferenceEquals(Dx9Overlay, closed))
             {
                 return;
             }
 
             closed.EditModeChanged -= Dx9Overlay_EditModeChanged;
-            closed.LayoutSaveFailed -= Dx9Overlay_LayoutSaveFailed;
-            closed.FormClosed -= Dx9Overlay_FormClosed;
+            closed.Failed -= Dx9Overlay_LayoutSaveFailed;
+            closed.Closed -= Dx9Overlay_FormClosed;
             Dx9Overlay = null;
             try { Dx9OverlaySettings.SaveEnabled(false); } catch { }
             UpdateDx9OverlayMenuState(false);
@@ -1642,7 +1643,12 @@ namespace Pal98Timer
 
         private void Dx9Overlay_LayoutSaveFailed(Exception ex)
         {
-            form.Error("无法保存独立遮罩位置或比例：" + ex.Message);
+            if (Dx9Overlay != null && !Dx9Overlay.IsDisposed)
+            {
+                Dx9OverlayToggleHotkey = Dx9Overlay.ConfiguredToggleHotkey;
+                UpdateDx9OverlayHotkeyMenuText();
+            }
+            form.Error("独立计时遮罩：" + ex.Message);
         }
 
         private void ConfigureDx9OverlayFont()
@@ -1728,9 +1734,7 @@ namespace Pal98Timer
                 return false;
             }
 
-            form.UI(delegate {
-                ToggleDx9OverlayEnabled();
-            });
+            form.BeginInvoke(new Action(ToggleDx9OverlayEnabled));
             return true;
         }
 
@@ -1767,9 +1771,7 @@ namespace Pal98Timer
             if (timingError.Length != 0 && (!paused || PauseOnTimingValidationError)) state = TimingValidationCaption(timingError);
             HardcoreDisplaySnapshot hardcore = GetHardcoreDisplay();
             int cloudId = form == null ? -1 : form.CloudID();
-            string pluginText = "";
-            try { pluginText = GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR); }
-            catch { /* A display plug-in must not hide the independent timer overlay. */ }
+            string pluginText = form?.DisplayedPluginRight ?? "";
             return new Dx9OverlaySnapshot(
                 GameWindowHandle,
                 GetDx9OverlayFontFamily(),

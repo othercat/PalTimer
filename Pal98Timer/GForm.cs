@@ -820,6 +820,11 @@ namespace Pal98Timer
             catch { }
         }
 
+        // Reuse the text already rendered by the main window. Optional timer
+        // displays must not invoke plug-ins an additional time on any thread.
+        internal volatile string DisplayedPluginLeft = "";
+        internal volatile string DisplayedPluginRight = "";
+
         private void tmMain_Tick(object sender, EventArgs e)
         {
             if (!startupCompleted) return;
@@ -878,12 +883,16 @@ namespace Pal98Timer
                 }
                 if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BL))
                 {
-                    rr.SetBL(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL));
+                    DisplayedPluginLeft = core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL);
+                    rr.SetBL(DisplayedPluginLeft);
                 }
+                else DisplayedPluginLeft = "";
                 if (core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.BR))
                 {
-                    rr.SetBR(core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR));
+                    DisplayedPluginRight = core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR);
+                    rr.SetBR(DisplayedPluginRight);
                 }
+                else DisplayedPluginRight = "";
                 string displayTitle = core.HasPlugin(TimerPluginBase.TimerPlugin.EPluginPosition.Title)
                     ? core.GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.Title) : MConfig.ins.Title;
                 // The compact header remains visible when the small window clips the longer version row.

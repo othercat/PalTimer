@@ -234,6 +234,9 @@ namespace Pal98Timer
                         case "toggle_hotkey":
                             if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer)) result.ToggleHotkey = (Keys)integer;
                             break;
+                        case "capture_window":
+                            result.CaptureWindow = value != "0";
+                            break;
                         case "window_left":
                             if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
                             {
@@ -275,7 +278,8 @@ namespace Pal98Timer
             value.Normalize();
             string family = (value.FontFamily ?? "").Replace("\r", "").Replace("\n", "");
             StringBuilder text = new StringBuilder();
-            text.AppendLine("version=2");
+            text.AppendLine("version=3");
+            text.AppendLine("capture_window=" + (value.CaptureWindow ? "1" : "0"));
             text.AppendLine("position_x=" + value.PositionX.ToString("0.0000", CultureInfo.InvariantCulture));
             text.AppendLine("position_y=" + value.PositionY.ToString("0.0000", CultureInfo.InvariantCulture));
             text.AppendLine("scale=" + value.Scale.ToString("0.0000", CultureInfo.InvariantCulture));
@@ -353,6 +357,7 @@ namespace Pal98Timer
         public FontStyle FontStyle;
         public int FontColorArgb;
         public Keys ToggleHotkey;
+        public bool CaptureWindow;
         public bool HasWindowPosition;
         public int WindowLeft;
         public int WindowTop;
@@ -369,6 +374,7 @@ namespace Pal98Timer
                 FontStyle = FontStyle.Regular,
                 FontColorArgb = 0,
                 ToggleHotkey = Keys.None,
+                CaptureWindow = true,
                 HasWindowPosition = false,
                 WindowLeft = 0,
                 WindowTop = 0,
@@ -387,6 +393,7 @@ namespace Pal98Timer
                 FontStyle = FontStyle,
                 FontColorArgb = FontColorArgb,
                 ToggleHotkey = ToggleHotkey,
+                CaptureWindow = CaptureWindow,
                 HasWindowPosition = HasWindowPosition,
                 WindowLeft = WindowLeft,
                 WindowTop = WindowTop,
@@ -542,6 +549,7 @@ namespace Pal98Timer
         private const float OverlayHeightLogicalPixels = 168.0F;
         private const int WM_NCHITTEST = 0x0084;
         private const int HTTRANSPARENT = -1;
+        private const int WS_EX_APPWINDOW = 0x00040000;
         private const int WS_EX_TRANSPARENT = 0x00000020;
         private const float DefaultSmallFontLogicalPoints = 9.0F;
         private const float DefaultTimerFontLogicalPoints = 20.0F;
@@ -558,6 +566,7 @@ namespace Pal98Timer
         private float CurrentAutomaticScale = 1.0F;
         private float CurrentScale = 1.0F;
         private bool EditMode;
+        private bool nativeMove;
         private bool Dragging;
         private bool Resizing;
         private Point DragStartScreen;
@@ -599,11 +608,9 @@ namespace Pal98Timer
             AutoScaleMode = AutoScaleMode.None;
             Text = ObsWindowTitle;
             BackColor = TransparentColor;
-            TransparencyKey = TransparentColor;
-            FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
-            TopMost = true;
+            ApplyWindowStyle();
             DoubleBuffered = true;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
 
@@ -622,12 +629,62 @@ namespace Pal98Timer
             get
             {
                 CreateParams cp = base.CreateParams;
-                if (!EditMode)
-                {
+                if (LayoutSettings != null && LayoutSettings.CaptureWindow)
+                    cp.ExStyle |= WS_EX_APPWINDOW;
+                else if (!EditMode)
                     cp.ExStyle |= WS_EX_TRANSPARENT;
-                }
                 return cp;
             }
+        }
+
+        internal bool CaptureWindow => LayoutSettings.CaptureWindow;
+
+        private void ApplyWindowStyle()
+        {
+            // The ordinary unowned, opaque top-level window is enumerable by
+            // capture tools. Magenta is the source's removable colour key.
+            TransparencyKey = CaptureWindow ? Color.Empty : TransparentColor;
+            AllowTransparency = !CaptureWindow;
+            FormBorderStyle = CaptureWindow ? FormBorderStyle.FixedSingle : FormBorderStyle.None;
+            MaximizeBox = false;
+            TopMost = !CaptureWindow;
+        }
+
+        internal void LoadLayout(Dx9OverlayLayoutSettings layout)
+        {
+            bool previousMode = CaptureWindow;
+            if (EditMode) EndEditMode();
+            LayoutSettings = layout.Clone();
+            if (previousMode != CaptureWindow) { ApplyWindowStyle(); UpdateStyles(); }
+            LastGameAnchor = Rectangle.Empty;
+            RefreshOverlay();
+        }
+
+        internal void SetCaptureWindow(bool enabled)
+        {
+            if (enabled == CaptureWindow) return;
+            var updated = LayoutSettings.Clone();
+            updated.CaptureWindow = enabled;
+            saveLayout(updated);
+            LayoutSettings = updated;
+            ApplyWindowStyle();
+            UpdateStyles();
+            RefreshOverlay();
+        }
+
+        protected override void OnResizeBegin(EventArgs e)
+        {
+            nativeMove = CaptureWindow;
+            base.OnResizeBegin(e);
+        }
+
+        protected override void OnResizeEnd(EventArgs e)
+        {
+            base.OnResizeEnd(e);
+            if (!nativeMove) return;
+            nativeMove = false;
+            UpdateNormalizedPosition();
+            SaveLayoutAfterInteraction();
         }
 
         public bool IsInEditMode
@@ -688,7 +745,7 @@ namespace Pal98Timer
 
         protected override void WndProc(ref Message m)
         {
-            if (!EditMode && m.Msg == WM_NCHITTEST)
+            if (LayoutSettings != null && !CaptureWindow && !EditMode && m.Msg == WM_NCHITTEST)
             {
                 m.Result = new IntPtr(HTTRANSPARENT);
                 return;
@@ -901,12 +958,12 @@ namespace Pal98Timer
             }
 
             EditMode = true;
-            RecreateHandle();
+            if (!CaptureWindow) RecreateHandle();
             RefreshOverlay();
             if (!Visible)
             {
                 EditMode = false;
-                RecreateHandle();
+                if (!CaptureWindow) RecreateHandle();
                 OnEditModeChanged();
                 return false;
             }
@@ -928,7 +985,7 @@ namespace Pal98Timer
             Capture = false;
             SaveLayoutAfterInteraction();
             EditMode = false;
-            RecreateHandle();
+            if (!CaptureWindow) RecreateHandle();
             RefreshOverlay();
             OnEditModeChanged();
         }
@@ -1002,6 +1059,8 @@ namespace Pal98Timer
                 LayoutSettings = previous;
                 throw;
             }
+            ApplyWindowStyle();
+            UpdateStyles();
             RefreshOverlay();
         }
 
@@ -1052,24 +1111,19 @@ namespace Pal98Timer
             RefreshOverlay();
         }
 
+        private static readonly Dx9OverlaySnapshot WaitingForTimer = new Dx9OverlaySnapshot(
+            IntPtr.Zero, "SimSun", "--:--:--", "", "", "等待计时数据", 0,
+            default(Dx9OverlayTimelineEntry), default(Dx9OverlayTimelineEntry),
+            default(Dx9OverlayTimelineEntry), "", false, true);
+
         private void RefreshOverlay()
         {
+            if (nativeMove) return;
             Dx9OverlaySnapshot snapshot;
-            try
-            {
-                snapshot = SnapshotProvider();
-            }
-            catch
-            {
-                HideOverlay();
-                return;
-            }
-
-            if (snapshot == null)
-            {
-                HideOverlay();
-                return;
-            }
+            try { snapshot = SnapshotProvider(); }
+            catch { snapshot = null; }
+            if (snapshot == null && !CaptureWindow) { HideOverlay(); return; }
+            if (snapshot == null) snapshot = WaitingForTimer;
 
             CurrentSnapshot = snapshot;
             CurrentAutomaticScale = 1.0F;
@@ -1083,6 +1137,12 @@ namespace Pal98Timer
             CurrentScale = CurrentAutomaticScale * effectiveUserScale;
             int overlayWidth = Math.Min(movementBounds.Width, (int)Math.Ceiling(OverlayWidthLogicalPixels * CurrentScale));
             int overlayHeight = Math.Min(movementBounds.Height, (int)Math.Ceiling(logicalHeight * CurrentScale));
+            if (CaptureWindow)
+            {
+                Size outer = SizeFromClientSize(new Size(overlayWidth, overlayHeight));
+                overlayWidth = Math.Min(movementBounds.Width, outer.Width);
+                overlayHeight = Math.Min(movementBounds.Height, outer.Height);
+            }
             Point? initialPosition = GetWindowPosition(snapshot, overlayWidth, overlayHeight, movementBounds);
             if (!initialPosition.HasValue) { HideOverlay(); return; }
             int overlayLeft = Clamp(initialPosition.Value.X, movementBounds.Left, movementBounds.Right - overlayWidth);
@@ -1119,6 +1179,13 @@ namespace Pal98Timer
                 return new Point(LayoutSettings.WindowLeft, LayoutSettings.WindowTop);
             }
 
+            if (CaptureWindow)
+            {
+                // Standalone source stays available before the game is started,
+                // while minimized, and between runs; keep it off the game anchor.
+                var area = Screen.PrimaryScreen.WorkingArea;
+                return new Point(area.Right - overlayWidth, area.Bottom - overlayHeight);
+            }
             Rectangle anchor = LastGameAnchor;
             if (snapshot.GameWindowHandle != IntPtr.Zero && IsWindowVisible(snapshot.GameWindowHandle) && !IsIconic(snapshot.GameWindowHandle))
             {

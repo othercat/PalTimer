@@ -46,11 +46,9 @@ namespace Pal98Timer
         internal static SdlpalSplitRule[] Defaults(string profile, bool storyMod = false)
         {
             var original = profile == "geshi-easy-v1" ? Defaults() : SdlpalDreamRoutes.ForProfile(profile);
-            if (!storyMod) {
-                var last=original[original.Length-1];
-                original[original.Length-1]=new SdlpalSplitRule {Id=last.Id.EndsWith("-shown-r132",StringComparison.Ordinal)?last.Id:last.Id+"-shown-r132",Name="通关",Kind="ending-shown"};
-                return original;
-            }
+            // Geshi builds its presentation gate in SdlpalGeshiRoutes. Every
+            // other content profile owns its original ending and battle fields.
+            if (!storyMod) return original;
             // The mod intercepts the real original Baiyue victory. Later dream
             // and Geshi endings belong to the replaced story and cannot gate it.
             int cut = Array.FindIndex(original, r => r.Team == 313);
@@ -311,7 +309,9 @@ namespace Pal98Timer
         private SdlpalBridge relayBridge;
         private bool freshSnapshot;
         private string bestCategory = "unbound";
-        private Dx9OverlayForm overlay;
+        private TimerOverlayHost overlay { get => TimingOverlay; set => TimingOverlay = value; }
+        private ToolStripMenuItem captureMenu;
+        private Keys overlayHotkey;
         private SdlpalItemsForm itemsForm;
         private readonly SdlpalItemTracker items = new SdlpalItemTracker();
         private readonly SdlpalChallengeConfiguration challengeConfiguration = new SdlpalChallengeConfiguration();
@@ -387,7 +387,16 @@ namespace Pal98Timer
             {
                 rules = SdlpalSplitRule.Defaults(activeProfile, activeStoryMod);
                 string path = TimerUserSettings.GetPath(RulesFile);
-                try { if (File.Exists(path)) { var parsed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(File.ReadAllText(path)); SdlpalSplitRule.Validate(parsed); if (activeStoryMod) SdlpalSplitRule.ValidateStoryRoute(parsed); rules = parsed; if(!activeStoryMod && parsed.Last().Kind!="ending-shown")warning="已保留旧版/自定义节点及其独立PB；采用r132真实剧情节点请打开自动节点，恢复默认后保存。"; } }
+                try {
+                    if (File.Exists(path)) {
+                        var parsed = SdlpalBridge.Json().Deserialize<SdlpalSplitRule[]>(File.ReadAllText(path));
+                        SdlpalSplitRule.Validate(parsed);
+                        if (activeStoryMod) SdlpalSplitRule.ValidateStoryRoute(parsed);
+                        if (parsed.Last().Kind != rules.Last().Kind)
+                            warning = "当前使用已保存的自定义终点。要切换到本内容的默认终点，请在自动节点编辑器恢复默认并保存。";
+                        rules = parsed;
+                    }
+                }
                 catch (Exception ex) { warning = "节点配置无效，保留默认节点：" + ex.Message; rules = SdlpalSplitRule.Defaults(activeProfile, activeStoryMod); }
                 LoadBest(); _CurrentStep = -1; CheckPoints = new List<CheckPoint>();
                 foreach (var rule in rules)
@@ -530,13 +539,16 @@ namespace Pal98Timer
                     Reset(); InitCheckPoints();
                     try { itemSettings = SdlpalItemSettings.Load(activeProfile); }
                     catch (Exception ex) { itemSettings = new SdlpalItemSettings(); warning = "当前内容物品配置无效：" + ex.Message; }
-                    var oldOverlay = overlay; overlay = null;
+                    string newOverlayLayout = OverlayLayout;
                     var oldItems = itemsForm; itemsForm = null;
                     string selectedProfile = activeProfile;
                     if (form != null && form.IsHandleCreated) form.BeginInvoke(new Action(() => {
-                        oldOverlay?.Close(); oldItems?.Close();
+                        oldItems?.Close();
                         lock (gate) {
-                            if (unloaded || activeProfile != selectedProfile) return;
+                            if (unloaded || activeProfile != selectedProfile || OverlayLayout != newOverlayLayout) return;
+                            var nextLayout = Dx9OverlaySettings.LoadLayout(newOverlayLayout);
+                            overlayHotkey = nextLayout.ToggleHotkey;
+                            overlay?.SwitchLayout(nextLayout, value => Dx9OverlaySettings.SaveLayout(value, newOverlayLayout));
                             var renderer = form.rr;
                             if (renderer == null) return;
                             renderer.ClearAllItem();
@@ -685,8 +697,11 @@ namespace Pal98Timer
             cloudSave = Menu("云存档（隔世追凶）", CloudSave, true); cloudSave.Enabled = false;
             cloudLoad = Menu("云读档（隔世追凶）", CloudLoad, true); cloudLoad.Enabled = false;
             overlayMenu = Menu("OBS 独立遮罩", ToggleOverlay);
-            Menu("OBS 调整位置与大小", () => { EnsureOverlay(); if (overlay.IsInEditMode) overlay.EndEditMode(); else overlay.BeginEditMode(); });
-            Menu("OBS 字体…", () => { EnsureOverlay(); using (var dialog = new FontDialog { Font = new Font(overlay.ConfiguredFontFamily, overlay.ConfiguredFontSize, overlay.ConfiguredFontStyle) }) if (dialog.ShowDialog(form) == DialogResult.OK) overlay.ApplyFont(dialog.Font.FontFamily.Name, dialog.Font.Size, dialog.Font.Style); });
+            overlayHotkey = Dx9OverlaySettings.LoadLayout(OverlayLayout).ToggleHotkey;
+            captureMenu = Menu("OBS 直播伴侣窗口采集（洋红色键）", () => { EnsureOverlay(); overlay.ToggleCaptureWindow(); });
+            captureMenu.Checked = Dx9OverlaySettings.LoadLayout(OverlayLayout).CaptureWindow;
+            Menu("OBS 调整位置与大小", () => { EnsureOverlay(); overlay.ToggleEditMode(); });
+            Menu("OBS 字体…", () => { EnsureOverlay(); using (var dialog = new FontDialog { Font = new Font(string.IsNullOrEmpty(overlay.ConfiguredFontFamily) ? "SimSun" : overlay.ConfiguredFontFamily, overlay.ConfiguredFontSize, overlay.ConfiguredFontStyle) }) if (dialog.ShowDialog(form) == DialogResult.OK) overlay.ApplyFont(dialog.Font.FontFamily.Name, dialog.Font.Size, dialog.Font.Style); });
             Menu("OBS 文字颜色…", () => { EnsureOverlay(); using (var dialog = new ColorDialog { Color = Color.FromArgb(overlay.ConfiguredFontColorArgb) }) if (dialog.ShowDialog(form) == DialogResult.OK) overlay.ApplyFontColor(dialog.Color); });
             Menu("OBS 快捷键…", ConfigureOverlayHotkey);
             Menu("OBS 恢复默认位置", () => { EnsureOverlay(); overlay.ResetLayout(); });
@@ -699,17 +714,33 @@ namespace Pal98Timer
         private void EnsureOverlay()
         {
             if (overlay != null && !overlay.IsDisposed) return;
-            overlay = new Dx9OverlayForm(OverlaySnapshot, Dx9OverlaySettings.LoadLayout(OverlayLayout), layout => Dx9OverlaySettings.SaveLayout(layout, OverlayLayout));
-            overlay.Text = GameplayDisplayName + " - OBS 独立遮罩" + ReleaseSuffix;
-            overlay.LayoutSaveFailed += error => form.Error("OBS 设置保存失败：" + error.Message);
-            overlay.FormClosed += (s, e) => { if (overlayMenu != null) overlayMenu.Checked = false; };
-            overlay.Start(); overlayMenu.Checked = true;
+            string layoutName = OverlayLayout;
+            var host = new TimerOverlayHost("SDLPAL 维护版 - OBS 独立计时遮罩", OverlaySnapshot,
+                Dx9OverlaySettings.LoadLayout(layoutName), value => Dx9OverlaySettings.SaveLayout(value, layoutName));
+            overlay = host;
+            host.Failed += error => { if (ReferenceEquals(overlay, host)) form.Error("OBS 计时遮罩：" + error.Message); };
+            host.EditModeChanged += (s, e) =>
+            {
+                if (!ReferenceEquals(overlay, host)) return;
+                captureMenu.Checked = host.CaptureWindow;
+                overlayHotkey = host.ConfiguredToggleHotkey;
+            };
+            host.Closed += (s, e) =>
+            {
+                if (!ReferenceEquals(overlay, host)) return;
+                overlay = null;
+                overlayMenu.Checked = false;
+                TimerUserSettings.WriteText("sdlpal_geshi_overlay", "0", Encoding.UTF8);
+            };
+            host.Start();
+            captureMenu.Checked = host.CaptureWindow;
+            overlayMenu.Checked = true;
         }
         private void ToggleOverlay()
         {
             bool enable = overlay == null || overlay.IsDisposed;
             TimerUserSettings.WriteText("sdlpal_geshi_overlay", enable ? "1" : "0", Encoding.UTF8);
-            if (enable) EnsureOverlay(); else { overlay.Stop(); overlay.Dispose(); overlay = null; overlayMenu.Checked = false; }
+            if (enable) EnsureOverlay(); else { overlay.Dispose(); overlay = null; overlayMenu.Checked = false; }
         }
         private void ConfigureOverlayHotkey()
         {
@@ -719,11 +750,19 @@ namespace Pal98Timer
                 return error.Length != 0 ? error : key != Keys.None && key == form.ObsWindowStyleToggleHotkey ? "该组合已用于主窗口 OBS 模式" : "";
             }))
                 if (dialog.ShowDialog(form) == DialogResult.OK)
-                { layout.ToggleHotkey = dialog.SelectedHotkey; Dx9OverlaySettings.SaveLayout(layout, OverlayLayout); overlay?.ApplyToggleHotkey(dialog.SelectedHotkey); }
+                {
+                    if (overlay != null && !overlay.IsDisposed) overlay.ApplyToggleHotkey(dialog.SelectedHotkey);
+                    else
+                    {
+                        layout.ToggleHotkey = dialog.SelectedHotkey;
+                        Dx9OverlaySettings.SaveLayout(layout, OverlayLayout);
+                        overlayHotkey = layout.ToggleHotkey;
+                    }
+                }
         }
-        public override Keys GetCustomToggleHotkey() => overlay?.ConfiguredToggleHotkey ?? Dx9OverlaySettings.LoadLayout(OverlayLayout).ToggleHotkey;
+        public override Keys GetCustomToggleHotkey() => overlayHotkey;
         public override bool TryHandleCustomHotkey(Keys hotkey)
-        { if (hotkey == Keys.None || hotkey != GetCustomToggleHotkey()) return false; ToggleOverlay(); return true; }
+        { if (hotkey == Keys.None || hotkey != overlayHotkey) return false; form.BeginInvoke(new Action(ToggleOverlay)); return true; }
         internal static string OverlayIdentity(int cloudId, string caption)
         {
             string cloud = cloudId >= 0 ? cloudId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "未激活";
@@ -745,22 +784,19 @@ namespace Pal98Timer
         {
             lock (gate)
             {
-                if (overlay != null && !overlay.IsDisposed)
-                    overlay.Text = GameplayDisplayName + " - OBS 独立遮罩" + ReleaseSuffix;
                 var entries = new Dx9OverlayTimelineEntry[2];
                 int start = Math.Max(0, Math.Min(CurrentStep - 1, CheckPoints.Count - 2));
                 for (int i = 0; i < 2 && start + i < CheckPoints.Count; i++)
                 { var p = CheckPoints[start + i]; entries[i] = new Dx9OverlayTimelineEntry(T(p.GetNickName()), TItem.TimeSpanToString(p.Best), TItem.TimeSpanToString(p.Current), p.GetCHA(), p.Index == CurrentStep, p.Status == CheckPointStatus.Completed); }
                 IntPtr handle = IntPtr.Zero; try { handle = bridge?.Process?.MainWindowHandle ?? IntPtr.Zero; } catch { }
-                string plugin = string.Join("  ", new[] { GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BR),
-                    GetPluginResult(TimerPluginBase.TimerPlugin.EPluginPosition.BL) }.Where(text => !string.IsNullOrEmpty(text)));
-                return new Dx9OverlaySnapshot(handle, overlay?.ConfiguredFontFamily, TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
+                string plugin = string.Join("  ", new[] { form.DisplayedPluginRight, form.DisplayedPluginLeft }.Where(text => !string.IsNullOrEmpty(text)));
+                return new Dx9OverlaySnapshot(handle, "SimSun", TItem.TimeSpanToString(GetMainWatch()), GetSmallWatch(), GetSecondWatch(),
                     GetMoreInfo(), form.ManualPauseCount, entries[0], entries[1], new Dx9OverlayTimelineEntry(), T(status), false, !MT.IsRunning,
                     GetGameVersion(), "", "", T(GetScoreValidationError()), form.CloudID(), plugin,
                     OverlayIdentity(form.CloudID(), form.CompetitionOverlayCaption));
             }
         }
-        public override void UnloadUI() { if (itemsForm != null) { itemsForm.Dispose(); itemsForm = null; } if (overlay != null) { overlay.Stop(); overlay.Dispose(); overlay = null; } base.UnloadUI(); }
+        public override void UnloadUI() { if (itemsForm != null) { itemsForm.Dispose(); itemsForm = null; } if (overlay != null) { overlay.Dispose(); overlay = null; } base.UnloadUI(); }
         public override void Unload() { lock (gate) { unloaded = true; base.Unload(); bridge?.Dispose(); bridge = null; MT.Stop(); battleTimer.Stop(); idleTimer.Stop(); } }
 
         private sealed class ImportedTimer
@@ -970,7 +1006,7 @@ namespace Pal98Timer
         {
             Text = "SDLPAL 自动节点（当前内容，按表格顺序）"; Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi; Width = 1040; Height = 560; MinimumSize = new Size(850, 420); StartPosition = FormStartPosition.CenterParent;
-            var help = new Label { Text = "r132：story-fact 匹配真实剧情事实1–6，ending-shown 在全剧终首次显示停表；余杭首富保留庆祝终点。旧自定义文件及PB不覆盖；采用新路线请恢复默认并保存，PB/接力身份独立。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
+            var help = new Label { Text = "隔世追凶默认在全剧终首次显示时停表，其他内容使用各自的通关节点，余杭首富以庆祝画面为终点。点击恢复默认后保存，可切换到当前内容的默认路线。", Dock = DockStyle.Top, Height = 46, Padding = new Padding(8) };
             string[] names = { "Id", "Name", "Kind", "Team", "Scene", "Enemy", "X", "Y", "Radius", "Music", "Item", "Scenes", "Alternatives", "ReturnScene", "Event", "EventState", "Fact" }, captions = { "稳定 ID", "显示名称", "规则类型", "敌队 ID", "场景 ID", "敌人物件 ID", "视口 X", "视口 Y", "范围格数", "音乐 ID", "物品 ID", "场景集合", "可选入口 JSON", "返回场景", "事件 ID", "事件状态", "真实事实 ID" };
             for (int i = 0; i < names.Length; i++) grid.Columns.Add(names[i], captions[i]);
             grid.Columns[0].FillWeight = 190; grid.Columns[1].FillWeight = 120; grid.RowTemplate.Height = 28;
